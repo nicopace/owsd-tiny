@@ -17,6 +17,7 @@ SET(SOURCES
 ADD_EXECUTABLE(owsd ${SOURCES})
 
 # FIND_LIBRARY(json NAMES json json-c)
+# TODO use find_package and/or specify lws version
 FIND_LIBRARY(lws NAMES websockets)
 FIND_LIBRARY(ubus NAMES ubus)
 FIND_LIBRARY(ubox NAMES ubox)

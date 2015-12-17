@@ -11,9 +11,9 @@
 
 static callback_function ws_http_cb;
 
-struct libwebsocket_protocols ws_http_proto = {
+struct lws_protocols ws_http_proto = {
 	/*  we don't want any subprotocol name to match this, and it won't
-	 *  sdlkfjasldkfjdlskjflkj since will split on the ',' character. 
+	 *  match since will split on the ',' character.
 	 *
 	 *  TODO maybe NULL is correct here, but see lws-issues.txt */
 	" , ", 
@@ -50,12 +50,11 @@ static void ufd_service_cb (struct uloop_fd *ufd, unsigned int events)
 	struct pollfd pfd;
 	pfd.revents = eventmask_ufd_to_pollfd(events);
 	pfd.fd = ufd->fd;
-	libwebsocket_service_fd(global.lws_ctx, &pfd);
+	lws_service_fd(global.lws_ctx, &pfd);
 }
 
-static int ws_http_cb(struct libwebsocket_context *lws_ctx,
-		struct libwebsocket *wsi,
-		enum libwebsocket_callback_reasons reason,
+static int ws_http_cb(struct lws *wsi,
+		enum lws_callback_reasons reason,
 		void *user,
 		void *in,
 		size_t len)
@@ -64,9 +63,9 @@ static int ws_http_cb(struct libwebsocket_context *lws_ctx,
 	//lwsl_debug("http cb called with reason %d, wsi %p, user %p, in %p len %lu\n",
 			//reason, wsi, user, in, len);
 
-	struct libwebsocket_pollargs *in_pollargs = (struct libwebsocket_pollargs*)in;
+	struct lws_pollargs *in_pollargs = (struct lws_pollargs*)in;
 
-	struct prog_context *prog = libwebsocket_context_user(lws_ctx);
+	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 
 	// all enum reasons listed for now. Will remove unneeded when complete.
 	switch (reason) {

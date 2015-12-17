@@ -66,7 +66,7 @@ int main(int argc, char *argv[])
 	struct lws_context_creation_info lws_info = {};
 
 	lws_info.port = WSD_DEF_PORT_NO;
-	lws_info.extensions = libwebsocket_get_internal_extensions();
+	lws_info.extensions = lws_get_internal_extensions();
 	lws_info.ssl_cert_filepath = WSD_DEF_CERT_PATH;
 	lws_info.ssl_private_key_filepath = WSD_DEF_PK_PATH;
 	lws_info.uid = -1;
@@ -75,7 +75,7 @@ int main(int argc, char *argv[])
 
 	lws_set_log_level(-1, NULL);
 
-	lws_info.protocols = (struct libwebsocket_protocols[])
+	lws_info.protocols = (struct lws_protocols[])
 	{
 		ws_http_proto,
 		wsubus_proto,
@@ -84,9 +84,9 @@ int main(int argc, char *argv[])
 
 	lwsl_debug("Creating lwsl context\n");
 
-	struct libwebsocket_context *lws_ctx = libwebsocket_create_context(&lws_info);
+	struct lws_context *lws_ctx = lws_create_context(&lws_info);
 	if (!lws_ctx) {
-		lwsl_err("libwebsocket_create_context error\n");	
+		lwsl_err("lws_create_context error\n");
 		rc = 1;
 		goto no_lws;
 	}
@@ -97,7 +97,7 @@ int main(int argc, char *argv[])
 	lwsl_info("running uloop...\n");
 	uloop_run();
 
-	libwebsocket_context_destroy(lws_ctx);
+	lws_context_destroy(lws_ctx);
 no_lws:
 
 	free(global.ufds);

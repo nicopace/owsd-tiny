@@ -1,10 +1,11 @@
 #pragma once
+#include <stddef.h>
 
 struct prog_context {
 	struct uloop_fd **ufds;
-	int num_ufds;
+	size_t num_ufds;
 
-	struct libwebsocket_context *lws_ctx;
+	struct lws_context *lws_ctx;
 
 	struct ubus_context *ubus_ctx;
 };

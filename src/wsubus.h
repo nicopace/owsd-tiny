@@ -1,3 +1,3 @@
 #pragma once
 
-extern struct libwebsocket_protocols wsubus_proto;
+extern struct lws_protocols wsubus_proto;
