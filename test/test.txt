@@ -1,0 +1,171 @@
+# grant access
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "session","grant",{"session": "SESSION_ID", "objects":[ ["uci", "*"] ]}]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
+# grant access
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "session","grant",{"session": "SESSION_ID", "objects":[ ["file", "*"] ]}]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
+# session list
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "session", "list", {} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"ubus_rpc_session":"SESSION_ID","timeout":300,"expires":300,"acls":{"
+
+# echo "TEST" > /tmp/demo.txt
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "write", {"path":"/tmp/demo.txt","data":"TEST"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
+# cat /tmp/demo.txt
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "read", {"path":"/tmp/demo.txt"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"data":"TEST"}]}
+
+# system info
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "system", "info", {}] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"uptime"
+
+# list all uci configs
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "uci", "configs", {}] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"configs":["dhcp","dropbear","firewall","network","owsd","rpcd","system","ubootenv","uhttpd","wireless"]}]}
+
+# in network config get value of ipaddr in loopback section
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "uci", "get", {"config":"network","section":"loopback","option":"ipaddr"}] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"value":"127.0.0.1"}]}
+
+# which touch
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/usr/bin/which","params":["touch"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"\/bin\/touch\n"}]}
+
+# touch /tmp/test.txt
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/touch","params":["/tmp/test.txt"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0}]}
+
+# cat /tmp/test.txt
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "read", {"path":"/tmp/test.txt"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[5]}
+
+# echo "new line!" >> /tmp/test.txt
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "write", {"path":"/tmp/test.txt","data":"new line!"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
+# cat /tmp/test.txt
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "read", {"path":"/tmp/test.txt"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"data":"new line!"}]}
+
+# md5sum /tmp/test.txt
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "md5", {"path":"/tmp/test.txt"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"md5":"06846e35c1c3a0c25c9867eaf644d099"}]}
+
+# which rm
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/usr/bin/which","params":["rm"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"\/bin\/rm\n"}]}
+
+# rm /tmp/test.txt
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/rm","params":["/tmp/test.txt"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0}]}
+
+# which ps
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/usr/bin/which","params":["ps"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"\/bin\/ps\n"}]}
+
+# ps
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/ps"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"  PID USER       VSZ STAT COMMAND\n    1 root
+
+# ubus call system board
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "system", "board", {}] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"kernel":"4.1.16","hostname":"OpenWrt","system":"Atheros AR9330 rev 1","model":"ALFA NETWORK Hornet-UB","release":{"distribution":"OpenWrt","version":"Bleeding Edge","revision":"r48306","codename":"designated_driver","target":"ar71xx\/generic","description":"OpenWrt Designated Driver r48306"}}]}
+
+# which ifconfig
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/usr/bin/which","params":["ifconfig"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"\/sbin\/ifconfig\n"}]}
+
+# ifconfig lo
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/sbin/ifconfig","params":["lo"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"lo        Link encap:Local Loopback  \n          inet addr:127.0.0.1  Mask:255.0.0.0\n          inet6 addr: ::1\/128 Scope:Host\n
+
+# which ping
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/usr/bin/which","params":["ping"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"\/bin\/ping\n"}]}
+
+# ping -c 1 192.168.0.1
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/ping","params":["-c","1","192.168.0.1"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"PING 192.168.0.1 (192.168.0.1): 56 data bytes\n64 bytes from 192.168.0.1: seq=0 ttl=
+
+# ubus call iwinfo devices
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "iwinfo", "devices", {}] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"devices":["wlan0"]}]}
+
+# which opkg
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/usr/bin/which","params":["opkg"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"\/bin\/opkg\n"}]}
+
+# opkg --help
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/opkg","params":["--help"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":1,"stdout":"usage: opkg [options...] sub-command [arguments...]\nwhere sub-command is one of:\n\nPackage Manipulation:\n\tupdate\t\t\tUpdate list of available packages\n\tupgrade <pkgs>\t\tUpgrade packages\n\tinstall <pkgs>\t\tInstall package(s)\n\tconfigure <pkgs>\tConfigure unpacked package(s)\n\tremove <pkgs|regexp>\tRemove package(s)\n\tflag <flag> <pkgs>\tFlag package(s)\n\t <flag>=hold|noprune|user|ok|installed|unpacked (one per invocation)\n\nInformational Commands:\n\tlist\t\t\tList available packages\n\tlist-installed\t\tList installed packages\n\tlist-upgradable\t\tList installed and upgradable packages\n\tlist-changed-conffiles\tList user modified configuration files\n\tfiles <pkg>\t\tList files belonging to <pkg>\n\tsearch <file|regexp>\tList package providing <file>\n\tfind <regexp>\t\tList packages whose name or description matches <regexp>\n\tinfo [pkg|regexp]\tDisplay all info for <pkg>\n\tstatus [pkg|regexp]\tDisplay all status for <pkg>\n\tdownload <pkg>\t\tDownload <pkg> to current directory\n\tcompare-versions <v1> <op> <v2>\n\t                    compare versions using <= < > >= = << >>\n\tprint-architecture\tList installable package architectures\n\tdepends [-A] [pkgname|pat]+\n\twhatdepends [-A] [pkgname|pat]+\n\twhatdependsrec [-A] [pkgname|pat]+\n\twhatrecommends[-A] [pkgname|pat]+\n\twhatsuggests[-A] [pkgname|pat]+\n\twhatprovides [-A] [pkgname|pat]+\n\twhatconflicts [-A] [pkgname|pat]+\n\twhatreplaces [-A] [pkgname|pat]+\n\nOptions:\n\t-A\t\t\tQuery all packages not just those installed\n\t-V[<level>]\t\tSet verbosity level to <level>.\n\t--verbosity[=<level>]\tVerbosity levels:\n\t\t\t\t\t0 errors only\n\t\t\t\t\t1 normal messages (default)\n\t\t\t\t\t2 informative messages\n\t\t\t\t\t3 debug\n\t\t\t\t\t4 debug level 2\n\t-f <conf_file>\t\tUse <conf_file> as the opkg configuration file\n\t--conf <conf_file>\n\t--cache <directory>\tUse a package cache\n\t-d <dest_name>\t\tUse <dest_name> as the the root directory for\n\t--dest <dest_name>\tpackage installation, removal, upgrading.\n\t\t\t\t<dest_name> should be a defined dest name from\n\t\t\t\tthe configuration file, (but can also be a\n\t\t\t\tdirectory name in a pinch).\n\t-o <dir>\t\tUse <dir> as the root directory for\n\t--offline-root <dir>\toffline installation of packages.\n\t--add-arch <arch>:<prio>\tRegister architecture with given priority\n\t--add-dest <name>:<path>\tRegister destination with given path\n\nForce Options:\n\t--force-depends\t\tInstall\/remove despite failed dependencies\n\t--force-maintainer\tOverwrite preexisting config files\n\t--force-reinstall\tReinstall package(s)\n\t--force-overwrite\tOverwrite files from other package(s)\n\t--force-downgrade\tAllow opkg to downgrade packages\n\t--force-space\t\tDisable free space checks\n\t--force-postinstall\tRun postinstall scripts even in offline mode\n\t--force-remove\tRemove package even if prerm script fails\n\t--force-checksum\tDon't fail on checksum mismatches\n\t--noaction\t\tNo action -- test only\n\t--download-only\tNo action -- download only\n\t--nodeps\t\tDo not follow dependencies\n\t--nocase\t\tPerform case insensitive pattern matching\n\t--size\t\t\tPrint package size when listing available packages\n\t--force-removal-of-dependent-packages\n\t\t\t\tRemove package and all dependencies\n\t--autoremove\t\tRemove packages that were installed\n\t\t\t\tautomatically to satisfy dependencies\n\t-t\t\t\tSpecify tmp-dir.\n\t--tmp-dir\t\tSpecify tmp-dir.\n\t-l\t\t\tSpecify lists-dir.\n\t--lists-dir\t\tSpecify lists-dir.\n\n regexp could be something like 'pkgname*' '*file*' or similar\n e.g. opkg info 'libstd*' or opkg search '*libop*' or opkg remove 'libncur*'\n","stderr":"\/bin\/opkg: unrecognized option: help\nopkg must have one sub-command argument\n"}]}
+
+# which wget
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/usr/bin/which","params":["wget"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"\/bin\/wget\n"}]}
+
+# wget www.google.com -P /tmp
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/wget","params":["www.google.com","-P","/tmp"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stderr":"Connecting to www.google.com
+
+# wget www.google.com -P /tmp
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/wget","params":["www.google.com","-P","/tmp"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":1,"stderr":"Connecting to www.google.com
+
+# rm /tmp/index.html
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/rm","params":["/tmp/index.html"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0}]}
+
+# which grep
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/usr/bin/which","params":["grep"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"\/bin\/grep\n"}]}
+
+# wget www.google.com -P /tmp
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/grep","params":["owsd","/etc/config/owsd"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"config owsd 'setup'\n"}]}
+
+# which logread
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/usr/bin/which","params":["logread"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"\/sbin\/logread\n"}]}
+
+# touch /tmp/script.sh
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/touch","params":["/tmp/scripts.sh"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0}]}
+
+# echo "ifconfig -a lo | awk '/inet / {print $2, $4}' | sed 's/\addr:" >> /tmp/scripts.sh
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "write", {"path":"/tmp/scripts.sh","data":"ifconfig -a ${1} | awk '/inet / {print $2}'"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
+# which chmod
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/usr/bin/which","params":["chmod"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"\/bin\/chmod\n"}]}
+
+# chmod u+x /tmp/scripts.sh
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/chmod","params":["u+x","/tmp/scripts.sh"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0}]}
+
+# which ash
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/usr/bin/which","params":["ash"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"\/bin\/ash\n"}]}
+
+# ash /tmp/scripts.sh
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/ash","params":["/tmp/scripts.sh","lo"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"addr:127.0.0.1\n"}]}
+
+# rm /tmp/scripts.sh
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/rm","params":["/tmp/scripts.sh"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0}]}
+
+# logread
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/sbin/logread"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout"
+
+
+
+
+# destroy this session id
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "session","destroy",{"session": "SESSION_ID"}]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
