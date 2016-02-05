@@ -6,11 +6,11 @@
 #include "wsubus.impl.h"
 #include "wsubus_rpc.h"
 
-#include <libwebsockets.h>
-
 #include <json-c/json.h>
 #include <libubox/blobmsg_json.h>
 #include <libubus.h>
+
+#include <libwebsockets.h>
 
 #include <errno.h>
 #include <assert.h>
@@ -24,6 +24,17 @@ struct lws_protocols wsubus_proto = {
 	//3000 // arbitrary length
 };
 
+static bool check_origin(char *origin, int len) {
+
+	struct origin *origin_el, *origin_tmp;
+
+	list_for_each_entry_safe(origin_el, origin_tmp, &origin_list->list, list)
+		if (!strncmp(origin_el->url, origin, len))
+			return false;
+
+	return true;
+}
+
 static int wsubus_filter(struct lws *wsi)
 {
 	int len = lws_hdr_total_length(wsi, WSI_TOKEN_ORIGIN) + 1;
@@ -36,15 +47,15 @@ static int wsubus_filter(struct lws *wsi)
 
 	int rc = 0;
 	int e;
+
 	if (len == 0) {
 		lwsl_err("no or empty origin header\n");
 		rc = -2;
 	} else if ((e = lws_hdr_copy(wsi, origin, len, WSI_TOKEN_ORIGIN)) < 0) {
 		lwsl_err("error copying origin header %d\n", e);
 		rc = -3;
-	} else if (strncmp("http://localhost/", origin, len)) {
-		// TODO<origin> configurable origin whitelist and port names also
-		lwsl_err("only localost origin is allowed\n");
+	} else if (check_origin(origin, len)) {
+		lwsl_err("only localhost origin is allowed\n");
 		rc = -4;
 	}
 
@@ -98,7 +109,7 @@ static void wsubus_client_free(struct lws *wsi, struct wsubus_client_session *cl
 static void wsubus_handle_msg(struct lws *wsi,
 		struct blob_attr *blob)
 {
-	const struct wsubus_client_session *client = lws_wsi_user(wsi);
+	__attribute__((unused))  const struct wsubus_client_session *client = lws_wsi_user(wsi);
 	lwsl_info("client %u handling blobmsg buf\n", client->id);
 
 	struct jsonrpc_blob_req *jsonrpc_req = malloc(sizeof *jsonrpc_req);
@@ -205,7 +216,7 @@ static void wsubus_rx(struct lws *wsi,
 		size_t len)
 {
 	size_t remaining_bytes_in_frame = lws_remaining_packet_payload(wsi);
-	int is_final_frame = lws_is_final_fragment(wsi);
+	__attribute__((unused)) int is_final_frame = lws_is_final_fragment(wsi);
 
 	struct wsubus_client_session *client = lws_wsi_user(wsi);
 

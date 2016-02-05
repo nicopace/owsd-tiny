@@ -70,7 +70,7 @@ out:
 
 static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *ev, const char *type, struct blob_attr *msg)
 {
-	int mtype = blobmsg_type(msg);
+	__attribute__((unused)) int mtype = blobmsg_type(msg);
 	lwsl_debug("sub cb called, ev obj name %s, type %s, blob of len %lu thpe %s\n",
 			ev->obj.name, type, blobmsg_len(msg),
 			mtype == BLOBMSG_TYPE_STRING ? "\"\"" :

@@ -18,25 +18,43 @@
 #define WSD_DEF_UBUS_PATH "/var/run/ubus.sock"
 
 struct prog_context global;
+struct origin *origin_list;
 
 int main(int argc, char *argv[])
 {
 	int rc = 0;
 
 	const char *ubus_sock_path = WSD_DEF_UBUS_PATH;
+	int port = WSD_DEF_PORT_NO;
+	struct origin origin_new_list = LIST_HEAD_INIT(origin_new_list.list);
+	origin_list = &origin_new_list;
+	char *error;
 
 	int c;
-	while ((c = getopt(argc, argv, "hs:")) != -1) {
+	while ((c = getopt(argc, argv, "s:p:o:h:")) != -1) {
 		switch (c) {
 		case 's':
 			ubus_sock_path = optarg;
 			break;
-
+		case 'p':
+			port = strtol(optarg, &error, 10);
+			if (*error)
+				goto no_ubus;
+			break;
+		case 'o':;
+			struct origin *origin_el = calloc(1, sizeof(struct origin));
+			if (!origin_el)
+				break;
+			origin_el->url = optarg;
+			list_add_tail(&origin_el->list, &origin_list->list);
+			break;
 		case 'h':
 		default:
 			fprintf(stderr,
 					"Usage: %s [ <options> ]\n"
 					"  -s <socket>         path to ubus socket\n"
+					"  -p <port>           port number\n"
+					"  -o <origin>	       origin url address\n"
 					"\n", argv[0]);
 			return c == 'h' ? 0 : -2;
 		}
@@ -65,7 +83,7 @@ int main(int argc, char *argv[])
 
 	struct lws_context_creation_info lws_info = {};
 
-	lws_info.port = WSD_DEF_PORT_NO;
+	lws_info.port = port;
 	lws_info.extensions = lws_get_internal_extensions();
 	lws_info.ssl_cert_filepath = WSD_DEF_CERT_PATH;
 	lws_info.ssl_private_key_filepath = WSD_DEF_PK_PATH;
@@ -105,6 +123,13 @@ no_lws:
 	ubus_free(ubus_ctx);
 no_ubus:
 
+	if (!list_empty(&origin_list->list)) {
+		struct origin *origin_el, *origin_tmp;
+		list_for_each_entry_safe(origin_el, origin_tmp, &origin_list->list, list) {
+			list_del(&origin_el->list);
+			free(origin_el);
+		}
+	}
 
 	return rc;
 }
