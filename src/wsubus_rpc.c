@@ -116,6 +116,9 @@ enum jsonrpc_error_code ubusrpc_blob_parse(struct ubusrpc_blob *ubusrpc, const c
 	} supported_methods[] = {
 		{ "call", ubusrpc_blob_call_parse, ubusrpc_handle_call },
 		{ "subscribe", ubusrpc_blob_sub_parse, ubusrpc_handle_sub },
+		{ "subscribe-list", ubusrpc_blob_sub_list_parse, ubusrpc_handle_sub_list },
+		{ "unsubscribe", ubusrpc_blob_unsub_by_id_parse, ubusrpc_handle_unsub_by_id }, // XXX by id
+		//{ "unsubscribe", ubusrpc_blob_sub_parse, ubusrpc_handle_unsub }, // XXX by SID + name
 	};
 
 	for (unsigned long i = 0; i < ARRAY_SIZE(supported_methods); ++i)

@@ -2,6 +2,7 @@
 
 #include "ws_http.h"
 #include "wsubus.h"
+#include "wsubus_rpc.h"
 
 #include <libubox/uloop.h>
 #include <libubus.h>
@@ -18,7 +19,6 @@
 #define WSD_DEF_UBUS_PATH "/var/run/ubus.sock"
 
 struct prog_context global;
-struct origin *origin_list;
 
 int main(int argc, char *argv[])
 {
@@ -26,8 +26,7 @@ int main(int argc, char *argv[])
 
 	const char *ubus_sock_path = WSD_DEF_UBUS_PATH;
 	int port = WSD_DEF_PORT_NO;
-	struct origin origin_new_list = LIST_HEAD_INIT(origin_new_list.list);
-	origin_list = &origin_new_list;
+	struct origin origin_list = { .list = LIST_HEAD_INIT(origin_list.list)};
 	char *error;
 
 	int c;
@@ -46,7 +45,7 @@ int main(int argc, char *argv[])
 			if (!origin_el)
 				break;
 			origin_el->url = optarg;
-			list_add_tail(&origin_el->list, &origin_list->list);
+			list_add_tail(&origin_el->list, &origin_list.list);
 			break;
 		case 'h':
 		default:
@@ -63,8 +62,7 @@ int main(int argc, char *argv[])
 
 	uloop_init();
 
-
-	struct ubus_context *ubus_ctx = ubus_connect(ubus_sock_path ? ubus_sock_path : WSD_DEF_UBUS_PATH);
+	struct ubus_context *ubus_ctx = ubus_connect(ubus_sock_path);
 	if (!ubus_ctx) {
 		lwsl_err("ubus_connect error\n");
 		rc = 2;
@@ -72,7 +70,7 @@ int main(int argc, char *argv[])
 	}
 
 	global.ubus_ctx = ubus_ctx;
-
+	global.origin_list = &origin_list;
 
 	ubus_add_uloop(ubus_ctx);
 	// dtablesize is typically 1024, so a couple of KiBs just for pointers...
@@ -123,13 +121,15 @@ no_lws:
 	ubus_free(ubus_ctx);
 no_ubus:
 
-	if (!list_empty(&origin_list->list)) {
+	if (!list_empty(&origin_list.list)) {
 		struct origin *origin_el, *origin_tmp;
-		list_for_each_entry_safe(origin_el, origin_tmp, &origin_list->list, list) {
+		list_for_each_entry_safe(origin_el, origin_tmp, &origin_list.list, list) {
 			list_del(&origin_el->list);
 			free(origin_el);
 		}
 	}
+
+	wsubus_unsubscribe_all();
 
 	return rc;
 }

@@ -24,7 +24,7 @@ struct lws_protocols wsubus_proto = {
 	//3000 // arbitrary length
 };
 
-static bool check_origin(char *origin, int len) {
+static bool check_origin(struct origin *origin_list, char *origin, int len) {
 
 	struct origin *origin_el, *origin_tmp;
 
@@ -37,6 +37,7 @@ static bool check_origin(char *origin, int len) {
 
 static int wsubus_filter(struct lws *wsi)
 {
+	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 	int len = lws_hdr_total_length(wsi, WSI_TOKEN_ORIGIN) + 1;
 	char *origin = malloc(len);
 
@@ -54,7 +55,7 @@ static int wsubus_filter(struct lws *wsi)
 	} else if ((e = lws_hdr_copy(wsi, origin, len, WSI_TOKEN_ORIGIN)) < 0) {
 		lwsl_err("error copying origin header %d\n", e);
 		rc = -3;
-	} else if (check_origin(origin, len)) {
+	} else if (check_origin(prog->origin_list, origin, len)) {
 		lwsl_err("only localhost origin is allowed\n");
 		rc = -4;
 	}
@@ -70,12 +71,14 @@ static int wsubus_client_init(struct wsubus_client_session *client)
 	if (!jtok)
 		return 1;
 
-	static unsigned int clientid; // TODO<clientid> is this good enough (never recycling ids)
+	static unsigned int clientid = 1; // TODO<clientid> is this good enough (never recycling ids)
 	client->id = clientid++;
 	client->curr_msg.len = 0;
 	client->curr_msg.jtok = jtok;
 
 	memset(&client->curr_call, 0, sizeof client->curr_call);
+
+	client->last_known_sid = NULL;
 
 	return 0;
 }
@@ -104,6 +107,11 @@ static void wsubus_client_free(struct lws *wsi, struct wsubus_client_session *cl
 	client->curr_call.id = NULL;
 	free(client->curr_call.retdata);
 	client->curr_call.retdata = NULL;
+	// TODO the above and below should go in rpc-specific cleanup callbacks
+	wsubus_unsubscribe_all_by_sid(client->last_known_sid);
+
+	free(client->last_known_sid);
+
 }
 
 static void wsubus_handle_msg(struct lws *wsi,

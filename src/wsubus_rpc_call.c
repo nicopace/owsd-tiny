@@ -76,7 +76,7 @@ int ubusrpc_blob_call_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob
 		blobmsg_add_blob(params_buf, cur);
 
 	ubusrpc->call.src_blob = dup_blob;
-	ubusrpc->call.sid = tb[0] ? blobmsg_get_string(tb[0]) : "00000000000000000000000000000000";
+	ubusrpc->call.sid = tb[0] ? blobmsg_get_string(tb[0]) : UBUS_DEFAULT_SID;
 	ubusrpc->call.object = blobmsg_get_string(tb[1]);
 	ubusrpc->call.method = blobmsg_get_string(tb[2]);
 	ubusrpc->call.params_buf = params_buf;
@@ -105,6 +105,12 @@ int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, stru
 		lwsl_info("another request in progress (state %d)\n", client->curr_call.state);
 		assert(client->curr_call.invoke_req != NULL);
 		// TODO Here we will send jsonrpc ok with ubus error code. We could also say jsonrpc error maybe
+		ret = UBUS_STATUS_NOT_SUPPORTED;
+		goto respond_with_ubus_error;
+	}
+
+	if (wsubus_check_and_update_sid(client, ubusrpc_req->sid) != 0) {
+		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc_req->sid, client->last_known_sid);
 		ret = UBUS_STATUS_NOT_SUPPORTED;
 		goto respond_with_ubus_error;
 	}

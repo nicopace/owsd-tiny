@@ -34,7 +34,7 @@ struct ubusrpc_blob {
 		struct ubusrpc_blob_call call;
 
 		struct ubusrpc_blob_sub sub;
-		struct ubusrpc_blob_unsub params_unsub;
+		struct ubusrpc_blob_unsub_by_id unsub_by_id;
 	};
 	int (*handler)(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);
 };

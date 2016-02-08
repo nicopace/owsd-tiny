@@ -77,3 +77,19 @@ void wsubus_client_call_reset(struct wsubus_client_session *client)
 	client->curr_call.state = WSUBUS_CALL_STATE_READY;
 }
 
+int wsubus_check_and_update_sid(struct wsubus_client_session *client, const char *sid)
+{
+	if (client->last_known_sid == NULL) {
+		client->last_known_sid = strdup(sid);
+		return 0;
+	}
+	if (!strcmp(client->last_known_sid, UBUS_DEFAULT_SID)) {
+		client->last_known_sid = strdup(sid);
+		return 0;
+	}
+
+	if (strcmp(client->last_known_sid, sid)) {
+		return 1;
+	}
+	return 0;
+}

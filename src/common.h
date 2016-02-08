@@ -10,12 +10,11 @@ struct prog_context {
 	struct lws_context *lws_ctx;
 
 	struct ubus_context *ubus_ctx;
+
+	struct origin *origin_list;
 };
 
 struct origin {
 	struct list_head list;
 	char *url;
 };
-
-struct origin *origin_list;
-
