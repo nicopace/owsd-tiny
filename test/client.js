@@ -49,6 +49,12 @@ ws.on('open', function open() {
         var msg = session_json.replace(/UBUS_ID/g, ubus_id);
         ws.send(msg, {mask: true});
         console.log("> " + msg);
+    } else {
+       ubus_id = ubus_id + 1;
+       var msg = tests[j].replace(/SESSION_ID/g, session_id).replace(/UBUS_ID/g, ubus_id);
+       ws.send(msg, {mask: true});
+       console.log("> " + msg);
+       j = j + 2;
     }
 });
 
