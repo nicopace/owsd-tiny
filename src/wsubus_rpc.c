@@ -61,7 +61,7 @@ char* jsonrpc_response_from_error(struct blob_attr *id, int error_code, struct b
 
 	void *obj_ticket = blobmsg_open_table(&resp_buf, "error");
 
-	blobmsg_add_u32(&resp_buf, "code", error_code);
+	blobmsg_add_u32(&resp_buf, "code", (uint32_t)error_code);
 	blobmsg_add_string(&resp_buf, "message",
 			error_code == JSONRPC_ERRORCODE__PARSE_ERROR      ? "Parse error" :
 			error_code == JSONRPC_ERRORCODE__INTERNAL_ERROR   ? "Internal error" :
@@ -94,10 +94,10 @@ char* jsonrpc_response_from_blob(struct blob_attr *id,
 	}
 
 	void *array_ticket = blobmsg_open_array(&resp_buf, "result");
-	blobmsg_add_u32(&resp_buf, "", ubus_rc);
+	blobmsg_add_u32(&resp_buf, "", (uint32_t)ubus_rc);
 
 	if (ret_data) {
-		blobmsg_add_field(&resp_buf, BLOBMSG_TYPE_TABLE, "", blobmsg_data(ret_data), blobmsg_len(ret_data));
+		blobmsg_add_field(&resp_buf, blobmsg_type(ret_data) == BLOBMSG_TYPE_ARRAY ? BLOBMSG_TYPE_ARRAY : BLOBMSG_TYPE_TABLE, "", blobmsg_data(ret_data), (unsigned)blobmsg_len(ret_data));
 	}
 
 	blobmsg_close_array(&resp_buf, array_ticket);
@@ -117,8 +117,8 @@ enum jsonrpc_error_code ubusrpc_blob_parse(struct ubusrpc_blob *ubusrpc, const c
 		{ "call", ubusrpc_blob_call_parse, ubusrpc_handle_call },
 		{ "subscribe", ubusrpc_blob_sub_parse, ubusrpc_handle_sub },
 		{ "subscribe-list", ubusrpc_blob_sub_list_parse, ubusrpc_handle_sub_list },
-		{ "unsubscribe", ubusrpc_blob_unsub_by_id_parse, ubusrpc_handle_unsub_by_id }, // XXX by id
-		//{ "unsubscribe", ubusrpc_blob_sub_parse, ubusrpc_handle_unsub }, // XXX by SID + name
+		{ "unsubscribe", ubusrpc_blob_sub_parse, ubusrpc_handle_unsub }, // parse is same as sub since args same
+		{ "unsubscribe-id", ubusrpc_blob_unsub_by_id_parse, ubusrpc_handle_unsub_by_id },
 	};
 
 	for (unsigned long i = 0; i < ARRAY_SIZE(supported_methods); ++i)

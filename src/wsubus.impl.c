@@ -19,8 +19,6 @@ int wsubus_write_response_str(struct lws *wsi, const char *response_str)
 
 	assert(len < WSUBUS_MAX_MESSAGE_LEN);
 
-	lwsl_debug("sending reply: %.*s ...\n", len > 50 ? 50 : len, response_str);
-
 	unsigned char *buf = malloc(LWS_SEND_BUFFER_PRE_PADDING
 			+ len
 			+ LWS_SEND_BUFFER_POST_PADDING);
@@ -31,50 +29,24 @@ int wsubus_write_response_str(struct lws *wsi, const char *response_str)
 
 	memcpy(buf+LWS_SEND_BUFFER_PRE_PADDING, response_str, len);
 
-	int written = lws_write(wsi, buf+LWS_SEND_BUFFER_PRE_PADDING, len,
-			LWS_WRITE_TEXT);
+	struct wsubus_client_session *client = lws_wsi_user(wsi);
 
-	while (written != (int)len) {
-		lwsl_debug("Partial write, repeating\n");
-		written += lws_write(wsi,
-				buf+LWS_SEND_BUFFER_PRE_PADDING+written, len-written,
-				LWS_WRITE_TEXT);
+	struct wsubus_client_writereq *w = malloc(sizeof *w);
+	w->buf = buf;
+	w->len = len;
+	w->written = 0;
+
+	list_add_tail(&w->wq, &client->write_q);
+
+	lwsl_debug("sending reply: %.*s ... %p, %d\n", len > 50 ? 50 : len, response_str, w);
+	int r = lws_callback_on_writable(wsi);
+
+	if (r < 0) {
+		lwsl_warn("error %d scheduling write callback\n");
+		return -3;
 	}
 
-	free(buf);
 	return 0;
-	//TODO<blockingwrite> use callback and queue writes
-	// like this
-	// 1. put response_str,len in queue per-wsi context or globally
-	// 2. request that lws calls us when we can write
-	lws_callback_on_writable(wsi);
-	// 3. handle LWS_ON_WRITABLE callback in wsubus.c cb, writing from queue
-}
-
-void wsubus_client_call_reset(struct wsubus_client_session *client)
-{
-	free(client->curr_call.retdata);
-	client->curr_call.retdata = NULL;
-
-	free(client->curr_call.id);
-	client->curr_call.id = NULL;
-
-	free(client->curr_call.call_args->src_blob);
-	client->curr_call.call_args->src_blob = NULL;
-
-	blob_buf_free(client->curr_call.call_args->params_buf);
-	free(client->curr_call.call_args->params_buf);
-	client->curr_call.call_args->params_buf = NULL;
-
-	free(client->curr_call.call_args);
-	client->curr_call.call_args = NULL;
-
-	// we don't free these, the requests free themselves
-	if (client->curr_call.invoke_req) {
-		assert(client->curr_call.state == WSUBUS_CALL_STATE_CALL || client->curr_call.state == WSUBUS_CALL_STATE_CHECK);
-		client->curr_call.invoke_req = NULL;
-	}
-	client->curr_call.state = WSUBUS_CALL_STATE_READY;
 }
 
 int wsubus_check_and_update_sid(struct wsubus_client_session *client, const char *sid)
@@ -84,11 +56,13 @@ int wsubus_check_and_update_sid(struct wsubus_client_session *client, const char
 		return 0;
 	}
 	if (!strcmp(client->last_known_sid, UBUS_DEFAULT_SID)) {
+		free(client->last_known_sid);
 		client->last_known_sid = strdup(sid);
 		return 0;
 	}
 
 	if (strcmp(client->last_known_sid, sid)) {
+		lwsl_warn("curr sid %s != prev sid %s\n", sid, client->last_known_sid);
 		return 1;
 	}
 	return 0;

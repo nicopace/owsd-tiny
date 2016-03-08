@@ -27,7 +27,7 @@ struct lws_protocols ws_http_proto = {
 
 
 
-static inline unsigned int
+static inline short
 eventmask_ufd_to_pollfd(unsigned int ufd_events)
 {
 	return
@@ -35,7 +35,7 @@ eventmask_ufd_to_pollfd(unsigned int ufd_events)
 		(ufd_events & ULOOP_WRITE ? POLLOUT : 0);
 }
 static inline unsigned int
-eventmask_pollfd_to_ufd(unsigned int pollfd_events)
+eventmask_pollfd_to_ufd(int pollfd_events)
 {
 	return
 		(pollfd_events & POLLIN  ? ULOOP_READ  : 0) |
@@ -46,8 +46,10 @@ static void ufd_service_cb (struct uloop_fd *ufd, unsigned int events)
 {
 	extern struct prog_context global;
 
-	lwsl_debug("servicing fd %d with ufd eventmask %x\n", ufd->fd, events);
+	lwsl_debug("servicing fd %d with ufd eventmask %x %s%s\n", ufd->fd, events,
+			events & ULOOP_READ ? "R" : "", events & ULOOP_WRITE ? "W" : "");
 	struct pollfd pfd;
+
 	pfd.revents = eventmask_ufd_to_pollfd(events);
 	pfd.fd = ufd->fd;
 	lws_service_fd(global.lws_ctx, &pfd);
@@ -55,7 +57,7 @@ static void ufd_service_cb (struct uloop_fd *ufd, unsigned int events)
 
 static int ws_http_cb(struct lws *wsi,
 		enum lws_callback_reasons reason,
-		void *user,
+		void *user __attribute__((unused)),
 		void *in,
 		size_t len)
 {
@@ -73,7 +75,7 @@ static int ws_http_cb(struct lws *wsi,
 	case LWS_CALLBACK_ADD_POLL_FD: {
 		lwsl_notice("add fd %d mask %x\n", in_pollargs->fd, in_pollargs->events);
 
-		assert(in_pollargs->fd >= 0 && in_pollargs->fd < prog->num_ufds);
+		assert(in_pollargs->fd >= 0 && in_pollargs->fd > 0 && (size_t)in_pollargs->fd < prog->num_ufds);
 		assert(prog->ufds[in_pollargs->fd] == NULL);
 
 		struct uloop_fd *ufd = calloc(1, sizeof *ufd);
@@ -100,7 +102,7 @@ static int ws_http_cb(struct lws *wsi,
 	case LWS_CALLBACK_DEL_POLL_FD: {
 		lwsl_notice("del fd %d\n", in_pollargs->fd);
 
-		assert(in_pollargs->fd >= 0 && in_pollargs->fd < prog->num_ufds);
+		assert(in_pollargs->fd >= 0 && in_pollargs->fd > 0 && (size_t)in_pollargs->fd < prog->num_ufds);
 		// TODO LWS shouldn't call us if we didn't manage to add fd. for now ignore if not added
 		// TODO is this a LWS 'bug'?
 		// assert(prog->ufds[in_pollargs->fd] != NULL);
@@ -116,9 +118,10 @@ static int ws_http_cb(struct lws *wsi,
 	}
 
 	case LWS_CALLBACK_CHANGE_MODE_POLL_FD: {
-		lwsl_notice("modify fd %d to mask %x\n", in_pollargs->fd, in_pollargs->events);
+		lwsl_notice("modify fd %d to mask %x %s%s\n", in_pollargs->fd, in_pollargs->events,
+				in_pollargs->events & POLLIN ? "IN" : "", in_pollargs->events & POLLOUT ? "OUT" : "");
 
-		assert(in_pollargs->fd >= 0 && in_pollargs->fd < prog->num_ufds);
+		assert(in_pollargs->fd >= 0 && in_pollargs->fd > 0 && (size_t)in_pollargs->fd < prog->num_ufds);
 		assert(prog->ufds[in_pollargs->fd] != NULL);
 
 		struct uloop_fd *ufd = prog->ufds[in_pollargs->fd];
@@ -128,7 +131,7 @@ static int ws_http_cb(struct lws *wsi,
 		assert(ufd->registered == true);
 
 		if (eventmask_pollfd_to_ufd(in_pollargs->events) != ufd->flags) {
-			if (!uloop_fd_add(ufd, eventmask_pollfd_to_ufd(in_pollargs->events))) {
+			if (uloop_fd_add(ufd, eventmask_pollfd_to_ufd(in_pollargs->events))) {
 				return 1;
 			}
 		}
@@ -138,10 +141,10 @@ static int ws_http_cb(struct lws *wsi,
 
 		// locking the fd polling table - we won't need this (single thread)
 	case LWS_CALLBACK_LOCK_POLL:
-		lwsl_info("lock poll\n", reason);
+		lwsl_info("lock poll\n");
 		break;
 	case LWS_CALLBACK_UNLOCK_POLL:
-		lwsl_info("unlock poll\n", reason);
+		lwsl_info("unlock poll\n");
 		break;
 
 		// proto init-destroy (maybe will put init here)
@@ -165,7 +168,6 @@ static int ws_http_cb(struct lws *wsi,
 	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
 		lwsl_notice("client handshaking without subproto - denying\n");
 		return 1;
-		break;
 	case LWS_CALLBACK_ESTABLISHED:
 		lwsl_err("non-protocol client establihed!\n");
 		assert(false);

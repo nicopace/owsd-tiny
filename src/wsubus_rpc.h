@@ -17,6 +17,8 @@ struct jsonrpc_blob_req {
 };
 
 enum jsonrpc_error_code {
+	JSONRPC_ERRORCODE__OK               = 0,
+
 	JSONRPC_ERRORCODE__PARSE_ERROR      = -32700,
 	JSONRPC_ERRORCODE__INVALID_REQUEST  = -32600,
 	JSONRPC_ERRORCODE__METHOD_NOT_FOUND = -32601,

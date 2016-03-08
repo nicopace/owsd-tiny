@@ -75,7 +75,7 @@ int main(int argc, char *argv[])
 	ubus_add_uloop(ubus_ctx);
 	// dtablesize is typically 1024, so a couple of KiBs just for pointers...
 	//
-	global.num_ufds = getdtablesize();
+	global.num_ufds = (size_t)getdtablesize();
 	global.ufds = calloc(global.num_ufds, sizeof(struct uloop_fd*));
 
 
@@ -113,6 +113,8 @@ int main(int argc, char *argv[])
 	lwsl_info("running uloop...\n");
 	uloop_run();
 
+	wsubus_clean_all_subscriptions();
+
 	lws_context_destroy(lws_ctx);
 no_lws:
 
@@ -128,8 +130,6 @@ no_ubus:
 			free(origin_el);
 		}
 	}
-
-	wsubus_unsubscribe_all();
 
 	return rc;
 }

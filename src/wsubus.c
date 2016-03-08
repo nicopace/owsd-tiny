@@ -3,8 +3,10 @@
  */
 #include "common.h"
 
+#include "wsubus.h"
 #include "wsubus.impl.h"
 #include "wsubus_rpc.h"
+#include "wsubus_access_check.h"
 
 #include <json-c/json.h>
 #include <libubox/blobmsg_json.h>
@@ -24,7 +26,7 @@ struct lws_protocols wsubus_proto = {
 	//3000 // arbitrary length
 };
 
-static bool check_origin(struct origin *origin_list, char *origin, int len) {
+static bool check_origin(struct origin *origin_list, char *origin, size_t len) {
 
 	struct origin *origin_el, *origin_tmp;
 
@@ -38,8 +40,10 @@ static bool check_origin(struct origin *origin_list, char *origin, int len) {
 static int wsubus_filter(struct lws *wsi)
 {
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
+
 	int len = lws_hdr_total_length(wsi, WSI_TOKEN_ORIGIN) + 1;
-	char *origin = malloc(len);
+	assert(len > 0);
+	char *origin = malloc((size_t)len);
 
 	if (!origin) {
 		lwsl_err("error allocating origin header: %s\n", strerror(errno));
@@ -55,7 +59,7 @@ static int wsubus_filter(struct lws *wsi)
 	} else if ((e = lws_hdr_copy(wsi, origin, len, WSI_TOKEN_ORIGIN)) < 0) {
 		lwsl_err("error copying origin header %d\n", e);
 		rc = -3;
-	} else if (check_origin(prog->origin_list, origin, len)) {
+	} else if (check_origin(prog->origin_list, origin, (size_t)len)) {
 		lwsl_err("only localhost origin is allowed\n");
 		rc = -4;
 	}
@@ -76,7 +80,9 @@ static int wsubus_client_init(struct wsubus_client_session *client)
 	client->curr_msg.len = 0;
 	client->curr_msg.jtok = jtok;
 
-	memset(&client->curr_call, 0, sizeof client->curr_call);
+	INIT_LIST_HEAD(&client->rpc_call_q);
+	INIT_LIST_HEAD(&client->access_check_q);
+	INIT_LIST_HEAD(&client->write_q);
 
 	client->last_known_sid = NULL;
 
@@ -97,28 +103,48 @@ static void wsubus_client_free(struct lws *wsi, struct wsubus_client_session *cl
 
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 
-	if (client->curr_call.invoke_req) {
-		assert(client->curr_call.state == WSUBUS_CALL_STATE_CALL || client->curr_call.state == WSUBUS_CALL_STATE_CHECK);
-		ubus_abort_request(prog->ubus_ctx, client->curr_call.invoke_req);
-		free(client->curr_call.invoke_req);
-		client->curr_call.invoke_req = NULL;
-	}
-	free(client->curr_call.id);
-	client->curr_call.id = NULL;
-	free(client->curr_call.retdata);
-	client->curr_call.retdata = NULL;
-	// TODO the above and below should go in rpc-specific cleanup callbacks
 	wsubus_unsubscribe_all_by_sid(client->last_known_sid);
 
-	free(client->last_known_sid);
+	{
+		struct wsubus_client_writereq *p, *n;
+		list_for_each_entry_safe(p, n, &client->write_q, wq) {
+			lwsl_info("free write in progress %p\n", p);
+			list_del(&p->wq);
+			free(p->buf);
+			free(p);
+		}
+	}
 
+	{
+		struct wsubus_client_access_check_ctx *p, *n;
+		list_for_each_entry_safe(p, n, &client->access_check_q, acq) {
+			lwsl_info("free check in progress %p\n", p);
+			list_del(&p->acq);
+			wsubus_access_check__cancel(prog->ubus_ctx, p->req);
+			if (p->destructor)
+				p->destructor(p);
+		}
+	}
+
+
+	{
+		struct list_head *p, *n;
+		list_for_each_safe(p, n, &client->rpc_call_q) {
+			list_del(p);
+			wsubus_percall_ctx_destroy_h(p);
+			lwsl_info("free call in progress %p\n", p);
+		}
+	}
+
+	free(client->last_known_sid);
 }
 
 static void wsubus_handle_msg(struct lws *wsi,
 		struct blob_attr *blob)
 {
-	__attribute__((unused))  const struct wsubus_client_session *client = lws_wsi_user(wsi);
+	const struct wsubus_client_session *client = lws_wsi_user(wsi);
 	lwsl_info("client %u handling blobmsg buf\n", client->id);
+	(void)client;
 
 	struct jsonrpc_blob_req *jsonrpc_req = malloc(sizeof *jsonrpc_req);
 	struct ubusrpc_blob *ubusrpc_req = malloc(sizeof *ubusrpc_req);
@@ -215,7 +241,7 @@ static void wsubus_rx_blob(struct lws *wsi,
 		size_t len)
 {
 	// TODO implement
-	lwsl_err("Binary (blobmsg) not implemented\n");
+	lwsl_err("Binary (blobmsg) not implemented %p %p %zu\n", wsi, in, len);
 	// for now just do nothing with binary message
 }
 
@@ -224,12 +250,13 @@ static void wsubus_rx(struct lws *wsi,
 		size_t len)
 {
 	size_t remaining_bytes_in_frame = lws_remaining_packet_payload(wsi);
-	__attribute__((unused)) int is_final_frame = lws_is_final_fragment(wsi);
+	int is_final_frame = lws_is_final_fragment(wsi);
 
 	struct wsubus_client_session *client = lws_wsi_user(wsi);
 
 	lwsl_info("client %zu: msg final %d, len was %zu , remaining %zu\n",
 			client->id, is_final_frame, len, remaining_bytes_in_frame);
+	(void)is_final_frame;
 
 	if (len > WSUBUS_MAX_MESSAGE_LEN || remaining_bytes_in_frame > WSUBUS_MAX_MESSAGE_LEN ||
 			client->curr_msg.len + len + remaining_bytes_in_frame > WSUBUS_MAX_MESSAGE_LEN) {
@@ -247,6 +274,42 @@ static void wsubus_rx(struct lws *wsi,
 	} else {
 		wsubus_rx_json(wsi, in, len);
 	}
+}
+
+static int wsubus_tx_text(struct lws *wsi)
+{
+	struct wsubus_client_session *client = lws_wsi_user(wsi);
+
+	struct wsubus_client_writereq *w, *other;
+
+	list_for_each_entry_safe(w, other, &client->write_q, wq) {
+		do {
+			int written = lws_write(wsi, w->buf + LWS_SEND_BUFFER_PRE_PADDING + w->written, w->len - w->written, LWS_WRITE_TEXT);
+
+			if (written < 0) {
+				lwsl_err("client %d error %d in writing\n", client->id, written);
+				// TODO<lwsclose> check
+				// stop reading and writing
+				shutdown(lws_get_socket_fd(wsi), SHUT_RDWR);
+				return -1;
+			}
+
+			w->written += (size_t)written;
+		} while (w->written < w->len && !lws_partial_buffered(wsi));
+
+		if (w->written == w->len) {
+			lwsl_notice("client %d fin write %zu\n", client->id, w->len);
+			list_del(&w->wq);
+			free(w->buf);
+			free(w);
+		} else {
+			lwsl_notice("client %d partial write %zu of %zu\n", client->id, w->written, w->len);
+			lws_callback_on_writable(wsi);
+			break;
+		}
+	}
+
+	return 0;
 }
 
 static int wsubus_cb(struct lws *wsi,
@@ -273,8 +336,13 @@ static int wsubus_cb(struct lws *wsi,
 		// new client is connecting
 	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
 		lwsl_notice("JSONPROTO: client handshake...\n");
-		return wsubus_client_init(user)
-			|| wsubus_filter(wsi);
+		if (0 != wsubus_client_init(user))
+			return -1;
+		if (0 != wsubus_filter(wsi)) {
+			wsubus_client_free(wsi, user);
+			return -1;
+		}
+		return 0;
 
 	case LWS_CALLBACK_ESTABLISHED:
 		lwsl_notice("JSONPROTO: established\n");
@@ -288,7 +356,7 @@ static int wsubus_cb(struct lws *wsi,
 
 	case LWS_CALLBACK_SERVER_WRITEABLE:
 		lwsl_notice("JSONPROTO: wsi %p writable now\n", wsi);
-		break;
+		return wsubus_tx_text(wsi);
 
 		// client is leaving
 	case LWS_CALLBACK_CLOSED:

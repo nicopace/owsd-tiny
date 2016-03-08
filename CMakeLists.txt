@@ -17,6 +17,7 @@ SET(SOURCES
 	src/wsubus_rpc.c
 	src/wsubus_rpc_call.c
 	src/wsubus_rpc_sub.c
+	src/wsubus_access_check.c
 	)
 
 ADD_EXECUTABLE(owsd ${SOURCES})

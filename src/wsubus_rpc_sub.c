@@ -1,16 +1,18 @@
 /*
  * ubus over websocket - ubus event subscription
  */
+#include "wsubus_rpc_sub.h"
+
+#include "common.h"
+#include "wsubus.impl.h"
+#include "wsubus_rpc.h"
+#include "wsubus_access_check.h"
 
 #include <libubox/blobmsg_json.h>
 #include <libubox/blobmsg.h>
 #include <libubus.h>
 
 #include <libwebsockets.h>
-
-#include "common.h"
-#include "wsubus.impl.h"
-#include "wsubus_rpc.h"
 
 struct wsubus_sub_info {
 	uint32_t sub_id;
@@ -39,29 +41,30 @@ static void wsubus_unsub_elem(struct wsubus_sub_info *elem)
 	free(elem);
 }
 
-void wsubus_unsubscribe_all()
+void wsubus_clean_all_subscriptions(void)
 {
 	int count = 0;
 	struct wsubus_sub_info *elem, *tmp;
 
 	list_for_each_entry_safe(elem, tmp, &list_of_subscriptions.list, list) {
 		lwsl_warn("cleanall %s\n", elem->sid);
-		wsubus_unsub_elem(elem);
-		elem = NULL;
+		free(elem->src_blob);
+		list_del(&elem->list);
+		free(elem);
 		++count;
 	}
 	if (count)
 		lwsl_warn("%d subscriptions cleaned at exit\n", count);
 }
 
-int wsubus_unsubscribe_by_id(uint32_t id)
+int wsubus_unsubscribe_by_sid_id(const char *sid, uint32_t id)
 {
 	struct wsubus_sub_info *elem, *tmp;
 	int ret = 1;
 
 	list_for_each_entry_safe(elem, tmp, &list_of_subscriptions.list, list) {
 		// check id
-		if (elem->sub_id == id) {
+		if (elem->sub_id == id && !strcmp(elem->sid, sid)) {
 			wsubus_unsub_elem(elem);
 			ret = 0;
 		}
@@ -119,7 +122,7 @@ int ubusrpc_blob_sub_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob)
 	// TODO<blob> blob_(data|len) vs blobmsg_xxx usage, what is the difference
 	// and which is right here? (uhttpd ubus uses blobmsg_data for blob which
 	// comes from another blob's table... here and so do we)
-	blobmsg_parse_array(rpc_ubus_param_policy, __RPC_U_MAX, tb, blobmsg_data(dup_blob), blobmsg_len(dup_blob));
+	blobmsg_parse_array(rpc_ubus_param_policy, __RPC_U_MAX, tb, blobmsg_data(dup_blob), (unsigned)blobmsg_len(dup_blob));
 
 	if (!tb[0])
 		return -1;
@@ -128,7 +131,7 @@ int ubusrpc_blob_sub_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob)
 
 	ubusrpc->sub.src_blob = dup_blob;
 	ubusrpc->sub.sid = tb[0] ? blobmsg_get_string(tb[0]) : UBUS_DEFAULT_SID;
-	ubusrpc->sub.object = blobmsg_get_string(tb[1]);
+	ubusrpc->sub.pattern = blobmsg_get_string(tb[1]);
 
 	return 0;
 }
@@ -144,7 +147,7 @@ int ubusrpc_blob_sub_list_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *
 	// TODO<blob> blob_(data|len) vs blobmsg_xxx usage, what is the difference
 	// and which is right here? (uhttpd ubus uses blobmsg_data for blob which
 	// comes from another blob's table... here and so do we)
-	blobmsg_parse_array(rpc_ubus_param_policy, __RPC_U_MAX, tb, blobmsg_data(blob), blobmsg_len(blob));
+	blobmsg_parse_array(rpc_ubus_param_policy, __RPC_U_MAX, tb, blobmsg_data(blob), (unsigned)blobmsg_len(blob));
 
 	if (!tb[0])
 		return 2;
@@ -167,7 +170,7 @@ int ubusrpc_blob_unsub_by_id_parse(struct ubusrpc_blob *ubusrpc, struct blob_att
 	// TODO<blob> blob_(data|len) vs blobmsg_xxx usage, what is the difference
 	// and which is right here? (uhttpd ubus uses blobmsg_data for blob which
 	// comes from another blob's table... here and so do we)
-	blobmsg_parse_array(rpc_ubus_param_policy, __RPC_U_MAX, tb, blobmsg_data(blob), blobmsg_len(blob));
+	blobmsg_parse_array(rpc_ubus_param_policy, __RPC_U_MAX, tb, blobmsg_data(blob), (unsigned)blobmsg_len(blob));
 
 	if (!tb[0])
 		return 2;
@@ -184,11 +187,6 @@ int ubusrpc_blob_unsub_by_id_parse(struct ubusrpc_blob *ubusrpc, struct blob_att
 
 int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
 {
-	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
-	struct wsubus_client_session *client = lws_wsi_user(wsi);
-
-	static uint32_t subscribe_id = 1;
-
 	int ret;
 
 	struct wsubus_sub_info *subinfo = malloc(sizeof *subinfo);
@@ -198,28 +196,33 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blo
 		goto out;
 	}
 
+	struct wsubus_client_session *client = lws_wsi_user(wsi);
+	// TODO check_and_update_sid should go in one common place
 	if (wsubus_check_and_update_sid(client, ubusrpc->sub.sid) != 0) {
 		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->sub.sid, client->last_known_sid);
 		ret = UBUS_STATUS_NOT_SUPPORTED;
+		free(subinfo);
 		goto out;
 	}
 
 	subinfo->ubus_handler = (struct ubus_event_handler){};
 
-	ret = ubus_register_event_handler(prog->ubus_ctx, &subinfo->ubus_handler, ubusrpc->sub.object);
+	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
+	ret = ubus_register_event_handler(prog->ubus_ctx, &subinfo->ubus_handler, ubusrpc->sub.pattern);
 
 	if (ret) {
 		lwsl_err("ubus reg evh error %s\n", ubus_strerror(ret));
-		// free memory
+		free(subinfo);
 		goto out;
 	}
 
+	static uint32_t subscribe_id = 1;
 	subinfo->ubus_handler.cb = wsubus_sub_cb;
 
 	subinfo->sub_id = subscribe_id++;
 	subinfo->src_blob = ubusrpc->sub.src_blob;
 	subinfo->sid = ubusrpc->sub.sid;
-	subinfo->pattern = ubusrpc->sub.object;
+	subinfo->pattern = ubusrpc->sub.pattern;
 	// subinfo->ubus_handler inited above in ubus_register_...
 	subinfo->wsi = wsi;
 
@@ -253,36 +256,41 @@ static void blobmsg_add_sub_info(struct blob_buf *buf, const char *name, const s
 
 int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
 {
-	struct blob_buf b = {};
-	blob_buf_init(&b, 0);
-	blobmsg_add_string(&b, "jsonrpc", "2.0");
-	blobmsg_add_blob(&b, id);
+	char *response_str;
+	int ret = 0;
 
-#if 0 // TODO
 	struct wsubus_client_session *client = lws_wsi_user(wsi);
-
+	// TODO check_and_update_sid should go in one common place
 	if (wsubus_check_and_update_sid(client, ubusrpc->sub.sid) != 0) {
 		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->sub.sid, client->last_known_sid);
 		ret = UBUS_STATUS_NOT_SUPPORTED;
 		goto out;
 	}
-#endif
 
-	void *array_ticket = blobmsg_open_array(&b, "result");
+	struct blob_buf sub_list_blob = {};
+	blob_buf_init(&sub_list_blob, 0);
+
+	void* array_ticket = blobmsg_open_array(&sub_list_blob, "");
 	struct wsubus_sub_info *elem, *tmp;
 	list_for_each_entry_safe(elem, tmp, &list_of_subscriptions.list, list) {
-		blobmsg_add_sub_info(&b, "", elem);
+		if (!strcmp(elem->sid, ubusrpc->sub.sid))
+			blobmsg_add_sub_info(&sub_list_blob, "", elem);
 	}
-	blobmsg_close_array(&b, array_ticket);
+	blobmsg_close_array(&sub_list_blob, array_ticket);
 
-	char *json_data = blobmsg_format_json(b.head, true);
+out:
+	if (ret) {
+		response_str = jsonrpc_response_from_blob(id, ret, NULL);
+	} else {
+		// using blobmsg_data here to pass only array part of blobmsg
+		response_str = jsonrpc_response_from_blob(id, 0, blobmsg_data(sub_list_blob.head));
+		blob_buf_free(&sub_list_blob);
+	}
 
-	blob_buf_free(&b);
-
-	wsubus_write_response_str(wsi, json_data);
+	wsubus_write_response_str(wsi, response_str);
 
 	// free memory
-	free(json_data);
+	free(response_str);
 	free(ubusrpc->sub.src_blob);
 	free(ubusrpc);
 	return 0;
@@ -294,15 +302,15 @@ int ubusrpc_handle_unsub_by_id(struct lws *wsi, struct ubusrpc_blob *ubusrpc, st
 	int ret = 0;
 
 	struct wsubus_client_session *client = lws_wsi_user(wsi);
-
-	if (wsubus_check_and_update_sid(client, ubusrpc->sub.sid) != 0) {
-		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->sub.sid, client->last_known_sid);
+	// TODO check_and_update_sid should go in one common place
+	if (wsubus_check_and_update_sid(client, ubusrpc->unsub_by_id.sid) != 0) {
+		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->unsub_by_id.sid, client->last_known_sid);
 		ret = UBUS_STATUS_NOT_SUPPORTED;
 		goto out;
 	}
 
 	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->unsub_by_id.id, ret);
-	ret = wsubus_unsubscribe_by_id(ubusrpc->unsub_by_id.id);
+	ret = wsubus_unsubscribe_by_sid_id(ubusrpc->unsub_by_id.sid, ubusrpc->unsub_by_id.id);
 
 	if (ret != 0)
 		ret = UBUS_STATUS_NOT_FOUND;
@@ -316,16 +324,63 @@ out:
 	return 0;
 }
 
-static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *ev, const char *type, struct blob_attr *msg)
+int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
 {
-	struct wsubus_sub_info *sub = container_of(ev, struct wsubus_sub_info, ubus_handler);
+	char *response;
+	int ret = 0;
 
-	__attribute__((unused)) int mtype = blobmsg_type(msg);
-	lwsl_debug("sub cb called, ev obj name %s, type %s, blob of len %lu thpe %s\n",
-			ev->obj.name, type, blobmsg_len(msg),
-			mtype == BLOBMSG_TYPE_STRING ? "\"\"" :
-			mtype == BLOBMSG_TYPE_TABLE ? "{}" :
-			mtype == BLOBMSG_TYPE_ARRAY ? "[]" : "<>");
+	struct wsubus_client_session *client = lws_wsi_user(wsi);
+	// TODO check_and_update_sid should go in one common place
+	if (wsubus_check_and_update_sid(client, ubusrpc->sub.sid) != 0) {
+		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->sub.sid, client->last_known_sid);
+		ret = UBUS_STATUS_NOT_SUPPORTED;
+		goto out;
+	}
+
+	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->unsub_by_id.id, ret);
+	ret = wsubus_unsubscribe_by_sid_pattern(ubusrpc->sub.sid, ubusrpc->sub.pattern);
+
+	if (ret != 0)
+		ret = UBUS_STATUS_NOT_FOUND;
+
+out:
+	response = jsonrpc_response_from_blob(id, ret, NULL);
+	wsubus_write_response_str(wsi, response);
+	free(response);
+	free(ubusrpc->sub.src_blob);
+	free(ubusrpc);
+
+	return 0;
+}
+
+struct wsubus_ev_notif {
+	char *type;
+	struct blob_attr *msg;
+	struct wsubus_sub_info *sub;
+	struct wsubus_client_access_check_ctx cr;
+};
+
+static void wsubus_ev_destroy_ctx(struct wsubus_ev_notif *t)
+{
+	free(t->type);
+	free(t->msg);
+	free(t);
+}
+
+static void wsubus_ev_check__destroy(struct wsubus_client_access_check_ctx *cr)
+{
+	wsubus_ev_destroy_ctx(container_of(cr, struct wsubus_ev_notif, cr));
+};
+
+void wsubus_ev_check_cb(struct wsubus_access_check_req *req, void *ctx, bool access)
+{
+	struct wsubus_ev_notif *t = ctx;
+
+	lwsl_debug("access check for event gave %d\n", access);
+
+	if (!access) {
+		goto out;
+	}
 
 	struct blob_buf resp_buf = {};
 	blob_buf_init(&resp_buf, 0);
@@ -333,14 +388,45 @@ static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *e
 	blobmsg_add_string(&resp_buf, "method", "event");
 
 	void *tkt = blobmsg_open_table(&resp_buf, "params");
-	blobmsg_add_string(&resp_buf, "type", type);
-	blobmsg_add_field(&resp_buf, BLOBMSG_TYPE_TABLE, "data", blobmsg_data(msg), blobmsg_len(msg));
-	blobmsg_add_sub_info(&resp_buf, "subscription", sub);
+	blobmsg_add_string(&resp_buf, "type", t->type);
+	blobmsg_add_field(&resp_buf, BLOBMSG_TYPE_TABLE, "data", blobmsg_data(t->msg), blobmsg_len(t->msg));
+	blobmsg_add_sub_info(&resp_buf, "subscription", t->sub);
 	blobmsg_close_table(&resp_buf, tkt);
 
 	char *response = blobmsg_format_json(resp_buf.head, true);
 	blob_buf_free(&resp_buf);
 
-	wsubus_write_response_str(sub->wsi, response);
+	wsubus_write_response_str(t->sub->wsi, response);
 	free(response);
+
+out:
+	list_del(&t->cr.acq);
+	wsubus_ev_destroy_ctx(t);
+}
+
+static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *ev, const char *type, struct blob_attr *msg)
+{
+	__attribute__((unused)) int mtype = blobmsg_type(msg);
+	lwsl_debug("sub cb called, ev obj name %s, type %s, blob of len %lu thpe %s\n",
+			ev->obj.name, type, blobmsg_len(msg),
+			mtype == BLOBMSG_TYPE_STRING ? "\"\"" :
+			mtype == BLOBMSG_TYPE_TABLE ? "{}" :
+			mtype == BLOBMSG_TYPE_ARRAY ? "[]" : "<>");
+
+	struct wsubus_sub_info *sub = container_of(ev, struct wsubus_sub_info, ubus_handler);
+	struct wsubus_client_session *client = lws_wsi_user(sub->wsi);
+
+	struct wsubus_ev_notif *t = malloc(sizeof *t);
+	t->type = strdup(type);
+	t->msg = blob_memdup(msg);
+	t->sub = sub;
+	t->cr.req = wsubus_access_check__event(ctx, type, client->last_known_sid, t, wsubus_ev_check_cb);
+
+	if (!t->cr.req) {
+		wsubus_ev_destroy_ctx(t);
+		return;
+	}
+
+	t->cr.destructor = wsubus_ev_check__destroy;
+	list_add_tail(&t->cr.acq, &client->access_check_q);
 }
