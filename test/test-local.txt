@@ -1,0 +1,89 @@
+# session list
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "session", "list", {} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"ubus_rpc_session":"SESSION_ID","timeout":300,"expires":300,"acls":{"
+
+# touch /tmp/test.txt
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"touch","params":["/tmp/test.txt"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0}]}
+
+# cat /tmp/test.txt
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "read", {"path":"/tmp/test.txt"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[5]}
+
+# echo "new line!" >> /tmp/test.txt
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "write", {"path":"/tmp/test.txt","data":"new line!"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
+# cat /tmp/test.txt
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "read", {"path":"/tmp/test.txt"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"data":"new line!"}]}
+
+# md5sum /tmp/test.txt
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "md5", {"path":"/tmp/test.txt"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"md5":"06846e35c1c3a0c25c9867eaf644d099"}]}
+
+# rm /tmp/test.txt
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/rm","params":["/tmp/test.txt"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0}]}
+
+# touch /tmp/script.sh
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/touch","params":["/tmp/scripts.sh"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0}]}
+
+# echo "ifconfig -a lo | awk '/inet / {print $2, $4}' | sed 's/\addr:" >> /tmp/scripts.sh but with ip a
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "write", {"path":"/tmp/scripts.sh","data":"#!/bin/sh\nip a show dev ${1} | awk '/inet / {print $2}'"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
+# chmod u+x /tmp/scripts.sh
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/chmod","params":["u+x","/tmp/scripts.sh"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0}]}
+
+# sh /tmp/scripts.sh
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"sh","params":["/tmp/scripts.sh","lo"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"127.0.0.1\/8\n"}]}
+
+# rm /tmp/scripts.sh
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/rm","params":["/tmp/scripts.sh"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0}]}
+
+# subscribe empty at start
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"subscribe-list", "params": [ "SESSION_ID" ]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[]]}
+
+# subscribe to event
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"subscribe", "params": [ "SESSION_ID", "bla"]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
+# verify it in list
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"subscribe-list", "params": [ "SESSION_ID" ]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[{"pattern":"bla","id":1,"ubus_rpc_session":"SESSION_ID"}]]}
+
+# unsubscrube by name
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"unsubscribe", "params": [ "SESSION_ID", "bla"]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
+# subscribe to pattern
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"subscribe", "params": [ "SESSION_ID", "foo.*"]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
+# verify it in list
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"subscribe-list", "params": [ "SESSION_ID" ]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[{"pattern":"foo.*","id":2,"ubus_rpc_session":"SESSION_ID"}]]}
+
+#unsubscribe by id
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"unsubscribe-id", "params": [ "SESSION_ID", 2]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
+# big output
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"sh", "params": ["-c", "dd if=/dev/urandom bs=1024 count=20 | hexdump -C"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout"
+
+
+# verify empty
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"subscribe-list", "params": [ "SESSION_ID" ]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[]]}
+
+# destroy this session id
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "session","destroy",{"session": "SESSION_ID"}]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
