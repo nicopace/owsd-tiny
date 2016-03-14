@@ -139,6 +139,26 @@
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"subscribe-list", "params": [ "SESSION_ID" ]}
 {"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[]]}
 
+# subscribe to pattern
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"subscribe", "params": [ "SESSION_ID", "f*"]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
+# prepare script which fires events "foo" and "fake"
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "write", {"path":"/tmp/scripts.sh","data":"#!/bin/sh\n( ubus send test123; sleep 1; ubus send fake '{\"a\":0}'; ubus send foo '{\"one\":\"two\"}'; ) &\n"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
+
+#start expecting foo object
++
+{"jsonrpc":"2.0","method":"event","params":{"type":"foo","data":{"one":"two"},"subscription":{"pattern":"f*","id"
+
+# sh /tmp/scripts.sh
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"sh","params":["/tmp/scripts.sh","lo"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[7]}
+
+# rm /tmp/scripts.sh
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/rm","params":["/tmp/scripts.sh"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0}]}
+
 # destroy this session id
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "session","destroy",{"session": "SESSION_ID"}]}
 {"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
