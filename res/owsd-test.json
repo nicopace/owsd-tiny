@@ -1,0 +1,25 @@
+{
+	"test-calls": {
+		"description": "ACL to allow ubus calls for owsd test",
+		"read": {
+			"ubus" : {
+				"session": ["access", "login", "list", "destroy"],
+				"file":    ["read", "write", "md5", "exec"],
+				"system":  ["info", "board"],
+				"iwinfo":  ["devices"],
+				"uci":     ["get"]
+			},
+			"uci" : [ "network" ]
+		}
+	},
+	"test-events": {
+		"description": "ACL to allow some events for owsd test",
+		"read": {
+			"owsd": [
+				"foo",
+				"bar.*"
+			]
+		}
+	}
+}
+
