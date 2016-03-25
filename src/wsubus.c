@@ -30,10 +30,12 @@
 #include <errno.h>
 #include <assert.h>
 
-static callback_function wsubus_cb;
+#define WSUBUS_PROTO_NAME "ubus-json"
+
+static lws_callback_function wsubus_cb;
 
 struct lws_protocols wsubus_proto = {
-	"ubus-json",
+	WSUBUS_PROTO_NAME,
 	wsubus_cb,
 	sizeof (struct wsubus_client_session),
 	//3000 // arbitrary length
@@ -57,6 +59,7 @@ static int wsubus_filter(struct lws *wsi)
 	int len = lws_hdr_total_length(wsi, WSI_TOKEN_ORIGIN) + 1;
 	assert(len > 0);
 	char *origin = malloc((size_t)len);
+	origin[len-1] = '\0';
 
 	if (!origin) {
 		lwsl_err("error allocating origin header: %s\n", strerror(errno));
@@ -331,24 +334,10 @@ static int wsubus_cb(struct lws *wsi,
 		void *in,
 		size_t len)
 {
-	//lwsl_debug("UBUS-JSON cb called with reason %d, wsi %p, user %p, in %p len %lu\n",
-			//reason, wsi, user, in, len);
-
-	//struct prog_context *prog = lws_context_user(lws_ctx);
-
-	// all enum reasons listed for now. Will remove unneeded when complete.
 	switch (reason) {
-		// proto init-destroy (maybe will put init here)
-	case LWS_CALLBACK_PROTOCOL_INIT:
-		lwsl_notice("JSONPROTO: create proto\n");
-		break;
-	case LWS_CALLBACK_PROTOCOL_DESTROY:
-		lwsl_notice("JSONPROTO: destroy proto\n");
-		break;
-
 		// new client is connecting
 	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
-		lwsl_notice("JSONPROTO: client handshake...\n");
+		lwsl_notice(WSUBUS_PROTO_NAME ": client handshake...\n");
 		if (0 != wsubus_client_init(user))
 			return -1;
 		if (0 != wsubus_filter(wsi)) {
@@ -358,51 +347,61 @@ static int wsubus_cb(struct lws *wsi,
 		return 0;
 
 	case LWS_CALLBACK_ESTABLISHED:
-		lwsl_notice("JSONPROTO: established\n");
+		lwsl_notice(WSUBUS_PROTO_NAME ": established\n");
 		break;
 
 		// read/write
 	case LWS_CALLBACK_RECEIVE:
-		lwsl_notice("JSONPROTO: protocol data received, len %lu\n", len);
+		lwsl_notice(WSUBUS_PROTO_NAME ": protocol data received, len %lu\n", len);
 		wsubus_rx(wsi, (char*)in, len);
 		break;
 
 	case LWS_CALLBACK_SERVER_WRITEABLE:
-		lwsl_notice("JSONPROTO: wsi %p writable now\n", wsi);
+		lwsl_notice(WSUBUS_PROTO_NAME ": wsi %p writable now\n", wsi);
 		return wsubus_tx_text(wsi);
 
 		// client is leaving
 	case LWS_CALLBACK_CLOSED:
-		lwsl_notice("JSONPROTO: closed\n");
+		lwsl_notice(WSUBUS_PROTO_NAME ": closed\n");
 		wsubus_client_free(wsi, user);
 		break;
 
+	case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE:
+		lwsl_notice(WSUBUS_PROTO_NAME ": peer closing\n");
+		return 0;
+
 		// debug for callbacks that should never happen
 #ifndef NO_DEBUG_CALLBACKS
-		// misc. Will we ever need this?
-	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS:
-	case LWS_CALLBACK_OPENSSL_PERFORM_CLIENT_CERT_VERIFICATION:
-	case LWS_CALLBACK_OPENSSL_CONTEXT_REQUIRES_PRIVATE_KEY:
-	case LWS_CALLBACK_CONFIRM_EXTENSION_OKAY:
-	case LWS_CALLBACK_GET_THREAD_ID:
-	case LWS_CALLBACK_RECEIVE_PONG:
-	case LWS_CALLBACK_USER:
-		lwsl_err("JSONPROTO: unexpected misc callback reason %d\n", reason);
-		assert (reason != reason);
+		// callback just for debug
+
+		// proto init-destroy (maybe can put init here)
+	case LWS_CALLBACK_PROTOCOL_INIT:
+		lwsl_info(WSUBUS_PROTO_NAME ": create proto\n");
 		break;
-	case LWS_CALLBACK_FILTER_NETWORK_CONNECTION:
-	case LWS_CALLBACK_WSI_CREATE:
-	case LWS_CALLBACK_SERVER_NEW_CLIENT_INSTANTIATED:
-	case LWS_CALLBACK_WSI_DESTROY:
-		lwsl_err("JSONPROTO: proto received net/WSI callback\n");
+	case LWS_CALLBACK_PROTOCOL_DESTROY:
+		lwsl_info(WSUBUS_PROTO_NAME ": destroy proto\n");
+		break;
+
+	case LWS_CALLBACK_RECEIVE_PONG:
+		break;
+
+		// callbacks that shouldn't happen
+
+		// misc. Will we ever need this?
+	case LWS_CALLBACK_CONFIRM_EXTENSION_OKAY:
+	case LWS_CALLBACK_WS_EXT_DEFAULTS:
+	case LWS_CALLBACK_GET_THREAD_ID:
+	case LWS_CALLBACK_USER:
+		lwsl_err(WSUBUS_PROTO_NAME ": unexpected misc callback reason %d\n", reason);
 		assert(reason != reason);
 		break;
+		// callbacks for protocols[0]
 	case LWS_CALLBACK_LOCK_POLL:
 	case LWS_CALLBACK_UNLOCK_POLL:
 	case LWS_CALLBACK_ADD_POLL_FD:
 	case LWS_CALLBACK_DEL_POLL_FD:
 	case LWS_CALLBACK_CHANGE_MODE_POLL_FD:
-		lwsl_err("JSONPROTO: proto received fd callback\n");
+		lwsl_err(WSUBUS_PROTO_NAME ": proto received fd callback\n");
 		assert(reason != reason);
 		break;
 	case LWS_CALLBACK_FILTER_HTTP_CONNECTION:
@@ -412,9 +411,23 @@ static int wsubus_cb(struct lws *wsi,
 	case LWS_CALLBACK_HTTP_FILE_COMPLETION:
 	case LWS_CALLBACK_HTTP_WRITEABLE:
 	case LWS_CALLBACK_CLOSED_HTTP:
-		lwsl_err("JSONPROTO: proto received http callback %d\n", reason);
+		lwsl_err(WSUBUS_PROTO_NAME ": proto received http callback %d\n", reason);
 		assert(reason != reason);
 		break;
+	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS:
+	case LWS_CALLBACK_OPENSSL_PERFORM_CLIENT_CERT_VERIFICATION:
+	case LWS_CALLBACK_OPENSSL_CONTEXT_REQUIRES_PRIVATE_KEY:
+		lwsl_err(WSUBUS_PROTO_NAME ": proto received http callback %d\n", reason);
+		assert(reason != reason);
+		break;
+	case LWS_CALLBACK_FILTER_NETWORK_CONNECTION:
+	case LWS_CALLBACK_WSI_CREATE:
+	case LWS_CALLBACK_SERVER_NEW_CLIENT_INSTANTIATED:
+	case LWS_CALLBACK_WSI_DESTROY:
+		lwsl_err(WSUBUS_PROTO_NAME ": proto received net/WSI callback\n");
+		assert(reason != reason);
+		break;
+		// we are server, we don't need to handle these...
 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
 	case LWS_CALLBACK_CLIENT_FILTER_PRE_ESTABLISH:
 	case LWS_CALLBACK_CLIENT_ESTABLISHED:
@@ -424,11 +437,11 @@ static int wsubus_cb(struct lws *wsi,
 	case LWS_CALLBACK_CLIENT_CONFIRM_EXTENSION_SUPPORTED:
 	case LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER:
 	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_CLIENT_VERIFY_CERTS:
-		lwsl_err("JSONPROTO: proto received client callback %d\n", reason);
+		lwsl_err(WSUBUS_PROTO_NAME ": proto received client callback %d\n", reason);
 		assert(reason != reason);
 		break;
-#endif
 
+#endif
 	}
 	return 0;
 }

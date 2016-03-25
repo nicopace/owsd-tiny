@@ -149,7 +149,7 @@ int main(int argc, char *argv[])
 	struct lws_context_creation_info lws_info = {};
 
 	lws_info.port = port;
-	lws_info.extensions = lws_get_internal_extensions();
+	lws_info.extensions = NULL;
 	lws_info.ssl_cert_filepath = ssl_cert_filepath;
 	lws_info.ssl_private_key_filepath = ssl_private_key_filepath;
 	lws_info.uid = -1;

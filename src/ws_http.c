@@ -22,14 +22,11 @@
 
 #include <assert.h>
 
-static callback_function ws_http_cb;
+static lws_callback_function ws_http_cb;
 
 struct lws_protocols ws_http_proto = {
-	/*  we don't want any subprotocol name to match this, and it won't
-	 *  match since will split on the ',' character.
-	 *
-	 *  TODO maybe NULL is correct here, but see lws-issues.txt */
-	" , ", 
+	/*  we don't want any subprotocol name to match this, and it won't */
+	NULL,
 	ws_http_cb,
 	// following other fields we don't use:
 	// - per-session data size
@@ -55,16 +52,27 @@ eventmask_pollfd_to_ufd(int pollfd_events)
 		(pollfd_events & POLLOUT ? ULOOP_WRITE : 0);
 }
 
-static void ufd_service_cb (struct uloop_fd *ufd, unsigned int events)
+static void ufd_service_cb (struct uloop_fd *ufd, unsigned int revents)
 {
 	extern struct prog_context global;
 
-	lwsl_debug("servicing fd %d with ufd eventmask %x %s%s\n", ufd->fd, events,
-			events & ULOOP_READ ? "R" : "", events & ULOOP_WRITE ? "W" : "");
+	lwsl_debug("servicing fd %d with ufd eventmask %x %s%s\n", ufd->fd, revents,
+			revents & ULOOP_READ ? "R" : "", revents & ULOOP_WRITE ? "W" : "");
 	struct pollfd pfd;
 
-	pfd.revents = eventmask_ufd_to_pollfd(events);
+	pfd.events = eventmask_ufd_to_pollfd(ufd->flags);
+	pfd.revents = eventmask_ufd_to_pollfd(revents);
 	pfd.fd = ufd->fd;
+
+	if (ufd->eof) {
+		pfd.revents |= POLLHUP;
+		lwsl_debug("ufd HUP on %d\n", ufd->fd);
+	}
+	if (ufd->error) {
+		pfd.revents |= POLLERR;
+		lwsl_debug("ufd ERR on %d\n", ufd->fd);
+	}
+
 	lws_service_fd(global.lws_ctx, &pfd);
 }
 
@@ -74,15 +82,10 @@ static int ws_http_cb(struct lws *wsi,
 		void *in,
 		size_t len)
 {
-
-	//lwsl_debug("http cb called with reason %d, wsi %p, user %p, in %p len %lu\n",
-			//reason, wsi, user, in, len);
-
 	struct lws_pollargs *in_pollargs = (struct lws_pollargs*)in;
 
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 
-	// all enum reasons listed for now. Will remove unneeded when complete.
 	switch (reason) {
 		// fd handling
 	case LWS_CALLBACK_ADD_POLL_FD: {
@@ -152,55 +155,14 @@ static int ws_http_cb(struct lws *wsi,
 		return 0;
 	}
 
-		// locking the fd polling table - we won't need this (single thread)
-	case LWS_CALLBACK_LOCK_POLL:
-		lwsl_info("lock poll\n");
-		break;
-	case LWS_CALLBACK_UNLOCK_POLL:
-		lwsl_info("unlock poll\n");
-		break;
-
-		// proto init-destroy (maybe will put init here)
-	case LWS_CALLBACK_PROTOCOL_INIT:
-		lwsl_notice("create proto\n");
-		break;
-	case LWS_CALLBACK_PROTOCOL_DESTROY:
-		lwsl_notice("destroy proto\n");
-		break;
-
-		// new client is connecting
-	case LWS_CALLBACK_FILTER_NETWORK_CONNECTION:
-		lwsl_notice("network client connected\n");
-		break;
-	case LWS_CALLBACK_WSI_CREATE:
-		lwsl_notice("created wsi\n");
-		break;
-	case LWS_CALLBACK_SERVER_NEW_CLIENT_INSTANTIATED:
-		lwsl_notice("instantiated client\n");
-		break;
+		// deny websocket clients with default (no) subprotocol
 	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
 		lwsl_notice("client handshaking without subproto - denying\n");
 		return 1;
-	case LWS_CALLBACK_ESTABLISHED:
-		lwsl_err("non-protocol client establihed!\n");
-		assert(false);
-		break;
 
-		// read/write
-	case LWS_CALLBACK_RECEIVE:
-		lwsl_notice("protocol data received, len %lu\n", len);
-		break;
-	case LWS_CALLBACK_SERVER_WRITEABLE:
-		lwsl_notice("wsi %p writable now\n", wsi);
-		break;
-
-		// client is leaving
-	case LWS_CALLBACK_CLOSED:
-		lwsl_notice("closed\n");
-		break;
-	case LWS_CALLBACK_WSI_DESTROY:
-		lwsl_notice("destroyed wsi\n");
-		break;
+		// temporary - libwebsockets 1.7+ calls this always... TODO lwsbug
+	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS:
+		return 0;
 
 		// maybe needed if we will serve html
 	case LWS_CALLBACK_FILTER_HTTP_CONNECTION:
@@ -215,15 +177,62 @@ static int ws_http_cb(struct lws *wsi,
 		return 1;
 
 #ifndef NO_DEBUG_CALLBACKS
-		// misc. Will we ever need these?
-	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS:
-	case LWS_CALLBACK_OPENSSL_PERFORM_CLIENT_CERT_VERIFICATION:
-	case LWS_CALLBACK_OPENSSL_CONTEXT_REQUIRES_PRIVATE_KEY:
-	case LWS_CALLBACK_CONFIRM_EXTENSION_OKAY:
-	case LWS_CALLBACK_GET_THREAD_ID:
+		// callbacks just for debug
+
+		// locking the fd polling table - we won't need this (single thread)
+	case LWS_CALLBACK_LOCK_POLL:
+		lwsl_info("lock poll\n");
+		break;
+	case LWS_CALLBACK_UNLOCK_POLL:
+		lwsl_info("unlock poll\n");
+		break;
+		// proto init-destroy (maybe can put init here)
+	case LWS_CALLBACK_PROTOCOL_INIT:
+		lwsl_info("create proto\n");
+		break;
+	case LWS_CALLBACK_PROTOCOL_DESTROY:
+		lwsl_info("destroy proto\n");
+		break;
+		// new client is connecting
+	case LWS_CALLBACK_FILTER_NETWORK_CONNECTION:
+		lwsl_info("network client connected\n");
+		break;
+	case LWS_CALLBACK_WSI_CREATE:
+		lwsl_info("created wsi\n");
+		break;
+	case LWS_CALLBACK_SERVER_NEW_CLIENT_INSTANTIATED:
+		lwsl_info("instantiated client\n");
+		break;
+	case LWS_CALLBACK_WSI_DESTROY:
+		lwsl_info("destroyed wsi\n");
+		break;
+
 	case LWS_CALLBACK_RECEIVE_PONG:
+		break;
+
+		// callbacks that shouldn't happen
+
+		// misc
+	case LWS_CALLBACK_CONFIRM_EXTENSION_OKAY:
+	case LWS_CALLBACK_WS_EXT_DEFAULTS:
+	case LWS_CALLBACK_GET_THREAD_ID:
 	case LWS_CALLBACK_USER:
 		lwsl_err("unexpected misc callback reason %d\n", reason);
+		assert(reason != reason);
+		break;
+		// won't happen since we deny in FILTER_PROTOCOL_CONNECTION
+	case LWS_CALLBACK_ESTABLISHED:
+	case LWS_CALLBACK_RECEIVE:
+	case LWS_CALLBACK_SERVER_WRITEABLE:
+	case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE:
+	case LWS_CALLBACK_CLOSED:
+		lwsl_err("unexpected protocol callback happened");
+		assert(reason != reason);
+		break;
+		// SSL callbacks that we don't expect
+	case LWS_CALLBACK_OPENSSL_PERFORM_CLIENT_CERT_VERIFICATION:
+	case LWS_CALLBACK_OPENSSL_CONTEXT_REQUIRES_PRIVATE_KEY:
+		lwsl_warn("unexpected ssl callback %d\n", reason);
 		assert(reason != reason);
 		break;
 		// we are server, we don't need to handle these...
@@ -239,8 +248,8 @@ static int ws_http_cb(struct lws *wsi,
 		lwsl_err("Client callback reason received: %d\n", reason);
 		assert(reason != reason);
 		break;
-#endif
 
+#endif
 	}
 
 	return 0;
