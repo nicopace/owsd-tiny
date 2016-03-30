@@ -56,7 +56,7 @@
 
 # verify it in list
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"subscribe-list", "params": [ "SESSION_ID" ]}
-{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[{"pattern":"bla","id":1,"ubus_rpc_session":"SESSION_ID"}]]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[{"pattern":"bla","id":1}]]}
 
 # unsubscrube by name
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"unsubscribe", "params": [ "SESSION_ID", "bla"]}
@@ -68,7 +68,7 @@
 
 # verify it in list
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"subscribe-list", "params": [ "SESSION_ID" ]}
-{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[{"pattern":"foo.*","id":2,"ubus_rpc_session":"SESSION_ID"}]]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[{"pattern":"foo.*","id":2}]]}
 
 #unsubscribe by id
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"unsubscribe-id", "params": [ "SESSION_ID", 2]}

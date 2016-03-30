@@ -119,7 +119,7 @@ static void wsubus_client_free(struct lws *wsi, struct wsubus_client_session *cl
 
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 
-	wsubus_unsubscribe_all_by_sid(client->last_known_sid);
+	wsubus_unsubscribe_all_by_wsi(wsi);
 
 	{
 		struct wsubus_client_writereq *p, *n;

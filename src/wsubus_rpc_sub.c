@@ -27,13 +27,14 @@
 
 #include <libwebsockets.h>
 
+#include <assert.h>
+
 struct wsubus_sub_info {
 	uint32_t sub_id;
 
 	struct list_head list;
 
 	struct blob_attr *src_blob;
-	const char *sid;
 	const char *pattern;
 
 	struct ubus_event_handler ubus_handler;
@@ -60,7 +61,6 @@ void wsubus_clean_all_subscriptions(void)
 	struct wsubus_sub_info *elem, *tmp;
 
 	list_for_each_entry_safe(elem, tmp, &list_of_subscriptions.list, list) {
-		lwsl_warn("cleanall %s\n", elem->sid);
 		free(elem->src_blob);
 		list_del(&elem->list);
 		free(elem);
@@ -70,14 +70,14 @@ void wsubus_clean_all_subscriptions(void)
 		lwsl_warn("%d subscriptions cleaned at exit\n", count);
 }
 
-int wsubus_unsubscribe_by_sid_id(const char *sid, uint32_t id)
+int wsubus_unsubscribe_by_wsi_and_id(struct lws *wsi, uint32_t id)
 {
 	struct wsubus_sub_info *elem, *tmp;
 	int ret = 1;
 
 	list_for_each_entry_safe(elem, tmp, &list_of_subscriptions.list, list) {
 		// check id
-		if (elem->sub_id == id && !strcmp(elem->sid, sid)) {
+		if (elem->wsi == wsi && elem->sub_id == id) {
 			wsubus_unsub_elem(elem);
 			ret = 0;
 		}
@@ -85,14 +85,14 @@ int wsubus_unsubscribe_by_sid_id(const char *sid, uint32_t id)
 	return ret;
 }
 
-int wsubus_unsubscribe_by_sid_pattern(const char *sid, const char *pattern)
+int wsubus_unsubscribe_by_wsi_and_pattern(struct lws *wsi, const char *pattern)
 {
 	struct wsubus_sub_info *elem, *tmp;
 	int ret = 1;
 
 	list_for_each_entry_safe(elem, tmp, &list_of_subscriptions.list, list) {
 		// check sid, pattern
-		if (!strcmp(elem->sid, sid) && !strcmp(pattern, elem->pattern)) {
+		if (elem->wsi == wsi && !strcmp(pattern, elem->pattern)) {
 			wsubus_unsub_elem(elem);
 			elem = NULL;
 			ret = 0;
@@ -101,15 +101,14 @@ int wsubus_unsubscribe_by_sid_pattern(const char *sid, const char *pattern)
 	return ret;
 }
 
-int wsubus_unsubscribe_all_by_sid(const char *sid)
+int wsubus_unsubscribe_all_by_wsi(struct lws *wsi)
 {
 	struct wsubus_sub_info *elem, *tmp;
 	int ret = 1;
 
 	list_for_each_entry_safe(elem, tmp, &list_of_subscriptions.list, list) {
 		// check sid
-		if (!strcmp(elem->sid, sid)) {
-			lwsl_warn("cleansub %s\n", elem->sid);
+		if (elem->wsi == wsi) {
 			wsubus_unsub_elem(elem);
 			elem = NULL;
 			ret = 0;
@@ -234,7 +233,6 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blo
 
 	subinfo->sub_id = subscribe_id++;
 	subinfo->src_blob = ubusrpc->sub.src_blob;
-	subinfo->sid = ubusrpc->sub.sid;
 	subinfo->pattern = ubusrpc->sub.pattern;
 	// subinfo->ubus_handler inited above in ubus_register_...
 	subinfo->wsi = wsi;
@@ -262,7 +260,6 @@ static void blobmsg_add_sub_info(struct blob_buf *buf, const char *name, const s
 
 	blobmsg_add_string(buf, "pattern", sub->pattern);
 	blobmsg_add_u32(buf, "id", sub->sub_id);
-	blobmsg_add_string(buf, "ubus_rpc_session", sub->sid);
 
 	blobmsg_close_table(buf, tkt);
 }
@@ -286,7 +283,7 @@ int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struc
 	void* array_ticket = blobmsg_open_array(&sub_list_blob, "");
 	struct wsubus_sub_info *elem, *tmp;
 	list_for_each_entry_safe(elem, tmp, &list_of_subscriptions.list, list) {
-		if (!strcmp(elem->sid, ubusrpc->sub.sid))
+		if (elem->wsi == wsi)
 			blobmsg_add_sub_info(&sub_list_blob, "", elem);
 	}
 	blobmsg_close_array(&sub_list_blob, array_ticket);
@@ -323,7 +320,7 @@ int ubusrpc_handle_unsub_by_id(struct lws *wsi, struct ubusrpc_blob *ubusrpc, st
 	}
 
 	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->unsub_by_id.id, ret);
-	ret = wsubus_unsubscribe_by_sid_id(ubusrpc->unsub_by_id.sid, ubusrpc->unsub_by_id.id);
+	ret = wsubus_unsubscribe_by_wsi_and_id(wsi, ubusrpc->unsub_by_id.id);
 
 	if (ret != 0)
 		ret = UBUS_STATUS_NOT_FOUND;
@@ -351,7 +348,7 @@ int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct b
 	}
 
 	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->unsub_by_id.id, ret);
-	ret = wsubus_unsubscribe_by_sid_pattern(ubusrpc->sub.sid, ubusrpc->sub.pattern);
+	ret = wsubus_unsubscribe_by_wsi_and_pattern(wsi, ubusrpc->sub.pattern);
 
 	if (ret != 0)
 		ret = UBUS_STATUS_NOT_FOUND;
@@ -385,10 +382,11 @@ static void wsubus_ev_check__destroy(struct wsubus_client_access_check_ctx *cr)
 	wsubus_ev_destroy_ctx(container_of(cr, struct wsubus_ev_notif, cr));
 };
 
-void wsubus_ev_check_cb(struct wsubus_access_check_req *req, void *ctx, bool access)
+static void wsubus_ev_check_cb(struct wsubus_access_check_req *req, void *ctx, bool access)
 {
 	struct wsubus_ev_notif *t = ctx;
 
+	assert(req == t->cr.req);
 	lwsl_debug("access check for event gave %d\n", access);
 
 	if (!access) {
@@ -420,8 +418,7 @@ out:
 static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *ev, const char *type, struct blob_attr *msg)
 {
 	__attribute__((unused)) int mtype = blobmsg_type(msg);
-	lwsl_debug("sub cb called, ev obj name %s, type %s, blob of len %lu thpe %s\n",
-			ev->obj.name, type, blobmsg_len(msg),
+	lwsl_debug("sub cb called, ev type %s, blob of len %lu thpe %s\n", type, blobmsg_len(msg),
 			mtype == BLOBMSG_TYPE_STRING ? "\"\"" :
 			mtype == BLOBMSG_TYPE_TABLE ? "{}" :
 			mtype == BLOBMSG_TYPE_ARRAY ? "[]" : "<>");
