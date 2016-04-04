@@ -76,7 +76,7 @@ static int wsubus_filter(struct lws *wsi)
 		lwsl_err("error copying origin header %d\n", e);
 		rc = -3;
 	} else if (check_origin(prog->origin_list, origin, (size_t)len)) {
-		lwsl_err("only localhost origin is allowed\n");
+		lwsl_err("origin %s not allowed\n", origin);
 		rc = -4;
 	}
 

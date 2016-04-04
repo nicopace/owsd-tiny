@@ -19,7 +19,6 @@
 #include <libwebsockets.h>
 
 #include <errno.h>
-
 #include <assert.h>
 
 static lws_callback_function ws_http_cb;
@@ -52,7 +51,7 @@ eventmask_pollfd_to_ufd(int pollfd_events)
 		(pollfd_events & POLLOUT ? ULOOP_WRITE : 0);
 }
 
-static void ufd_service_cb (struct uloop_fd *ufd, unsigned int revents)
+static void ufd_service_cb(struct uloop_fd *ufd, unsigned int revents)
 {
 	extern struct prog_context global;
 
@@ -76,6 +75,62 @@ static void ufd_service_cb (struct uloop_fd *ufd, unsigned int revents)
 	lws_service_fd(global.lws_ctx, &pfd);
 }
 
+static int ws_file_serve_retcode(struct lws *wsi, int ret)
+{
+	if (ret < 0) {
+		lwsl_info("error %d serving file ", ret);
+		return -1;
+	} else if (ret > 0) {
+		return lws_http_transaction_completed(wsi);
+	}
+	return 0;
+}
+
+static char *ws_http_construct_pathname(const char *base, const char *in)
+{
+	char *filepath = malloc(PATH_MAX);
+	int written = snprintf(filepath, PATH_MAX, "%s/%s%s",
+			base, in, in[strlen(in)-1] == '/' ? "index.html" : "");
+	if (written < 0) {
+		free(filepath);
+		return NULL;
+	} else if (written >= PATH_MAX) {
+		filepath = realloc(filepath, (size_t)written);
+		snprintf(filepath, PATH_MAX, "%s/%s%s",
+				base, in, in[strlen(in)-1] == '/' ? "index.html" : "");
+	}
+
+	return filepath;
+}
+
+static const char *determine_mimetype(const char *filepath)
+{
+	static const struct {
+		const char *ext;
+		const char *mime;
+	} mime_mapping[] = {
+		{ "html", "text/html"                 },
+		{ "js"  , "application/javascript"    },
+		{ "png" , "image/png"                 },
+		{ "gif" , "image/gif"                 },
+		{ "jpg" , "image/jpeg"                },
+		{ "jpeg", "image/jpeg"                },
+		{ "css" , "text/css"                  },
+		{ "txt" , "text/plain"                },
+		{ "htm" , "text/html"                 },
+		{ "bin" , "application/octet-stream"  },
+		{ "img" , "application/octet-stream"  },
+	};
+	const char *last_dot = strrchr(filepath, '.');
+	if (last_dot && *++last_dot) {
+		for (size_t i = 0; i < ARRAY_SIZE(mime_mapping); ++i) {
+			if (!strcasecmp(last_dot, mime_mapping[i].ext))
+				return mime_mapping[i].mime;
+		}
+	}
+	return ""; // TODO default mimetype?
+}
+
 static int ws_http_cb(struct lws *wsi,
 		enum lws_callback_reasons reason,
 		void *user __attribute__((unused)),
@@ -85,6 +140,7 @@ static int ws_http_cb(struct lws *wsi,
 	struct lws_pollargs *in_pollargs = (struct lws_pollargs*)in;
 
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
+	int rc;
 
 	switch (reason) {
 		// fd handling
@@ -164,17 +220,27 @@ static int ws_http_cb(struct lws *wsi,
 	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS:
 		return 0;
 
+	case LWS_CALLBACK_HTTP:	 {
+		char *filepath = ws_http_construct_pathname(prog->www_path, in);
+		lwsl_info("http request, giving file %s\n", filepath);
+		rc = lws_serve_http_file(wsi, filepath, determine_mimetype(filepath), NULL, 0);
+		free(filepath);
+		return ws_file_serve_retcode(wsi, rc);
+	}
+
+	case LWS_CALLBACK_HTTP_WRITEABLE:
+		lwsl_info("http request writable again %s\n", in);
+		rc = lws_serve_http_file_fragment(wsi);
+		return ws_file_serve_retcode(wsi, rc);
+
 		// maybe needed if we will serve html
 	case LWS_CALLBACK_FILTER_HTTP_CONNECTION:
-	case LWS_CALLBACK_HTTP:
 	case LWS_CALLBACK_HTTP_BODY:
 	case LWS_CALLBACK_HTTP_BODY_COMPLETION:
 	case LWS_CALLBACK_HTTP_FILE_COMPLETION:
-	case LWS_CALLBACK_HTTP_WRITEABLE:
 	case LWS_CALLBACK_CLOSED_HTTP:
 		lwsl_info("http callback %d\n", reason);
-		// for now close connection/reject...
-		return 1;
+		return 0;
 
 #ifndef NO_DEBUG_CALLBACKS
 		// callbacks just for debug

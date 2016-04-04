@@ -43,6 +43,10 @@
 #define WSD_DEF_UBUS_PATH "/var/run/ubus.sock"
 #endif
 
+#ifndef WSD_DEF_WWW_PATH
+#define WSD_DEF_WWW_PATH "/www"
+#endif
+
 struct prog_context global;
 
 int main(int argc, char *argv[])
@@ -52,13 +56,14 @@ int main(int argc, char *argv[])
 	const char *ubus_sock_path = WSD_DEF_UBUS_PATH;
 	const char *ssl_cert_filepath = NULL;
 	const char *ssl_private_key_filepath = NULL;
+	const char *www_dirpath = NULL;
 	int port = WSD_DEF_PORT_NO;
 	struct origin origin_list = { .list = LIST_HEAD_INIT(origin_list.list)};
 	char *error;
 	bool ssl_wanted = false;
 
 	int c;
-	while ((c = getopt(argc, argv, "s:p:o:c:k:h")) != -1) {
+	while ((c = getopt(argc, argv, "s:p:o:c:k:w:h")) != -1) {
 		switch (c) {
 		case 's':
 			ubus_sock_path = optarg;
@@ -83,6 +88,9 @@ int main(int argc, char *argv[])
 			ssl_wanted = true;
 			ssl_private_key_filepath = optarg;
 			break;
+		case 'w':
+			www_dirpath = optarg;
+			break;
 		case 'h':
 		default:
 			fprintf(stderr,
@@ -92,10 +100,13 @@ int main(int argc, char *argv[])
 					"  -o <origin>      origin url address to whitelist\n"
 					"  -c <cert_path>   SSL cert path [" WSD_DEF_CERT_PATH "]\n"
 					"  -k <key_path>    SSL key path [" WSD_DEF_PK_PATH "]\n"
+					"  -w <www_path>    HTTP resources path [" WSD_DEF_WWW_PATH "]\n"
 					"\n", argv[0]);
 			return c == 'h' ? 0 : -2;
 		}
 	}
+
+	lws_set_log_level(-1, NULL);
 
 	if (list_empty(&origin_list.list)) {
 		lwsl_warn("No origins whitelisted = reject all clients\n");
@@ -126,6 +137,11 @@ int main(int argc, char *argv[])
 			goto no_ubus;
 		}
 	}
+	if (!www_dirpath) {
+		www_dirpath = WSD_DEF_WWW_PATH;
+	}
+
+	lwsl_info("Serving dir '%s' for HTTP\n", www_dirpath);
 
 	uloop_init();
 
@@ -138,6 +154,7 @@ int main(int argc, char *argv[])
 
 	global.ubus_ctx = ubus_ctx;
 	global.origin_list = &origin_list;
+	global.www_path = www_dirpath;
 
 	ubus_add_uloop(ubus_ctx);
 	// dtablesize is typically 1024, so a couple of KiBs just for pointers...
@@ -155,8 +172,6 @@ int main(int argc, char *argv[])
 	lws_info.uid = -1;
 	lws_info.gid = -1;
 	lws_info.user = &global;
-
-	lws_set_log_level(-1, NULL);
 
 	lws_info.protocols = (struct lws_protocols[])
 	{

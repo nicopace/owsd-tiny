@@ -25,6 +25,8 @@ struct prog_context {
 	struct ubus_context *ubus_ctx;
 
 	struct origin *origin_list;
+
+	const char *www_path;
 };
 
 struct origin {
