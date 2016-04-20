@@ -240,7 +240,8 @@ static int wsubus_call_do_check_then_do_call(struct wsubus_percall_ctx *curr_cal
 		ret = UBUS_STATUS_UNKNOWN_ERROR;
 
 		list_del(&curr_call->access_check.acq);
-		curr_call->access_check.destructor(&curr_call->access_check);
+		if (curr_call->access_check.destructor)
+			curr_call->access_check.destructor(&curr_call->access_check);
 		goto out;
 	}
 
