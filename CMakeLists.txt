@@ -12,6 +12,7 @@ SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 SET(SOURCES
 	src/main.c
 	src/ws_http.c
+	src/ws_http_serve.c
 	src/wsubus.c
 	src/wsubus.impl.c
 	src/wsubus_rpc.c
