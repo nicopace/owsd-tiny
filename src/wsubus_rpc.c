@@ -128,6 +128,7 @@ enum jsonrpc_error_code ubusrpc_blob_parse(struct ubusrpc_blob *ubusrpc, const c
 		int (*handle_func)(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);
 	} supported_methods[] = {
 		{ "call", ubusrpc_blob_call_parse, ubusrpc_handle_call },
+		{ "list", ubusrpc_blob_list_parse, ubusrpc_handle_list },
 		{ "subscribe", ubusrpc_blob_sub_parse, ubusrpc_handle_sub },
 		{ "subscribe-list", ubusrpc_blob_sub_list_parse, ubusrpc_handle_sub_list },
 		{ "unsubscribe", ubusrpc_blob_sub_parse, ubusrpc_handle_unsub }, // parse is same as sub since args same

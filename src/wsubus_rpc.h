@@ -19,7 +19,7 @@
 // TODO<deps> refactor curr_call blob_call somehow to not depend on its
 // complete type here, just pointers
 #include "wsubus_rpc_call.h"
-
+#include "wsubus_rpc_list.h"
 #include "wsubus_rpc_sub.h"
 
 struct jsonrpc_blob_req {
@@ -47,6 +47,8 @@ struct ubusrpc_blob {
 	union {
 		struct blob_attr *src_blob;
 		struct ubusrpc_blob_call call;
+
+		struct ubusrpc_blob_list list;
 
 		struct ubusrpc_blob_sub sub;
 		struct ubusrpc_blob_unsub_by_id unsub_by_id;
