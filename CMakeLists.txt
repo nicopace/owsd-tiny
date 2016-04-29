@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.6)
 PROJECT(owsd)
-ADD_DEFINITIONS(-Os -Wall --std=gnu99 )
+ADD_DEFINITIONS(-Os -Wall --std=gnu99 -D_XOPEN_SOURCE=700 )
 
 INCLUDE_DIRECTORIES(include)
 FILE(MAKE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin)

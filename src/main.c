@@ -24,6 +24,8 @@
 
 #include <getopt.h>
 
+#include <sys/resource.h>
+
 #ifndef WSD_DEF__PORT_NO
 #define WSD_DEF_PORT_NO 8843
 #endif
@@ -157,11 +159,13 @@ int main(int argc, char *argv[])
 	global.www_path = www_dirpath;
 
 	ubus_add_uloop(ubus_ctx);
-	// dtablesize is typically 1024, so a couple of KiBs just for pointers...
-	//
-	global.num_ufds = (size_t)getdtablesize();
+	// typically 1024, so a couple of KiBs just for pointers...
+	{
+		struct rlimit lim = {0, 0};
+		getrlimit(RLIMIT_NOFILE, &lim);
+		global.num_ufds = lim.rlim_cur;
+	}
 	global.ufds = calloc(global.num_ufds, sizeof(struct uloop_fd*));
-
 
 	struct lws_context_creation_info lws_info = {};
 
