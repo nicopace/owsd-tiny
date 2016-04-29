@@ -130,8 +130,9 @@ int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct bl
 	} else {
 		// using blobmsg_data here to pass only array part of blobmsg
 		response_str = jsonrpc_response_from_blob(id, 0, blobmsg_data(list_data.buf.head));
-		blob_buf_free(&list_data.buf);
 	}
+
+	blob_buf_free(&list_data.buf);
 
 	wsubus_write_response_str(wsi, response_str);
 
