@@ -1,3 +1,39 @@
+# invalid json rpc
+{"jsonrpc":"2.0", "id":UBUS_ID, "notmethod":344}
+{"jsonrpc":"2.0","id":UBUS_ID,"error":{"code":-32600,"message":"Invalid Request"}}
+
+# call invalid method
+{"jsonrpc":"2.0", "id":UBUS_ID, "method":"nosuchmethod", "params":["...", 1234]}
+{"jsonrpc":"2.0","id":UBUS_ID,"error":{"code":-32601,"message":"Method not found"}}
+
+# invalid param ubus list
+{"jsonrpc":"2.0", "id":UBUS_ID, "method":"list", "params":["", 12345]}
+{"jsonrpc":"2.0","id":1003,"error":{"code":-32602,"message":"Invalid params"}}
+
+# ubus list session
+{"jsonrpc":"2.0", "id":UBUS_ID, "method":"list", "params":["", "session"]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"session":{"create":{"timeout":"number"},"list":{"ubus_rpc_session":"string"},"grant":{"ubus_rpc_session":"string","scope":"string","objects":"array"},"revoke":{"ubus_rpc_session":"string","scope":"string","objects":"array"},"access":{"ubus_rpc_session":"string","scope":"string","object":"string","function":"string"},"set":{"ubus_rpc_session":"string","values":"object"},"get":{"ubus_rpc_session":"string","keys":"array"},"unset":{"ubus_rpc_session":"string","keys":"array"},"destroy":{"ubus_rpc_session":"string"},"login":{"username":"string","password":"string","timeout":"number"}}}]}
+
+# ubus list sessio*
+{"jsonrpc":"2.0", "id":UBUS_ID, "method":"list", "params":["", "sessio*"]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"session":{"create":{"timeout":"number"},"list":{"ubus_rpc_session":"string"},"grant":{"ubus_rpc_session":"string","scope":"string","objects":"array"},"revoke":{"ubus_rpc_session":"string","scope":"string","objects":"array"},"access":{"ubus_rpc_session":"string","scope":"string","object":"string","function":"string"},"set":{"ubus_rpc_session":"string","values":"object"},"get":{"ubus_rpc_session":"string","keys":"array"},"unset":{"ubus_rpc_session":"string","keys":"array"},"destroy":{"ubus_rpc_session":"string"},"login":{"username":"string","password":"string","timeout":"number"}}}]}
+
+# ubus list nonexisting
+{"jsonrpc":"2.0", "id":UBUS_ID, "method":"list", "params":["", "nonexisting"]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[4]}
+
+# invalid params to call
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": ["some", {"invalid":"params"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"error":{"code":-32602,"message":"Invalid params"}}
+
+# call something forbidden
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "session", "create", {} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[6]}
+
+# call something with missing args
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "session", "login", {"....":"..."} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[2]}
+
 # session list
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "session", "list", {} ] }
 {"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"ubus_rpc_session":"SESSION_ID","timeout":300,"expires":300,"acls":{"
@@ -58,13 +94,13 @@
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "iwinfo", "devices", {}] }
 {"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"devices":["wlan0"]}]}
 
-# which opkg
-{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/usr/bin/which","params":["opkg"]} ] }
-{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"\/bin\/opkg\n"}]}
+# which owsd
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/usr/bin/which","params":["owsd"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stdout":"\/usr\/bin\/owsd\n"}]}
 
-# opkg --help
-{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/bin/opkg","params":["--help"]} ] }
-{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":1,"stdout":"usage: opkg [options...] sub-command [arguments...]\nwhere sub-command is one of:\n\nPackage Manipulation:\n\tupdate\t\t\tUpdate list of available packages\n\tupgrade <pkgs>\t\tUpgrade packages\n\tinstall <pkgs>\t\tInstall package(s)\n\tconfigure <pkgs>\tConfigure unpacked package(s)\n\tremove <pkgs|regexp>\tRemove package(s)\n\tflag <flag> <pkgs>\tFlag package(s)\n\t <flag>=hold|noprune|user|ok|installed|unpacked (one per invocation)\n\nInformational Commands:\n\tlist\t\t\tList available packages\n\tlist-installed\t\tList installed packages\n\tlist-upgradable\t\tList installed and upgradable packages\n\tlist-changed-conffiles\tList user modified configuration files\n\tfiles <pkg>\t\tList files belonging to <pkg>\n\tsearch <file|regexp>\tList package providing <file>\n\tfind <regexp>\t\tList packages whose name or description matches <regexp>\n\tinfo [pkg|regexp]\tDisplay all info for <pkg>\n\tstatus [pkg|regexp]\tDisplay all status for <pkg>\n\tdownload <pkg>\t\tDownload <pkg> to current directory\n\tcompare-versions <v1> <op> <v2>\n\t                    compare versions using <= < > >= = << >>\n\tprint-architecture\tList installable package architectures\n\tdepends [-A] [pkgname|pat]+\n\twhatdepends [-A] [pkgname|pat]+\n\twhatdependsrec [-A] [pkgname|pat]+\n\twhatrecommends[-A] [pkgname|pat]+\n\twhatsuggests[-A] [pkgname|pat]+\n\twhatprovides [-A] [pkgname|pat]+\n\twhatconflicts [-A] [pkgname|pat]+\n\twhatreplaces [-A] [pkgname|pat]+\n\nOptions:\n\t-A\t\t\tQuery all packages not just those installed\n\t-V[<level>]\t\tSet verbosity level to <level>.\n\t--verbosity[=<level>]\tVerbosity levels:\n\t\t\t\t\t0 errors only\n\t\t\t\t\t1 normal messages (default)\n\t\t\t\t\t2 informative messages\n\t\t\t\t\t3 debug\n\t\t\t\t\t4 debug level 2\n\t-f <conf_file>\t\tUse <conf_file> as the opkg configuration file\n\t--conf <conf_file>\n\t--cache <directory>\tUse a package cache\n\t-d <dest_name>\t\tUse <dest_name> as the the root directory for\n\t--dest <dest_name>\tpackage installation, removal, upgrading.\n\t\t\t\t<dest_name> should be a defined dest name from\n\t\t\t\tthe configuration file, (but can also be a\n\t\t\t\tdirectory name in a pinch).\n\t-o <dir>\t\tUse <dir> as the root directory for\n\t--offline-root <dir>\toffline installation of packages.\n\t--add-arch <arch>:<prio>\tRegister architecture with given priority\n\t--add-dest <name>:<path>\tRegister destination with given path\n\nForce Options:\n\t--force-depends\t\tInstall\/remove despite failed dependencies\n\t--force-maintainer\tOverwrite preexisting config files\n\t--force-reinstall\tReinstall package(s)\n\t--force-overwrite\tOverwrite files from other package(s)\n\t--force-downgrade\tAllow opkg to downgrade packages\n\t--force-space\t\tDisable free space checks\n\t--force-postinstall\tRun postinstall scripts even in offline mode\n\t--force-remove\tRemove package even if prerm script fails\n\t--force-checksum\tDon't fail on checksum mismatches\n\t--noaction\t\tNo action -- test only\n\t--download-only\tNo action -- download only\n\t--nodeps\t\tDo not follow dependencies\n\t--nocase\t\tPerform case insensitive pattern matching\n\t--size\t\t\tPrint package size when listing available packages\n\t--force-removal-of-dependent-packages\n\t\t\t\tRemove package and all dependencies\n\t--autoremove\t\tRemove packages that were installed\n\t\t\t\tautomatically to satisfy dependencies\n\t-t\t\t\tSpecify tmp-dir.\n\t--tmp-dir\t\tSpecify tmp-dir.\n\t-l\t\t\tSpecify lists-dir.\n\t--lists-dir\t\tSpecify lists-dir.\n\n regexp could be something like 'pkgname*' '*file*' or similar\n e.g. opkg info 'libstd*' or opkg search '*libop*' or opkg remove 'libncur*'\n","stderr":"\/bin\/opkg: unrecognized option: help\nopkg must have one sub-command argument\n"}]}
+# owsd -h
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"owsd","params":["-h"]} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"code":0,"stderr":"Usage: \/usr\/bin\/owsd [ <options> ]\n  -s <socket>      path to ubus socket [\/var\/run\/ubus.sock]\n  -p <port>        port number [8843]\n  -o <origin>      origin url address to whitelist\n  -c <cert_path>   SSL cert path [\/usr\/share\/owsd\/cert.pem]\n  -k <key_path>    SSL key path [\/usr\/share\/owsd\/key.pem]\n  -w <www_path>    HTTP resources path [\/www]\n\n"}]}
 
 # which grep
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"/usr/bin/which","params":["grep"]} ] }
@@ -112,7 +148,7 @@
 
 # verify it in list
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"subscribe-list", "params": [ "SESSION_ID" ]}
-{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[{"pattern":"bla","id":1,"ubus_rpc_session":"SESSION_ID"}]]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[{"pattern":"bla","id":1}]]}
 
 # unsubscrube by name
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"unsubscribe", "params": [ "SESSION_ID", "bla"]}
@@ -124,7 +160,7 @@
 
 # verify it in list
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"subscribe-list", "params": [ "SESSION_ID" ]}
-{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[{"pattern":"foo.*","id":2,"ubus_rpc_session":"SESSION_ID"}]]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[{"pattern":"foo.*","id":2}]]}
 
 #unsubscribe by id
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"unsubscribe-id", "params": [ "SESSION_ID", 2]}

@@ -1,3 +1,39 @@
+# invalid json rpc
+{"jsonrpc":"2.0", "id":UBUS_ID, "notmethod":344}
+{"jsonrpc":"2.0","id":UBUS_ID,"error":{"code":-32600,"message":"Invalid Request"}}
+
+# call invalid method
+{"jsonrpc":"2.0", "id":UBUS_ID, "method":"nosuchmethod", "params":["...", 1234]}
+{"jsonrpc":"2.0","id":UBUS_ID,"error":{"code":-32601,"message":"Method not found"}}
+
+# invalid param ubus list
+{"jsonrpc":"2.0", "id":UBUS_ID, "method":"list", "params":["", 12345]}
+{"jsonrpc":"2.0","id":1003,"error":{"code":-32602,"message":"Invalid params"}}
+
+# ubus list session
+{"jsonrpc":"2.0", "id":UBUS_ID, "method":"list", "params":["", "session"]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"session":{"create":{"timeout":"number"},"list":{"ubus_rpc_session":"string"},"grant":{"ubus_rpc_session":"string","scope":"string","objects":"array"},"revoke":{"ubus_rpc_session":"string","scope":"string","objects":"array"},"access":{"ubus_rpc_session":"string","scope":"string","object":"string","function":"string"},"set":{"ubus_rpc_session":"string","values":"object"},"get":{"ubus_rpc_session":"string","keys":"array"},"unset":{"ubus_rpc_session":"string","keys":"array"},"destroy":{"ubus_rpc_session":"string"},"login":{"username":"string","password":"string","timeout":"number"}}}]}
+
+# ubus list sessio*
+{"jsonrpc":"2.0", "id":UBUS_ID, "method":"list", "params":["", "sessio*"]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"session":{"create":{"timeout":"number"},"list":{"ubus_rpc_session":"string"},"grant":{"ubus_rpc_session":"string","scope":"string","objects":"array"},"revoke":{"ubus_rpc_session":"string","scope":"string","objects":"array"},"access":{"ubus_rpc_session":"string","scope":"string","object":"string","function":"string"},"set":{"ubus_rpc_session":"string","values":"object"},"get":{"ubus_rpc_session":"string","keys":"array"},"unset":{"ubus_rpc_session":"string","keys":"array"},"destroy":{"ubus_rpc_session":"string"},"login":{"username":"string","password":"string","timeout":"number"}}}]}
+
+# ubus list nonexisting
+{"jsonrpc":"2.0", "id":UBUS_ID, "method":"list", "params":["", "nonexisting"]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[4]}
+
+# invalid params to call
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": ["some", {"invalid":"params"} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"error":{"code":-32602,"message":"Invalid params"}}
+
+# call something forbidden
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "session", "create", {} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[6]}
+
+# call something with missing args
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "session", "login", {"....":"..."} ] }
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[2]}
+
 # session list
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "session", "list", {} ] }
 {"jsonrpc":"2.0","id":UBUS_ID,"result":[0,{"ubus_rpc_session":"SESSION_ID","timeout":300,"expires":300,"acls":{"
