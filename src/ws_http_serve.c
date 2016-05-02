@@ -109,6 +109,7 @@ struct file_meta {
 	char *real_filepath;
 
 	const char *mime;
+	const char *enc;
 
 	unsigned char headers[1024];
 	unsigned char *headers_cur;
@@ -134,12 +135,14 @@ static void determine_file_meta(struct lws *wsi, struct file_meta *meta, char *f
 
 	const char *mime = determine_mimetype(meta->real_filepath, n);
 	meta->mime = mime ? mime : "application/octet-stream";
+	meta->enc = NULL;
 
 	for (size_t i = 0; i < ARRAY_SIZE(enc_map); ++i) {
 		strcat(meta->real_filepath, ".");
 		strcat(meta->real_filepath, enc_map[i].ext);
 		if (0 == access(meta->real_filepath, R_OK)) {
 			// TODO also consult accept_encoding header
+			meta->enc = enc_map[i].val;
 			lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_ENCODING, (const unsigned char*)enc_map[i].val, (int)strlen(enc_map[i].val), &meta->headers_cur, meta->headers + sizeof meta->headers);
 			break;
 		}
@@ -171,7 +174,7 @@ static void add_last_modified_header(struct lws *wsi, struct file_meta *meta)
 bool can_reply_notmodified(struct lws *wsi, struct file_meta *meta)
 {
 	if (meta->status) {
-		lwsl_debug("file doesn't exist, not doing 304: %d", meta->status);
+		lwsl_debug("file doesn't exist, not doing 304: %d\n", meta->status);
 		return false;
 	}
 
@@ -183,7 +186,7 @@ bool can_reply_notmodified(struct lws *wsi, struct file_meta *meta)
 	setlocale(LC_TIME, "C");
 	char *p = strptime(buf, http_timestr, &tm);
 	if (!p || p != buf + strlen(buf)) {
-		lwsl_debug("could not parse if-mod-since as time ");
+		lwsl_debug("could not parse if-mod-since as time\n");
 		return false;
 	}
 
@@ -199,7 +202,7 @@ int ws_http_serve_file(struct lws *wsi, const char *in)
 	char *filepath = ws_http_construct_pathname(prog->www_path, in);
 	size_t len = strlen(filepath);
 
-	struct file_meta meta = {-1, {0}, NULL, NULL, "", NULL};
+	struct file_meta meta = { .status = -1 };
 	meta.headers_cur = meta.headers;
 	determine_file_meta(wsi, &meta, filepath, len);
 
@@ -210,12 +213,15 @@ int ws_http_serve_file(struct lws *wsi, const char *in)
 		lwsl_debug("could reply 304...\n");
 		if ((rc = lws_add_http_header_status(wsi, 304, &meta.headers_cur, meta.headers + sizeof meta.headers)))
 			goto out;
+		if (meta.enc && (rc = lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_ENCODING, (const unsigned char*)meta.enc, (int)strlen(meta.enc), &meta.headers_cur, meta.headers + sizeof meta.headers)))
+			goto out;
 		if ((rc = lws_finalize_http_header(wsi, &meta.headers_cur, meta.headers + sizeof meta.headers)))
 			goto out;
 		rc = lws_write(wsi, meta.headers, (size_t)(meta.headers_cur - meta.headers), LWS_WRITE_HTTP_HEADERS);
 	} else {
+		if (meta.enc && (rc = lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_ENCODING, (const unsigned char*)meta.enc, (int)strlen(meta.enc), &meta.headers_cur, meta.headers + sizeof meta.headers)))
+			goto out;
 		add_last_modified_header(wsi, &meta);
-
 		rc = lws_serve_http_file(wsi, meta.real_filepath, meta.mime, (const char*)meta.headers, (int)(meta.headers_cur - meta.headers));
 	}
 out:
