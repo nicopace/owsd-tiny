@@ -68,28 +68,22 @@ static const struct fileext_map* mapping_by_extension(const char *ext, size_t n,
 	return NULL;
 }
 
-static const struct fileext_map mime_map[] = {
-	{ "html", "text/html"                 },
-	{ "js"  , "application/javascript"    },
-	{ "png" , "image/png"                 },
-	{ "gif" , "image/gif"                 },
-	{ "jpg" , "image/jpeg"                },
-	{ "jpeg", "image/jpeg"                },
-	{ "css" , "text/css"                  },
-	{ "txt" , "text/plain"                },
-	{ "htm" , "text/html"                 },
-	{ "bin" , "application/octet-stream"  },
-	{ "img" , "application/octet-stream"  },
-};
-
-static const struct fileext_map enc_map[] = {
-	{ "br", "brotli"  },
-	{ "gz", "gzip"    },
-	{ "zz", "deflate" },
-};
-
 static const char *determine_mimetype(const char *filepath, size_t n)
 {
+	static const struct fileext_map mime_map[] = {
+		{ "html", "text/html"                 },
+		{ "js"  , "application/javascript"    },
+		{ "png" , "image/png"                 },
+		{ "gif" , "image/gif"                 },
+		{ "jpg" , "image/jpeg"                },
+		{ "jpeg", "image/jpeg"                },
+		{ "css" , "text/css"                  },
+		{ "txt" , "text/plain"                },
+		{ "htm" , "text/html"                 },
+		{ "bin" , "application/octet-stream"  },
+		{ "img" , "application/octet-stream"  },
+	};
+
 	const char *last_dot = filepath_strnrchr(filepath, n, '.');
 	if (last_dot) {
 		size_t ext_len = (size_t)(filepath + n - last_dot) - 1;
@@ -122,12 +116,11 @@ struct file_meta {
 
 static void determine_file_meta(struct lws *wsi, struct file_meta *meta, char *filepath, size_t n)
 {
-#if 0
-	char accept_encoding_header[2048];
-	int accept_len = lws_hdr_copy(wsi, accept_encoding_header, sizeof accept_encoding_header, WSI_TOKEN_HTTP_ACCEPT_ENCODING);
-
-	lwsl_info("client accepts encoding %.*s\n", accept_len, accept_encoding_header);
-#endif // TODO use this
+	static const struct fileext_map enc_map[] = {
+		{ "br", "brotli"  },
+		{ "gz", "gzip"    },
+		{ "zz", "deflate" },
+	};
 
 	meta->real_filepath = malloc(n + 4);
 	strncpy(meta->real_filepath, filepath, n+1);
@@ -137,16 +130,34 @@ static void determine_file_meta(struct lws *wsi, struct file_meta *meta, char *f
 	meta->mime = mime ? mime : "application/octet-stream";
 	meta->enc = NULL;
 
-	for (size_t i = 0; i < ARRAY_SIZE(enc_map); ++i) {
-		strcat(meta->real_filepath, ".");
-		strcat(meta->real_filepath, enc_map[i].ext);
-		if (0 == access(meta->real_filepath, R_OK)) {
-			// TODO also consult accept_encoding header
-			meta->enc = enc_map[i].val;
-			lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_ENCODING, (const unsigned char*)enc_map[i].val, (int)strlen(enc_map[i].val), &meta->headers_cur, meta->headers + sizeof meta->headers);
-			break;
+	char accept_encoding_header[256];
+	lws_hdr_copy(wsi, accept_encoding_header, sizeof accept_encoding_header - 1, WSI_TOKEN_HTTP_ACCEPT_ENCODING);
+
+	foreach_strtoken (cur, accept_encoding_header, ",") {
+		for (char *trim = cur; *trim == ' '; ++trim) ++cur;
+
+		foreach_strtoken (type, cur, "; ") {
+			cur = type;
+			break; // should fetch and use qvalues in second iteration
 		}
-		meta->real_filepath[n] = '\0';
+
+		lwsl_info("client accept-encoding %s\n", cur);
+
+		for (size_t i = 0; i < ARRAY_SIZE(enc_map); ++i) {
+			if (strcmp(enc_map[i].val, cur))
+				continue;
+
+			strcat(meta->real_filepath, ".");
+			strcat(meta->real_filepath, enc_map[i].ext);
+			if (0 == access(meta->real_filepath, R_OK)) {
+				meta->enc = enc_map[i].val;
+				break;
+			}
+			meta->real_filepath[n] = '\0';
+		}
+
+		if (meta->enc)
+			break;
 	}
 
 	meta->status = stat(meta->real_filepath, &meta->filestat);
