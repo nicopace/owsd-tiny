@@ -114,6 +114,11 @@ struct file_meta {
 	unsigned char *headers_cur;
 };
 
+#define foreach_strtoken(cur, hdr, delim) \
+	for (char *cur = hdr, *ctx##cur; \
+			(cur = strtok_r(cur, delim, &ctx##cur)) != NULL; \
+			cur = NULL)
+
 static void determine_file_meta(struct lws *wsi, struct file_meta *meta, char *filepath, size_t n)
 {
 #if 0
