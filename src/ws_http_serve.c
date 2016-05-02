@@ -191,6 +191,15 @@ bool can_reply_notmodified(struct lws *wsi, struct file_meta *meta)
 
 	char buf[256] = "";
 
+	lws_hdr_copy(wsi, buf, sizeof buf - 1, WSI_TOKEN_HTTP_CACHE_CONTROL);
+
+	foreach_strtoken (cur, buf, ",; ") {
+		if (!strcmp(cur, "no-cache") || cur == strstr(cur, "no-cache=")) {
+			lwsl_debug("no-cache found, don't do 304\n");
+			return false;
+		}
+	}
+
 	lws_hdr_copy(wsi, buf, sizeof buf - 1, WSI_TOKEN_HTTP_IF_MODIFIED_SINCE);
 
 	struct tm tm = {};
