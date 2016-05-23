@@ -29,10 +29,10 @@ struct lws_protocols ws_http_proto = {
 	NULL,
 	ws_http_cb,
 	// following other fields we don't use:
-	// - per-session data size
-	// - max rx buffer size
-	// - id
-	// - user pointer 
+	0,    // - per-session data size
+	0,    // - max rx buffer size
+	0,    // - id
+	NULL, // - user pointer
 };
 
 static inline short
@@ -84,6 +84,8 @@ static int ws_http_cb(struct lws *wsi,
 
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 	int rc;
+
+	(void)len;
 
 	switch (reason) {
 		// fd handling

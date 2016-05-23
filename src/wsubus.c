@@ -38,7 +38,9 @@ struct lws_protocols wsubus_proto = {
 	WSUBUS_PROTO_NAME,
 	wsubus_cb,
 	sizeof (struct wsubus_client_session),
-	//3000 // arbitrary length
+	0,    //3000 // arbitrary length
+	0,    // - id
+	NULL, // - user pointer
 };
 
 static bool check_origin(struct origin *origin_list, char *origin, size_t len) {

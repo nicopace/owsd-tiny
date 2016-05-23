@@ -22,7 +22,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 int ws_http_serve_interpret_retcode(struct lws *wsi, int ret)
 {
@@ -188,11 +190,14 @@ static void add_last_modified_header(struct lws *wsi, struct file_meta *meta)
 	char buf[256];
 	setlocale(LC_TIME, "C");
 	strftime(buf, sizeof buf, http_timestr,
-			localtime(&meta->filestat.st_mtim.tv_sec));
+			localtime(&meta->filestat.st_mtime));
+
 
 	lwsl_debug("timestamp of %s is %s\n", meta->real_filepath, buf);
 
-	lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_LAST_MODIFIED, (const unsigned char*)buf, (int)strlen(buf), &meta->headers_cur, meta->headers + sizeof meta->headers);
+	if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_LAST_MODIFIED, (const unsigned char*)buf, (int)strlen(buf), &meta->headers_cur, meta->headers + sizeof meta->headers)) {
+		lwsl_err("Couldn't add Last-modified headers!\n");
+	}
 }
 
 bool can_reply_notmodified(struct lws *wsi, struct file_meta *meta)
@@ -213,18 +218,23 @@ bool can_reply_notmodified(struct lws *wsi, struct file_meta *meta)
 		}
 	}
 
+	buf[0] = '\0';
+
 	lws_hdr_copy(wsi, buf, sizeof buf - 1, WSI_TOKEN_HTTP_IF_MODIFIED_SINCE);
 
 	struct tm tm = {};
 	setlocale(LC_TIME, "C");
 	char *p = strptime(buf, http_timestr, &tm);
 	if (!p || p != buf + strlen(buf)) {
-		lwsl_debug("could not parse if-mod-since as time\n");
+		lwsl_debug("could not parse if-mod-since %s as time: %s\n", buf, p ? "nonwhole offset" : "NULL ret");
 		return false;
 	}
 
 	time_t iftime = mktime(&tm);
-	time_t file_mtime = meta->filestat.st_mtim.tv_sec;
+	time_t file_mtime = meta->filestat.st_mtime;
+
+	lwsl_info("File mtime is %ds ago, iftime is %d ago\n",
+			file_mtime - time(NULL), iftime - time(NULL));
 
 	return file_mtime <= iftime;
 }

@@ -78,6 +78,8 @@ static void ubus_lookup_cb(struct ubus_context *ctx, struct ubus_object_data *ob
 		[BLOBMSG_TYPE_BOOL] = "boolean",
 	};
 
+	(void)ctx;
+
 	lwsl_info("looked up %s\n", obj->path);
 	struct list_cb_data *data = user;
 
