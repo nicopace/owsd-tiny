@@ -188,6 +188,20 @@ int main(int argc, char *argv[])
 		{ }
 	};
 
+	struct lws_http_mount wwwmount = {
+		NULL,
+		"/",
+		"/dev/null/",   // anything not-a-dir is ok, so our HTTP code runs and not lws
+		"index.html",
+		NULL, NULL, 0,  // no CGI
+		3600,           // cache_max_age
+		1, 1, 0,        // reuse cache, revalidate cache, private cache
+		LWSMPRO_FILE,
+		1,
+	};
+
+	lws_info.mounts = &wwwmount;
+
 	lwsl_debug("Creating lwsl context\n");
 
 	struct lws_context *lws_ctx = lws_create_context(&lws_info);
