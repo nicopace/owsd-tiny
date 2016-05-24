@@ -23,7 +23,7 @@
 #include <libwebsockets.h>
 
 #include <getopt.h>
-
+#include <locale.h>
 #include <sys/resource.h>
 
 #ifndef WSD_DEF__PORT_NO
@@ -166,6 +166,10 @@ int main(int argc, char *argv[])
 		global.num_ufds = lim.rlim_cur;
 	}
 	global.ufds = calloc(global.num_ufds, sizeof(struct uloop_fd*));
+
+	setenv("TZ", "", 1);
+	setlocale(LC_TIME, "C");
+	tzset();
 
 	struct lws_context_creation_info lws_info = {};
 

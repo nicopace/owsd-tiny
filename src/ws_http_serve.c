@@ -188,10 +188,8 @@ static void add_last_modified_header(struct lws *wsi, struct file_meta *meta)
 	}
 
 	char buf[256];
-	setlocale(LC_TIME, "C");
 	strftime(buf, sizeof buf, http_timestr,
-			localtime(&meta->filestat.st_mtime));
-
+			gmtime(&meta->filestat.st_mtime));
 
 	lwsl_debug("timestamp of %s is %s\n", meta->real_filepath, buf);
 
@@ -223,7 +221,6 @@ bool can_reply_notmodified(struct lws *wsi, struct file_meta *meta)
 	lws_hdr_copy(wsi, buf, sizeof buf - 1, WSI_TOKEN_HTTP_IF_MODIFIED_SINCE);
 
 	struct tm tm = {};
-	setlocale(LC_TIME, "C");
 	char *p = strptime(buf, http_timestr, &tm);
 	if (!p || p != buf + strlen(buf)) {
 		lwsl_debug("could not parse if-mod-since %s as time: %s\n", buf, p ? "nonwhole offset" : "NULL ret");
@@ -232,9 +229,6 @@ bool can_reply_notmodified(struct lws *wsi, struct file_meta *meta)
 
 	time_t iftime = mktime(&tm);
 	time_t file_mtime = meta->filestat.st_mtime;
-
-	lwsl_info("File mtime is %ds ago, iftime is %d ago\n",
-			file_mtime - time(NULL), iftime - time(NULL));
 
 	return file_mtime <= iftime;
 }
