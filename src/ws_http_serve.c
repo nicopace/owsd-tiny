@@ -222,7 +222,7 @@ bool can_reply_notmodified(struct lws *wsi, struct file_meta *meta)
 
 	struct tm tm = {};
 	char *p = strptime(buf, http_timestr, &tm);
-	if (!p || p != buf + strlen(buf)) {
+	if (!p || p < buf + strlen(buf) - 4) {
 		lwsl_debug("could not parse if-mod-since %s as time: %s\n", buf, p ? "nonwhole offset" : "NULL ret");
 		return false;
 	}
