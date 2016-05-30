@@ -137,6 +137,8 @@ static void determine_file_meta(struct lws *wsi, struct file_meta *meta, char *f
 		{ "zz", "deflate" },
 	};
 
+	(void)wsi;
+
 	meta->real_filepath = malloc(n + 4);
 	strncpy(meta->real_filepath, filepath, n+1);
 	free(filepath);
@@ -145,34 +147,15 @@ static void determine_file_meta(struct lws *wsi, struct file_meta *meta, char *f
 	meta->mime = mime ? mime : "application/octet-stream";
 	meta->enc = NULL;
 
-	char accept_encoding_header[256];
-	lws_hdr_copy(wsi, accept_encoding_header, sizeof accept_encoding_header - 1, WSI_TOKEN_HTTP_ACCEPT_ENCODING);
-
-	foreach_strtoken (cur, accept_encoding_header, ",") {
-		for (char *trim = cur; *trim == ' '; ++trim) ++cur;
-
-		foreach_strtoken (type, cur, "; ") {
-			cur = type;
-			break; // should fetch and use qvalues in second iteration
-		}
-
-		lwsl_info("client accept-encoding %s\n", cur);
-
-		for (size_t i = 0; i < ARRAY_SIZE(enc_map); ++i) {
-			if (strcmp(enc_map[i].val, cur))
-				continue;
-
-			strcat(meta->real_filepath, ".");
-			strcat(meta->real_filepath, enc_map[i].ext);
-			if (0 == access(meta->real_filepath, R_OK)) {
-				meta->enc = enc_map[i].val;
-				break;
-			}
-			meta->real_filepath[n] = '\0';
-		}
-
-		if (meta->enc)
+	for (size_t i = 0; i < ARRAY_SIZE(enc_map); ++i) {
+		strcat(meta->real_filepath, ".");
+		strcat(meta->real_filepath, enc_map[i].ext);
+		if (0 == access(meta->real_filepath, R_OK)) {
+			// we don't consult accept_encoding header since we might not have non-encoded file
+			meta->enc = enc_map[i].val;
 			break;
+		}
+		meta->real_filepath[n] = '\0';
 	}
 
 	meta->status = stat(meta->real_filepath, &meta->filestat);
