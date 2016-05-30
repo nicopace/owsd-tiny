@@ -320,8 +320,9 @@ static int wsubus_tx_text(struct lws *wsi)
 			list_del(&w->wq);
 			free(w->buf);
 			free(w);
-		} else {
-			lwsl_notice("client %d partial write %zu of %zu\n", client->id, w->written, w->len);
+		}
+		if (lws_partial_buffered(wsi)) {
+			lwsl_notice("client %d buffered, wrote %zu of %zu\n", client->id, w->written, w->len);
 			lws_callback_on_writable(wsi);
 			break;
 		}
