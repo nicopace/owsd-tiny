@@ -181,15 +181,33 @@ int main(int argc, char *argv[])
 
 	struct lws_context_creation_info lws_info = {};
 
-	lws_info.port = port;
-	lws_info.extensions = NULL;
-	lws_info.ssl_cert_filepath = ssl_cert_filepath;
-	lws_info.ssl_private_key_filepath = ssl_private_key_filepath;
 	lws_info.uid = -1;
 	lws_info.gid = -1;
 	lws_info.user = &global;
+	lws_info.options = LWS_SERVER_OPTION_EXPLICIT_VHOSTS | (ssl_wanted ? LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT : 0);
+	lws_info.server_string = "owsd";
 
-	lws_info.protocols = (struct lws_protocols[])
+	lwsl_debug("Creating lwsl context\n");
+
+	struct lws_context *lws_ctx = lws_create_context(&lws_info);
+	if (!lws_ctx) {
+		lwsl_err("lws_create_context error\n");
+		rc = 1;
+		goto no_lws;
+	}
+
+	global.lws_ctx = lws_ctx;
+
+
+	struct lws_context_creation_info vh_info = {};
+
+	vh_info.port = port;
+	vh_info.extensions = NULL;
+	vh_info.ssl_cert_filepath = ssl_cert_filepath;
+	vh_info.ssl_private_key_filepath = ssl_private_key_filepath;
+	vh_info.options = (ssl_wanted ? LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT : 0);
+
+	vh_info.protocols = (struct lws_protocols[])
 	{
 		ws_http_proto,
 		wsubus_proto,
@@ -208,19 +226,13 @@ int main(int argc, char *argv[])
 		1,
 	};
 
-	lws_info.mounts = &wwwmount;
-	lws_info.server_string = "owsd";
+	vh_info.mounts = &wwwmount;
 
-	lwsl_debug("Creating lwsl context\n");
-
-	struct lws_context *lws_ctx = lws_create_context(&lws_info);
-	if (!lws_ctx) {
-		lwsl_err("lws_create_context error\n");
+	if (!lws_create_vhost(lws_ctx, &vh_info)) {
+		lwsl_err("lws_create_vhost error\n");
 		rc = 1;
 		goto no_lws;
 	}
-
-	global.lws_ctx = lws_ctx;
 
 	global.utimer.cb = utimer_service;
 	uloop_timeout_add(&global.utimer);
