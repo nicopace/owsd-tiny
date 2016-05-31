@@ -49,6 +49,14 @@
 #define WSD_DEF_WWW_PATH "/www"
 #endif
 
+void utimer_service(struct uloop_timeout *utimer)
+{
+	struct prog_context *prog = container_of(utimer, struct prog_context, utimer);
+
+	lws_service_fd(prog->lws_ctx, NULL);
+	uloop_timeout_set(utimer, 1000);
+}
+
 struct prog_context global;
 
 int main(int argc, char *argv[])
@@ -201,6 +209,7 @@ int main(int argc, char *argv[])
 	};
 
 	lws_info.mounts = &wwwmount;
+	lws_info.server_string = "owsd";
 
 	lwsl_debug("Creating lwsl context\n");
 
@@ -213,6 +222,9 @@ int main(int argc, char *argv[])
 
 	global.lws_ctx = lws_ctx;
 
+	global.utimer.cb = utimer_service;
+	uloop_timeout_add(&global.utimer);
+	uloop_timeout_set(&global.utimer, 1000);
 
 	lwsl_info("running uloop...\n");
 	uloop_run();
