@@ -33,20 +33,16 @@
 #define WSD_2str_(_) #_
 #define WSD_2str(_) WSD_2str_(_)
 
-#ifndef WSD_DEF_CERT_PATH
-#define WSD_DEF_CERT_PATH "/usr/share/owsd/cert.pem"
-#endif
-
-#ifndef WSD_DEF_PK_PATH
-#define WSD_DEF_PK_PATH "/usr/share/owsd/key.pem"
-#endif
-
 #ifndef WSD_DEF_UBUS_PATH
 #define WSD_DEF_UBUS_PATH "/var/run/ubus.sock"
 #endif
 
 #ifndef WSD_DEF_WWW_PATH
 #define WSD_DEF_WWW_PATH "/www"
+#endif
+
+#ifndef WSD_MAX_VHOSTS
+#define WSD_MAX_VHOSTS 4
 #endif
 
 void utimer_service(struct uloop_timeout *utimer)
@@ -59,58 +55,95 @@ void utimer_service(struct uloop_timeout *utimer)
 
 struct prog_context global;
 
+static void vh_init_default(struct lws_context_creation_info *vh) {
+	static const struct lws_context_creation_info default_vh = {
+		.port = WSD_DEF_PORT_NO,
+	};
+
+	*vh = default_vh;
+	vh->user = malloc(sizeof(struct list_head));
+	INIT_LIST_HEAD(vh->user);
+}
+
 int main(int argc, char *argv[])
 {
 	int rc = 0;
 
 	const char *ubus_sock_path = WSD_DEF_UBUS_PATH;
-	const char *ssl_cert_filepath = NULL;
-	const char *ssl_private_key_filepath = NULL;
-	const char *www_dirpath = NULL;
-	int port = WSD_DEF_PORT_NO;
-	struct origin origin_list = { .list = LIST_HEAD_INIT(origin_list.list)};
-	char *error;
-	bool ssl_wanted = false;
+	const char *www_dirpath = WSD_DEF_WWW_PATH;
+	bool any_ssl = false;
+
+	struct lws_context_creation_info vh_info[WSD_MAX_VHOSTS] = { };
+	struct lws_context_creation_info *curr_vh_info = vh_info;
+	bool have_vh = false;
+	vh_init_default(curr_vh_info);
 
 	int c;
-	while ((c = getopt(argc, argv, "s:p:o:c:k:w:h")) != -1) {
+	while ((c = getopt(argc, argv, "s:w:h" /* global */ "p:i:o:c:k:" /* per-host */)) != -1) {
 		switch (c) {
 		case 's':
 			ubus_sock_path = optarg;
 			break;
-		case 'p':
-			port = strtol(optarg, &error, 10);
-			if (*error)
-				goto no_ubus;
-			break;
-		case 'o':;
-			struct origin *origin_el = calloc(1, sizeof(struct origin));
-			if (!origin_el)
-				break;
-			origin_el->url = optarg;
-			list_add_tail(&origin_el->list, &origin_list.list);
-			break;
-		case 'c':
-			ssl_wanted = true;
-			ssl_cert_filepath = optarg;
-			break;
-		case 'k':
-			ssl_wanted = true;
-			ssl_private_key_filepath = optarg;
-			break;
 		case 'w':
 			www_dirpath = optarg;
 			break;
+
+		case 'p':
+			if (!have_vh) {
+				have_vh = true;
+			} else if (curr_vh_info >= vh_info + ARRAY_SIZE(vh_info)) {
+				lwsl_err("Too many ports [ max " WSD_2str(WSD_MAX_VHOSTS) " ]");
+				goto error;
+			} else {
+				vh_init_default(++curr_vh_info);
+			}
+
+			char *error;
+			int port = strtol(optarg, &error, 10);
+			if (*error) {
+				lwsl_err("Invalid port specified");
+				goto error;
+			}
+
+			curr_vh_info->port = port;
+			break;
+		case 'i':
+			curr_vh_info->iface = optarg;
+			break;
+		case 'o':;
+			struct origin *origin_el = malloc(sizeof(struct origin));
+			if (!origin_el)
+				break;
+			origin_el->url = optarg;
+			list_add_tail(&origin_el->list, curr_vh_info->user);
+			break;
+#ifdef LWS_OPENSSL_SUPPORT
+		case 'c':
+			curr_vh_info->options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+			curr_vh_info->ssl_cert_filepath = optarg;
+			any_ssl = true;
+			break;
+		case 'k':
+			curr_vh_info->options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+			curr_vh_info->ssl_private_key_filepath = optarg;
+			break;
+#endif // LWS_OPENSSL_SUPPORT
+
 		case 'h':
 		default:
 			fprintf(stderr,
-					"Usage: %s [ <options> ]\n"
+					"Usage: %s <global options> [[-p <port>] <per-port options> ] ...\n\n"
+					" global options:\n"
 					"  -s <socket>      path to ubus socket [" WSD_DEF_UBUS_PATH "]\n"
-					"  -p <port>        port number [" WSD_2str(WSD_DEF_PORT_NO) "]\n"
-					"  -o <origin>      origin url address to whitelist\n"
-					"  -c <cert_path>   SSL cert path [" WSD_DEF_CERT_PATH "]\n"
-					"  -k <key_path>    SSL key path [" WSD_DEF_PK_PATH "]\n"
 					"  -w <www_path>    HTTP resources path [" WSD_DEF_WWW_PATH "]\n"
+					" per-port options:\n"
+					"  -p <port>        port number [" WSD_2str(WSD_DEF_PORT_NO) "]\n"
+					"  -i <interface>   interface to bind to \n"
+					"  -o <origin>      origin url address to whitelist\n"
+#ifdef LWS_OPENSSL_SUPPORT
+					"  -c <cert_path>   SSL cert path if SSL wanted\n"
+					"  -k <key_path>    SSL key path if SSL wanted\n"
+#endif // LWS_OPENSSL_SUPPORT
 					"\n", argv[0]);
 			return c == 'h' ? 0 : -2;
 		}
@@ -118,53 +151,19 @@ int main(int argc, char *argv[])
 
 	lws_set_log_level(-1, NULL);
 
-	if (list_empty(&origin_list.list)) {
-		lwsl_warn("No origins whitelisted = reject all clients\n");
-	}
-
-	if (!ssl_cert_filepath) {
-		lwsl_info("Using default SSL cert path %s\n", WSD_DEF_CERT_PATH);
-		if (-1 == access(WSD_DEF_CERT_PATH, R_OK)) {
-			lwsl_warn("error opening default SSL cert: %s\n", strerror(errno));
-		} else {
-			ssl_cert_filepath = WSD_DEF_CERT_PATH;
-		}
-	}
-	if (!ssl_private_key_filepath) {
-		lwsl_info("Using default SSL key path %s\n", WSD_DEF_PK_PATH);
-		if (-1 == access(WSD_DEF_PK_PATH, R_OK)) {
-			lwsl_err("error opening default SSL key: %s\n", strerror(errno));
-		} else {
-			ssl_private_key_filepath = WSD_DEF_PK_PATH;
-		}
-	}
-	if (!ssl_cert_filepath || !ssl_private_key_filepath) {
-		lwsl_warn("SSL will not be used\n");
-		ssl_cert_filepath = ssl_private_key_filepath = NULL;
-		if (ssl_wanted) {
-			lwsl_err("SSL cert/keys setup error\n");
-			rc = 3;
-			goto no_ubus;
-		}
-	}
-	if (!www_dirpath) {
-		www_dirpath = WSD_DEF_WWW_PATH;
-	}
-
-	lwsl_info("Serving dir '%s' for HTTP\n", www_dirpath);
-
 	uloop_init();
 
 	struct ubus_context *ubus_ctx = ubus_connect(ubus_sock_path);
 	if (!ubus_ctx) {
 		lwsl_err("ubus_connect error\n");
 		rc = 2;
-		goto no_ubus;
+		goto error;
 	}
 
 	global.ubus_ctx = ubus_ctx;
-	global.origin_list = &origin_list;
 	global.www_path = www_dirpath;
+
+	lwsl_info("Will serve dir '%s' for HTTP\n", www_dirpath);
 
 	ubus_add_uloop(ubus_ctx);
 	// typically 1024, so a couple of KiBs just for pointers...
@@ -184,7 +183,7 @@ int main(int argc, char *argv[])
 	lws_info.uid = -1;
 	lws_info.gid = -1;
 	lws_info.user = &global;
-	lws_info.options = LWS_SERVER_OPTION_EXPLICIT_VHOSTS | (ssl_wanted ? LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT : 0);
+	lws_info.options = LWS_SERVER_OPTION_EXPLICIT_VHOSTS | (any_ssl ? LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT : 0);
 	lws_info.server_string = "owsd";
 
 	lwsl_debug("Creating lwsl context\n");
@@ -193,22 +192,12 @@ int main(int argc, char *argv[])
 	if (!lws_ctx) {
 		lwsl_err("lws_create_context error\n");
 		rc = 1;
-		goto no_lws;
+		goto error_ubus_ufds;
 	}
 
 	global.lws_ctx = lws_ctx;
 
-
-	struct lws_context_creation_info vh_info = {};
-
-	vh_info.port = port;
-	vh_info.extensions = NULL;
-	vh_info.ssl_cert_filepath = ssl_cert_filepath;
-	vh_info.ssl_private_key_filepath = ssl_private_key_filepath;
-	vh_info.options = (ssl_wanted ? LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT : 0);
-
-	vh_info.protocols = (struct lws_protocols[])
-	{
+	struct lws_protocols ws_protocols[] = {
 		ws_http_proto,
 		wsubus_proto,
 		{ }
@@ -223,15 +212,37 @@ int main(int argc, char *argv[])
 		3600,           // cache_max_age
 		1, 1, 0,        // reuse cache, revalidate cache, private cache
 		LWSMPRO_FILE,
-		1,
+		1,              // strlen of "/"
 	};
 
-	vh_info.mounts = &wwwmount;
+	int num = 0;
 
-	if (!lws_create_vhost(lws_ctx, &vh_info)) {
-		lwsl_err("lws_create_vhost error\n");
-		rc = 1;
-		goto no_lws;
+	for (struct lws_context_creation_info *c = vh_info; c <= curr_vh_info; ++c) {
+		c->protocols = ws_protocols;
+		c->mounts = &wwwmount;
+
+		lwsl_debug("create vhost %d for port %d with %s , c %s k %s\n", ++num, c->port, (c->options & LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT) ? "ssl" : "no ssl",
+				c->ssl_cert_filepath, c->ssl_private_key_filepath);
+
+		struct lws_vhost *vh = lws_create_vhost(lws_ctx, c);
+
+		if (!vh) {
+			lwsl_err("lws_create_vhost error\n");
+			rc = 1;
+			goto error_ubus_ufds_ctx;
+		}
+
+		struct list_head *vh_origins = lws_protocol_vh_priv_zalloc(vh, &c->protocols[1] /* ubus */, sizeof *vh_origins);
+		INIT_LIST_HEAD(vh_origins);
+		list_splice(c->user, vh_origins);
+
+		free(c->user);
+		c->user = NULL;
+
+		if (list_empty(vh_origins)) {
+			lwsl_warn("No origins whitelisted on port %d = reject all ws clients\n", c->port);
+		}
+
 	}
 
 	global.utimer.cb = utimer_service;
@@ -243,21 +254,15 @@ int main(int argc, char *argv[])
 
 	wsubus_clean_all_subscriptions();
 
+error_ubus_ufds_ctx:
 	lws_context_destroy(lws_ctx);
-no_lws:
 
+error_ubus_ufds:
 	free(global.ufds);
 
 	ubus_free(ubus_ctx);
-no_ubus:
 
-	if (!list_empty(&origin_list.list)) {
-		struct origin *origin_el, *origin_tmp;
-		list_for_each_entry_safe(origin_el, origin_tmp, &origin_list.list, list) {
-			list_del(&origin_el->list);
-			free(origin_el);
-		}
-	}
+error:
 
 	return rc;
 }

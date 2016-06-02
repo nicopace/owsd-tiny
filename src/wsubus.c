@@ -43,11 +43,11 @@ struct lws_protocols wsubus_proto = {
 	NULL, // - user pointer
 };
 
-static bool check_origin(struct origin *origin_list, char *origin, size_t len) {
+static bool check_origin(struct list_head *origin_list, char *origin, size_t len)
+{
+	struct origin *origin_el;
 
-	struct origin *origin_el, *origin_tmp;
-
-	list_for_each_entry_safe(origin_el, origin_tmp, &origin_list->list, list)
+	list_for_each_entry(origin_el, origin_list, list)
 		if (!strncmp(origin_el->url, origin, len))
 			return false;
 
@@ -56,8 +56,6 @@ static bool check_origin(struct origin *origin_list, char *origin, size_t len) {
 
 static int wsubus_filter(struct lws *wsi)
 {
-	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
-
 	int len = lws_hdr_total_length(wsi, WSI_TOKEN_ORIGIN) + 1;
 	assert(len > 0);
 	char *origin = malloc((size_t)len);
@@ -71,15 +69,22 @@ static int wsubus_filter(struct lws *wsi)
 	int rc = 0;
 	int e;
 
+	struct list_head *origin_list;
+
 	if (len == 0) {
 		lwsl_err("no or empty origin header\n");
 		rc = -2;
 	} else if ((e = lws_hdr_copy(wsi, origin, len, WSI_TOKEN_ORIGIN)) < 0) {
 		lwsl_err("error copying origin header %d\n", e);
 		rc = -3;
-	} else if (check_origin(prog->origin_list, origin, (size_t)len)) {
-		lwsl_err("origin %s not allowed\n", origin);
+	} else if (!(origin_list = lws_protocol_vh_priv_get(
+				lws_vhost_get(wsi), // TODO deprecation soon
+				lws_get_protocol(wsi)))) {
+		lwsl_err("no list of origins%d\n");
 		rc = -4;
+	} else if (check_origin(origin_list, origin, (size_t)len)) {
+		lwsl_err("origin %s not allowed\n", origin);
+		rc = -5;
 	}
 
 	free(origin);
@@ -383,6 +388,18 @@ static int wsubus_cb(struct lws *wsi,
 		break;
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
 		lwsl_info(WSUBUS_PROTO_NAME ": destroy proto\n");
+		struct list_head *origin_list = lws_protocol_vh_priv_get(
+				lws_vhost_get(wsi), // TODO deprecation soon
+				lws_get_protocol(wsi));
+
+		if (!list_empty(origin_list)) {
+			struct origin *origin_el, *origin_tmp;
+			list_for_each_entry_safe(origin_el, origin_tmp, origin_list, list) {
+				list_del(&origin_el->list);
+				free(origin_el);
+			}
+		}
+
 		break;
 
 	case LWS_CALLBACK_RECEIVE_PONG:
