@@ -63,6 +63,8 @@ static void vh_init_default(struct lws_context_creation_info *vh) {
 	*vh = default_vh;
 	vh->user = malloc(sizeof(struct list_head));
 	INIT_LIST_HEAD(vh->user);
+
+	vh->options |= LWS_SERVER_OPTION_DISABLE_IPV6; // FIXME lwsbug ipv6 doesn't work with iface
 }
 
 int main(int argc, char *argv[])
@@ -79,7 +81,18 @@ int main(int argc, char *argv[])
 	vh_init_default(curr_vh_info);
 
 	int c;
-	while ((c = getopt(argc, argv, "s:w:h" /* global */ "p:i:o:c:k:" /* per-host */)) != -1) {
+	while ((c = getopt(argc, argv,
+					/* global */
+					"s:w:h"
+					/* per-vhost */
+					"p:i:o:"
+#ifdef LWS_USE_IPV6
+					"6"
+#endif // LWS_USE_IPV6
+#ifdef LWS_OPENSSL_SUPPORT
+					"c:k:"
+#endif // LWS_OPENSSL_SUPPORT
+					)) != -1) {
 		switch (c) {
 		case 's':
 			ubus_sock_path = optarg;
@@ -117,6 +130,11 @@ int main(int argc, char *argv[])
 			origin_el->url = optarg;
 			list_add_tail(&origin_el->list, curr_vh_info->user);
 			break;
+#ifdef LWS_USE_IPV6
+		case '6':
+			curr_vh_info->options &= ~LWS_SERVER_OPTION_DISABLE_IPV6;
+			break;
+#endif // LWS_USE_IPV6
 #ifdef LWS_OPENSSL_SUPPORT
 		case 'c':
 			curr_vh_info->options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
@@ -140,6 +158,9 @@ int main(int argc, char *argv[])
 					"  -p <port>        port number [" WSD_2str(WSD_DEF_PORT_NO) "]\n"
 					"  -i <interface>   interface to bind to \n"
 					"  -o <origin>      origin url address to whitelist\n"
+#ifdef LWS_USE_IPV6
+					"  -6               enable IPv6 [ off ]\n"
+#endif // LWS_USE_IPV6
 #ifdef LWS_OPENSSL_SUPPORT
 					"  -c <cert_path>   SSL cert path if SSL wanted\n"
 					"  -k <key_path>    SSL key path if SSL wanted\n"
