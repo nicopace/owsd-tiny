@@ -20,8 +20,7 @@
 #include <libwebsockets.h>
 
 #include <getopt.h>
-
-#include <sys/resource.h>
+#include <assert.h>
 
 #ifndef WSD_DEF__PORT_NO
 #define WSD_DEF_PORT_NO 8843
@@ -30,96 +29,188 @@
 #define WSD_2str_(_) #_
 #define WSD_2str(_) WSD_2str_(_)
 
-#ifndef WSD_DEF_CERT_PATH
-#define WSD_DEF_CERT_PATH "/usr/share/owsd/cert.pem"
-#endif
-
-#ifndef WSD_DEF_PK_PATH
-#define WSD_DEF_PK_PATH "/usr/share/owsd/key.pem"
-#endif
-
 #ifndef WSD_DEF_UBUS_PATH
 #define WSD_DEF_UBUS_PATH "/var/run/ubus.sock"
 #endif
 
 struct prog_context global;
 
+static lws_callback_function ws_http_cb;
+
+struct lws_protocols ws_http_proto = {
+	/*  we don't want any subprotocol name to match this, and it won't */
+	"sadfdf",
+	ws_http_cb,
+	// following other fields we don't use:
+	0,    // - per-session data size
+	0,    // - max rx buffer size
+	0,    // - id
+	NULL, // - user pointer
+};
+
+static inline short
+eventmask_ufd_to_pollfd(unsigned int ufd_events)
+{
+	return
+		(ufd_events & ULOOP_READ  ? POLLIN  : 0) |
+		(ufd_events & ULOOP_WRITE ? POLLOUT : 0);
+}
+static inline unsigned int
+eventmask_pollfd_to_ufd(int pollfd_events)
+{
+	return
+		(pollfd_events & POLLIN  ? ULOOP_READ  : 0) |
+		(pollfd_events & POLLOUT ? ULOOP_WRITE : 0);
+}
+
+static void ufd_service_cb(struct uloop_fd *ufd, unsigned int revents)
+{
+	extern struct prog_context global;
+
+	lwsl_debug("servicing fd %d with ufd eventmask %x %s%s\n", ufd->fd, revents,
+			revents & ULOOP_READ ? "R" : "", revents & ULOOP_WRITE ? "W" : "");
+	struct pollfd pfd;
+
+	pfd.events = eventmask_ufd_to_pollfd(ufd->flags);
+	pfd.revents = eventmask_ufd_to_pollfd(revents);
+	pfd.fd = ufd->fd;
+
+	if (ufd->eof) {
+		pfd.revents |= POLLHUP;
+		lwsl_debug("ufd HUP on %d\n", ufd->fd);
+	}
+	if (ufd->error) {
+		pfd.revents |= POLLERR;
+		lwsl_debug("ufd ERR on %d\n", ufd->fd);
+	}
+
+	lws_service_fd(global.lws_ctx, &pfd);
+}
+
+static int ws_http_cb(struct lws *wsi,
+		enum lws_callback_reasons reason,
+		void *user __attribute__((unused)),
+		void *in,
+		size_t len)
+{
+	struct lws_pollargs *in_pollargs = (struct lws_pollargs*)in;
+
+	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
+	int rc;
+
+	(void)len;
+
+	switch (reason) {
+		// fd handling
+	case LWS_CALLBACK_ADD_POLL_FD: {
+		lwsl_notice("add fd %d mask %x\n", in_pollargs->fd, in_pollargs->events);
+
+		assert(prog->ufd.fd == -1);
+
+		prog->ufd.fd = in_pollargs->fd;
+		prog->ufd.cb = ufd_service_cb;
+
+		if (uloop_fd_add(&prog->ufd, eventmask_pollfd_to_ufd(in_pollargs->events))) {
+			lwsl_err("error adding fd: %s\n", strerror(errno));
+			prog->ufd.fd = -1;
+			return 1;
+		}
+
+		return 0;
+	}
+
+	case LWS_CALLBACK_DEL_POLL_FD: {
+		lwsl_notice("del fd %d\n", in_pollargs->fd);
+
+		if (prog->ufd.fd == -1)
+			return 0;
+
+		assert(prog->ufd.fd == in_pollargs->fd);
+
+		uloop_fd_delete(&prog->ufd);
+		prog->ufd.fd = -1;
+
+		return 0;
+	}
+
+	case LWS_CALLBACK_CHANGE_MODE_POLL_FD: {
+		lwsl_notice("modify fd %d to mask %x %s%s\n", in_pollargs->fd, in_pollargs->events,
+				in_pollargs->events & POLLIN ? "IN" : "", in_pollargs->events & POLLOUT ? "OUT" : "");
+
+		assert(prog->ufd.fd == in_pollargs->fd);
+		assert(prog->ufd.cb == ufd_service_cb);
+		assert(prog->ufd.registered == true);
+
+		if (eventmask_pollfd_to_ufd(in_pollargs->events) != prog->ufd.flags) {
+			if (uloop_fd_add(&prog->ufd, eventmask_pollfd_to_ufd(in_pollargs->events))) {
+				return 1;
+			}
+		}
+
+		return 0;
+	}
+		// deny websocket clients with default (no) subprotocol
+	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
+		lwsl_notice("client handshaking without subproto - denying\n");
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+
+void print_usage(const char *argv0)
+{
+	fprintf(stderr,
+			"Usage: %s [ <options> ] <host> <port>\n"
+			"  -s <socket>      path to ubus socket [" WSD_DEF_UBUS_PATH "]\n"
+			"  -o <origin>      origin url address to use\n"
+			"  -S               SSL cert path\n"
+			"\n", argv0);
+}
+
 int main(int argc, char *argv[])
 {
 	int rc = 0;
 
 	const char *ubus_sock_path = WSD_DEF_UBUS_PATH;
-	const char *ssl_cert_filepath = NULL;
-	const char *ssl_private_key_filepath = NULL;
-	const char *origin = NULL;
-	int port = WSD_DEF_PORT_NO;
-	char *error;
-	bool ssl_wanted = false;
+
+	struct lws_context_creation_info lws_info = {};
+	struct lws_client_connect_info wsi_info = {};
+
+	lws_info.options = LWS_SERVER_OPTION_DISABLE_IPV6;
 
 	int c;
-	while ((c = getopt(argc, argv, "s:p:o:c:k:w:h")) != -1) {
+	while ((c = getopt(argc, argv, "s:o:Sh")) != -1) {
 		switch (c) {
 		case 's':
 			ubus_sock_path = optarg;
 			break;
-		case 'p':
-			port = strtol(optarg, &error, 10);
-			if (*error)
-				goto no_ubus;
+		case 'o':
+			wsi_info.origin = optarg;
 			break;
-		case 'o':;
-			 origin = optarg;
-			 // TODO
+		case '6':
+			lws_info.options &= ~LWS_SERVER_OPTION_DISABLE_IPV6;
 			break;
-		case 'c':
-			ssl_wanted = true;
-			ssl_cert_filepath = optarg;
-			break;
-		case 'k':
-			ssl_wanted = true;
-			ssl_private_key_filepath = optarg;
-			break;
+		case 'S':
+			wsi_info.ssl_connection = 1;
+			lws_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 		case 'h':
 		default:
-			fprintf(stderr,
-					"Usage: %s [ <options> ]\n"
-					"  -s <socket>      path to ubus socket [" WSD_DEF_UBUS_PATH "]\n"
-					"  -p <port>        port number [" WSD_2str(WSD_DEF_PORT_NO) "]\n"
-					"  -o <origin>      origin url address to use\n"
-					"  -c <cert_path>   SSL cert path [" WSD_DEF_CERT_PATH "]\n"
-					"  -k <key_path>    SSL key path [" WSD_DEF_PK_PATH "]\n"
-					"\n", argv[0]);
+			print_usage(argv[0]);
 			return c == 'h' ? 0 : -2;
 		}
 	}
 
-	lws_set_log_level(-1, NULL);
+	if (argc < 3) {
+		print_usage(argv[0]);
+		return -1;
+	}
 
-	if (!ssl_cert_filepath) {
-		lwsl_info("Using default SSL cert path %s\n", WSD_DEF_CERT_PATH);
-		if (-1 == access(WSD_DEF_CERT_PATH, R_OK)) {
-			lwsl_warn("error opening default SSL cert: %s\n", strerror(errno));
-		} else {
-			ssl_cert_filepath = WSD_DEF_CERT_PATH;
-		}
-	}
-	if (!ssl_private_key_filepath) {
-		lwsl_info("Using default SSL key path %s\n", WSD_DEF_PK_PATH);
-		if (-1 == access(WSD_DEF_PK_PATH, R_OK)) {
-			lwsl_err("error opening default SSL key: %s\n", strerror(errno));
-		} else {
-			ssl_private_key_filepath = WSD_DEF_PK_PATH;
-		}
-	}
-	if (!ssl_cert_filepath || !ssl_private_key_filepath) {
-		lwsl_warn("SSL will not be used\n");
-		ssl_cert_filepath = ssl_private_key_filepath = NULL;
-		if (ssl_wanted) {
-			lwsl_err("SSL cert/keys setup error\n");
-			rc = 3;
-			goto no_ubus;
-		}
-	}
+	argc -= optind;
+	argv += optind;
+
+	lws_set_log_level(-1, NULL);
 
 	uloop_init();
 
@@ -131,35 +222,17 @@ int main(int argc, char *argv[])
 	}
 
 	global.ubus_ctx = ubus_ctx;
-	global.origin = origin;
 
-	ubus_add_uloop(ubus_ctx);
-	// typically 1024, so a couple of KiBs just for pointers...
-	{
-		struct rlimit lim = {0, 0};
-		getrlimit(RLIMIT_NOFILE, &lim);
-		global.num_ufds = lim.rlim_cur;
-	}
-	global.ufds = calloc(global.num_ufds, sizeof(struct uloop_fd*));
-
-	struct lws_context_creation_info lws_info = {};
-
-	lws_info.port = port;
-	lws_info.extensions = NULL;
-	lws_info.ssl_cert_filepath = ssl_cert_filepath;
-	lws_info.ssl_private_key_filepath = ssl_private_key_filepath;
+	lws_info.port = -1;
 	lws_info.uid = -1;
 	lws_info.gid = -1;
 	lws_info.user = &global;
-
-	lws_info.protocols = (struct lws_protocols[])
-	{
+	lws_info.protocols = (struct lws_protocols[]) {
 		ws_http_proto,
-		wsubus_proto,
-		{ }
+		{ NULL, NULL, }
 	};
 
-	lwsl_debug("Creating lwsl context\n");
+	lwsl_debug("Creating lws context\n");
 
 	struct lws_context *lws_ctx = lws_create_context(&lws_info);
 	if (!lws_ctx) {
@@ -168,16 +241,37 @@ int main(int argc, char *argv[])
 		goto no_lws;
 	}
 
-	global.lws_ctx = lws_ctx;
+	global.lws_ctx = wsi_info.context = lws_ctx;
+	global.ufd.fd = -1;
+	wsi_info.address = argv[0];
+	wsi_info.host = argv[0];
+	if (!wsi_info.origin) {
+		wsi_info.origin = argv[0];
+	}
+	wsi_info.path = "/";
+	wsi_info.protocol = "ubus-json";
 
+	char *error;
+	wsi_info.port = strtol(argv[1], &error, 10);
+	if (*error) {
+		lwsl_err("invalid port number\n");
+		goto no_ubus;
+	}
+
+
+	struct lws *wsi = lws_client_connect_via_info(&wsi_info);
+	if (!wsi) {
+		lwsl_err("could not connect, exiting\n");
+		goto no_connect;
+	}
 
 	lwsl_info("running uloop...\n");
 	uloop_run();
 
+no_connect:
+
 	lws_context_destroy(lws_ctx);
 no_lws:
-
-	free(global.ufds);
 
 	ubus_free(ubus_ctx);
 no_ubus:
