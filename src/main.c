@@ -22,6 +22,8 @@
 #include <getopt.h>
 #include <assert.h>
 
+#include "wsubus.h"
+
 #ifndef WSD_DEF__PORT_NO
 #define WSD_DEF_PORT_NO 8843
 #endif
@@ -39,7 +41,7 @@ static lws_callback_function ws_http_cb;
 
 struct lws_protocols ws_http_proto = {
 	/*  we don't want any subprotocol name to match this, and it won't */
-	"sadfdf",
+	"sdfasdf",
 	ws_http_cb,
 	// following other fields we don't use:
 	0,    // - per-session data size
@@ -91,14 +93,12 @@ static int ws_http_cb(struct lws *wsi,
 		enum lws_callback_reasons reason,
 		void *user __attribute__((unused)),
 		void *in,
-		size_t len)
+		size_t len __attribute__((unused)))
 {
 	struct lws_pollargs *in_pollargs = (struct lws_pollargs*)in;
 
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
-	int rc;
 
-	(void)len;
 
 	switch (reason) {
 		// fd handling
@@ -149,6 +149,11 @@ static int ws_http_cb(struct lws *wsi,
 
 		return 0;
 	}
+
+	case LWS_CALLBACK_WSI_DESTROY:
+		uloop_done();
+		return 0;
+
 		// deny websocket clients with default (no) subprotocol
 	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
 		lwsl_notice("client handshaking without subproto - denying\n");
@@ -229,6 +234,7 @@ int main(int argc, char *argv[])
 	lws_info.user = &global;
 	lws_info.protocols = (struct lws_protocols[]) {
 		ws_http_proto,
+		wsubus_proto,
 		{ NULL, NULL, }
 	};
 
