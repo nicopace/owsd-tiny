@@ -151,7 +151,7 @@ static int ws_http_cb(struct lws *wsi,
 	}
 
 	case LWS_CALLBACK_WSI_DESTROY:
-		uloop_done();
+		uloop_end();
 		return 0;
 
 		// deny websocket clients with default (no) subprotocol

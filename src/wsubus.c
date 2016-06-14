@@ -112,24 +112,25 @@ static int wsubus_cb(struct lws *wsi,
 			}
 		} else if (jobj && client->state == LISTENING) {
 			struct json_object *p, *q;
-			if (
-					json_object_object_get_ex(jobj, "method", &p) &&
-					json_object_is_type(p, json_type_string) &&
-					!strcmp("event", json_object_get_string(p)) &&
+			if ( json_object_object_get_ex(jobj, "method", &p)
+					&& json_object_is_type(p, json_type_string)
+					&& !strcmp("event", json_object_get_string(p))
 
-					json_object_object_get_ex(jobj, "params", &p) &&
-					json_object_is_type(p, json_type_object) &&
-					json_object_object_get_ex(p, "type", &q) &&
-					json_object_is_type(q, json_type_string) &&
-					!strcmp("wireless.credentials", json_object_get_string(q)) &&
+					&& json_object_object_get_ex(jobj, "params", &p)
+					&& json_object_is_type(p, json_type_object)
+					&& json_object_object_get_ex(p, "type", &q)
+					&& json_object_is_type(q, json_type_string)
+					&& !strcmp("wireless.credentials", json_object_get_string(q))
 
-					json_object_object_get_ex(p, "data", &q) &&
-					json_object_is_type(q, json_type_object) &&
-					(p = q) &&
-					json_object_object_get_ex(p, "ssid", &p) &&
-					json_object_is_type(p, json_type_string) &&
-					json_object_object_get_ex(q, "key", &q) &&
-					json_object_is_type(q, json_type_string) ) {
+					&& json_object_object_get_ex(p, "data", &q)
+					&& json_object_is_type(q, json_type_object)
+					&& (p = q)
+
+					&& json_object_object_get_ex(p, "ssid", &p)
+					&& json_object_is_type(p, json_type_string)
+					&& json_object_object_get_ex(q, "key", &q)
+					&& json_object_is_type(q, json_type_string)
+			   ) {
 
 				lwsl_info("new wifi credentials SSID %s PSK %s\n",
 						json_object_get_string(p),
