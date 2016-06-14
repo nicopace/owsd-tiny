@@ -15,14 +15,16 @@
  * ubus over websocket - client session and message handling
  */
 #include "common.h"
-
+#include "actions.h"
 #include "wsubus.h"
 
 #include <json-c/json.h>
 
 #include <libwebsockets.h>
 
+#include <stdio.h>
 #include <errno.h>
+#include <string.h>
 #include <assert.h>
 
 #define WSUBUS_PROTO_NAME "ubus-json"
@@ -42,7 +44,17 @@ struct wsubus_client_session {
 		unsigned char *data;
 		size_t len;
 	} write;
+
+	struct uloop_timeout utimer;
 };
+
+void timer_blink(struct uloop_timeout *timer)
+{
+	static int onoff = 1;
+	blink_wps_led(onoff);
+	onoff = !onoff;
+	uloop_timeout_set(timer, 5000);
+}
 
 struct lws_protocols wsubus_proto = {
 	WSUBUS_PROTO_NAME,
@@ -124,17 +136,20 @@ static int wsubus_cb(struct lws *wsi,
 
 					&& json_object_object_get_ex(p, "data", &q)
 					&& json_object_is_type(q, json_type_object)
-					&& (p = q)
 
+#if 0
+					&& (p = q)
 					&& json_object_object_get_ex(p, "ssid", &p)
 					&& json_object_is_type(p, json_type_string)
 					&& json_object_object_get_ex(q, "key", &q)
 					&& json_object_is_type(q, json_type_string)
+#endif
 			   ) {
-
-				lwsl_info("new wifi credentials SSID %s PSK %s\n",
-						json_object_get_string(p),
-						json_object_get_string(q) );
+				if (0 == credentials_changed(q)) {
+					client->utimer.cb = timer_blink;
+					uloop_timeout_add(&client->utimer);
+					uloop_timeout_set(&client->utimer, 5000);
+				}
 			} else {
 				// TODO
 				lwsl_info("response not valid event\n");
@@ -165,6 +180,8 @@ static int wsubus_cb(struct lws *wsi,
 		assert(reason != reason);
 		break;
 
+	default:
+		return 0;
 	}
 	return 0;
 }

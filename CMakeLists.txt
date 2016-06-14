@@ -10,6 +10,7 @@ SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules")
 SET(SOURCES
 	src/main.c
 	src/wsubus.c
+	src/actions.c
 	)
 
 ADD_EXECUTABLE(wsclient ${SOURCES})

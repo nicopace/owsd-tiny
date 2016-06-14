@@ -13,6 +13,8 @@
  */
 
 #include "common.h"
+#include "wsubus.h"
+#include "actions.h"
 
 #include <libubox/uloop.h>
 #include <libubus.h>
@@ -21,12 +23,6 @@
 
 #include <getopt.h>
 #include <assert.h>
-
-#include "wsubus.h"
-
-#ifndef WSD_DEF__PORT_NO
-#define WSD_DEF_PORT_NO 8843
-#endif
 
 #define WSD_2str_(_) #_
 #define WSD_2str(_) WSD_2str_(_)
@@ -49,6 +45,12 @@ struct lws_protocols ws_http_proto = {
 	0,    // - id
 	NULL, // - user pointer
 };
+
+void utimer_service(struct uloop_timeout *utimer)
+{
+	lws_service_fd(global.lws_ctx, NULL);
+	uloop_timeout_set(utimer, 1000);
+}
 
 static inline short
 eventmask_ufd_to_pollfd(unsigned int ufd_events)
@@ -270,6 +272,11 @@ int main(int argc, char *argv[])
 		lwsl_err("could not connect, exiting\n");
 		goto no_connect;
 	}
+
+	struct uloop_timeout utimer = {};
+	utimer.cb = utimer_service;
+	uloop_timeout_add(&utimer);
+	uloop_timeout_set(&utimer, 1000);
 
 	lwsl_info("running uloop...\n");
 	uloop_run();
