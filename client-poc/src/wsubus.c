@@ -87,10 +87,6 @@ static int wsubus_cb(struct lws *wsi,
 	struct wsubus_client_session *client = user;
 
 	switch (reason) {
-	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-	case LWS_CALLBACK_CLIENT_FILTER_PRE_ESTABLISH:
-		return 0;
-
 	case LWS_CALLBACK_CLIENT_ESTABLISHED:
 
 		client->state = DEFAULT;
@@ -172,13 +168,6 @@ static int wsubus_cb(struct lws *wsi,
 			return -1;
 		}
 	}
-
-	case LWS_CALLBACK_CLIENT_RECEIVE_PONG:
-	case LWS_CALLBACK_CLIENT_CONFIRM_EXTENSION_SUPPORTED:
-	case LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER:
-		lwsl_err(WSUBUS_PROTO_NAME ": proto received client callback %d\n", reason);
-		assert(reason != reason);
-		break;
 
 	default:
 		return 0;
