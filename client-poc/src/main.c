@@ -14,10 +14,8 @@
 
 #include "common.h"
 #include "wsubus.h"
-#include "actions.h"
 
 #include <libubox/uloop.h>
-#include <libubus.h>
 
 #include <libwebsockets.h>
 
@@ -26,10 +24,6 @@
 
 #define WSD_2str_(_) #_
 #define WSD_2str(_) WSD_2str_(_)
-
-#ifndef WSD_DEF_UBUS_PATH
-#define WSD_DEF_UBUS_PATH "/var/run/ubus.sock"
-#endif
 
 struct prog_context global;
 
@@ -170,7 +164,6 @@ void print_usage(const char *argv0)
 {
 	fprintf(stderr,
 			"Usage: %s [ <options> ] <host> <port>\n"
-			"  -s <socket>      path to ubus socket [" WSD_DEF_UBUS_PATH "]\n"
 			"  -o <origin>      origin url address to use\n"
 			"  -S               SSL cert path\n"
 			"\n", argv0);
@@ -180,19 +173,14 @@ int main(int argc, char *argv[])
 {
 	int rc = 0;
 
-	const char *ubus_sock_path = WSD_DEF_UBUS_PATH;
-
 	struct lws_context_creation_info lws_info = {};
 	struct lws_client_connect_info wsi_info = {};
 
 	lws_info.options = LWS_SERVER_OPTION_DISABLE_IPV6;
 
 	int c;
-	while ((c = getopt(argc, argv, "s:o:Sh")) != -1) {
+	while ((c = getopt(argc, argv, "o:Sh")) != -1) {
 		switch (c) {
-		case 's':
-			ubus_sock_path = optarg;
-			break;
 		case 'o':
 			wsi_info.origin = optarg;
 			break;
@@ -220,15 +208,6 @@ int main(int argc, char *argv[])
 	lws_set_log_level(-1, NULL);
 
 	uloop_init();
-
-	struct ubus_context *ubus_ctx = ubus_connect(ubus_sock_path);
-	if (!ubus_ctx) {
-		lwsl_err("ubus_connect error\n");
-		rc = 2;
-		goto no_ubus;
-	}
-
-	global.ubus_ctx = ubus_ctx;
 
 	lws_info.port = -1;
 	lws_info.uid = -1;
@@ -263,7 +242,7 @@ int main(int argc, char *argv[])
 	wsi_info.port = strtol(argv[1], &error, 10);
 	if (*error) {
 		lwsl_err("invalid port number\n");
-		goto no_ubus;
+		goto no_connect;
 	}
 
 
@@ -286,8 +265,6 @@ no_connect:
 	lws_context_destroy(lws_ctx);
 no_lws:
 
-	ubus_free(ubus_ctx);
-no_ubus:
 
 	return rc;
 }

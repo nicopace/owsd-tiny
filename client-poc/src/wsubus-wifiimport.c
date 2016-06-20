@@ -15,7 +15,7 @@
  * ubus over websocket - client session and message handling
  */
 #include "common.h"
-#include "actions.h"
+#include "wifiimport.h"
 #include "wsubus.h"
 
 #include <json-c/json.h>
@@ -44,17 +44,7 @@ struct wsubus_client_session {
 		unsigned char *data;
 		size_t len;
 	} write;
-
-	struct uloop_timeout utimer;
 };
-
-void timer_blink(struct uloop_timeout *timer)
-{
-	static int onoff = 1;
-	blink_wps_led(onoff);
-	onoff = !onoff;
-	uloop_timeout_set(timer, 5000);
-}
 
 struct lws_protocols wsubus_proto = {
 	WSUBUS_PROTO_NAME,
@@ -141,11 +131,7 @@ static int wsubus_cb(struct lws *wsi,
 					&& json_object_is_type(q, json_type_string)
 #endif
 			   ) {
-				if (0 == credentials_changed(q)) {
-					client->utimer.cb = timer_blink;
-					uloop_timeout_add(&client->utimer);
-					uloop_timeout_set(&client->utimer, 5000);
-				}
+				exec_wifi_import(q);
 			} else {
 				// TODO
 				lwsl_info("response not valid event\n");
