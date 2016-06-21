@@ -20,7 +20,10 @@
 #include <libwebsockets.h>
 
 #include <getopt.h>
+#include <errno.h>
+#include <string.h>
 #include <assert.h>
+#include <stdio.h>
 
 #define WSD_2str_(_) #_
 #define WSD_2str(_) WSD_2str_(_)
@@ -173,8 +176,8 @@ int main(int argc, char *argv[])
 {
 	int rc = 0;
 
-	struct lws_context_creation_info lws_info = {};
-	struct lws_client_connect_info wsi_info = {};
+	struct lws_context_creation_info lws_info = {0};
+	struct lws_client_connect_info wsi_info = {0};
 
 	lws_info.options = LWS_SERVER_OPTION_DISABLE_IPV6;
 

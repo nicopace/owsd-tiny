@@ -26,10 +26,12 @@ static pid_t child_pid = 0;
 
 void sigchld_handler(int signum)
 {
-	int status;
-	if (child_pid == waitpid(child_pid, &status, WNOHANG)) {
-		fprintf(stderr, "child %d exited\n", child_pid);
-		child_pid = 0;
+	if (signum == SIGCHLD) {
+		int status;
+		if (child_pid == waitpid(child_pid, &status, WNOHANG)) {
+			fprintf(stderr, "child %d exited\n", child_pid);
+			child_pid = 0;
+		}
 	}
 }
 
