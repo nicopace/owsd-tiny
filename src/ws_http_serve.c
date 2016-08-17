@@ -225,11 +225,17 @@ int ws_http_serve_file(struct lws *wsi, const char *in)
 	struct file_meta meta = { .status = -1 };
 	meta.headers_cur = meta.headers;
 	determine_file_meta(wsi, &meta, filepath, len);
-
 	lwsl_info("http request for %s = file %s\n", in, meta.real_filepath);
 
 	int rc;
-	if (can_reply_notmodified(wsi, &meta)) {
+	if (prog->redir_from && !strcmp(in, prog->redir_from)) {
+		// redirect
+		if ((rc = lws_http_redirect(wsi, HTTP_STATUS_SEE_OTHER, (const unsigned char*)prog->redir_to, strlen(prog->redir_to), &meta.headers_cur, meta.headers + sizeof meta.headers)))
+			goto out;
+		if ((rc = lws_finalize_http_header(wsi, &meta.headers_cur, meta.headers + sizeof meta.headers)))
+			goto out;
+		rc = lws_write(wsi, meta.headers, (size_t)(meta.headers_cur - meta.headers), LWS_WRITE_HTTP_HEADERS);
+	} else if (can_reply_notmodified(wsi, &meta)) {
 		lwsl_debug("could reply 304...\n");
 		if ((rc = lws_add_http_header_status(wsi, 304, &meta.headers_cur, meta.headers + sizeof meta.headers)))
 			goto out;

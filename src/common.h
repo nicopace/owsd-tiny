@@ -27,6 +27,8 @@ struct prog_context {
 	struct ubus_context *ubus_ctx;
 
 	const char *www_path;
+	const char *redir_from;
+	const char *redir_to;
 };
 
 struct origin {

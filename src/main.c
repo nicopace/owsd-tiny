@@ -73,6 +73,8 @@ int main(int argc, char *argv[])
 
 	const char *ubus_sock_path = WSD_DEF_UBUS_PATH;
 	const char *www_dirpath = WSD_DEF_WWW_PATH;
+	char *redir_from = NULL;
+	char *redir_to = NULL;
 	bool any_ssl = false;
 
 	struct lws_context_creation_info vh_info[WSD_MAX_VHOSTS] = { };
@@ -83,7 +85,7 @@ int main(int argc, char *argv[])
 	int c;
 	while ((c = getopt(argc, argv,
 					/* global */
-					"s:w:h"
+					"s:w:r:h"
 					/* per-vhost */
 					"p:i:o:"
 #ifdef LWS_USE_IPV6
@@ -99,6 +101,15 @@ int main(int argc, char *argv[])
 			break;
 		case 'w':
 			www_dirpath = optarg;
+			break;
+		case 'r':
+			redir_to = strchr(optarg, ':');
+			if (!redir_to) {
+				lwsl_err("invalid redirect pair specified");
+				goto error;
+			}
+			*redir_to++ = '\0';
+			redir_from = optarg;
 			break;
 
 		case 'p':
@@ -158,6 +169,7 @@ int main(int argc, char *argv[])
 					" global options:\n"
 					"  -s <socket>      path to ubus socket [" WSD_DEF_UBUS_PATH "]\n"
 					"  -w <www_path>    HTTP resources path [" WSD_DEF_WWW_PATH "]\n"
+					"  -r <from>:<to>   HTTP path redirect pair\n"
 					" per-port options:\n"
 					"  -p <port>        port number [" WSD_2str(WSD_DEF_PORT_NO) "]\n"
 					"  -i <interface>   interface to bind to \n"
@@ -187,6 +199,8 @@ int main(int argc, char *argv[])
 
 	global.ubus_ctx = ubus_ctx;
 	global.www_path = www_dirpath;
+	global.redir_from = redir_from;
+	global.redir_to = redir_to;
 
 	lwsl_info("Will serve dir '%s' for HTTP\n", www_dirpath);
 
