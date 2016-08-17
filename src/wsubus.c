@@ -378,11 +378,7 @@ static int wsubus_cb(struct lws *wsi,
 		lwsl_notice(WSUBUS_PROTO_NAME ": peer closing\n");
 		return 0;
 
-		// debug for callbacks that should never happen
-#ifndef NO_DEBUG_CALLBACKS
-		// callback just for debug
-
-		// proto init-destroy (maybe can put init here)
+		// proto init-destroy
 	case LWS_CALLBACK_PROTOCOL_INIT:
 		lwsl_info(WSUBUS_PROTO_NAME ": create proto\n");
 		break;
@@ -405,63 +401,8 @@ static int wsubus_cb(struct lws *wsi,
 	case LWS_CALLBACK_RECEIVE_PONG:
 		break;
 
-		// callbacks that shouldn't happen
-
-		// misc. Will we ever need this?
-	case LWS_CALLBACK_CONFIRM_EXTENSION_OKAY:
-	case LWS_CALLBACK_WS_EXT_DEFAULTS:
-	case LWS_CALLBACK_GET_THREAD_ID:
-	case LWS_CALLBACK_USER:
-		lwsl_err(WSUBUS_PROTO_NAME ": unexpected misc callback reason %d\n", reason);
-		assert(reason != reason);
+	default:
 		break;
-		// callbacks for protocols[0]
-	case LWS_CALLBACK_LOCK_POLL:
-	case LWS_CALLBACK_UNLOCK_POLL:
-	case LWS_CALLBACK_ADD_POLL_FD:
-	case LWS_CALLBACK_DEL_POLL_FD:
-	case LWS_CALLBACK_CHANGE_MODE_POLL_FD:
-		lwsl_err(WSUBUS_PROTO_NAME ": proto received fd callback\n");
-		assert(reason != reason);
-		break;
-	case LWS_CALLBACK_FILTER_HTTP_CONNECTION:
-	case LWS_CALLBACK_HTTP:
-	case LWS_CALLBACK_HTTP_BODY:
-	case LWS_CALLBACK_HTTP_BODY_COMPLETION:
-	case LWS_CALLBACK_HTTP_FILE_COMPLETION:
-	case LWS_CALLBACK_HTTP_WRITEABLE:
-	case LWS_CALLBACK_CLOSED_HTTP:
-		lwsl_err(WSUBUS_PROTO_NAME ": proto received http callback %d\n", reason);
-		assert(reason != reason);
-		break;
-	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS:
-	case LWS_CALLBACK_OPENSSL_PERFORM_CLIENT_CERT_VERIFICATION:
-	case LWS_CALLBACK_OPENSSL_CONTEXT_REQUIRES_PRIVATE_KEY:
-		lwsl_err(WSUBUS_PROTO_NAME ": proto received http callback %d\n", reason);
-		assert(reason != reason);
-		break;
-	case LWS_CALLBACK_FILTER_NETWORK_CONNECTION:
-	case LWS_CALLBACK_WSI_CREATE:
-	case LWS_CALLBACK_SERVER_NEW_CLIENT_INSTANTIATED:
-	case LWS_CALLBACK_WSI_DESTROY:
-		lwsl_err(WSUBUS_PROTO_NAME ": proto received net/WSI callback\n");
-		assert(reason != reason);
-		break;
-		// we are server, we don't need to handle these...
-	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-	case LWS_CALLBACK_CLIENT_FILTER_PRE_ESTABLISH:
-	case LWS_CALLBACK_CLIENT_ESTABLISHED:
-	case LWS_CALLBACK_CLIENT_RECEIVE:
-	case LWS_CALLBACK_CLIENT_RECEIVE_PONG:
-	case LWS_CALLBACK_CLIENT_WRITEABLE:
-	case LWS_CALLBACK_CLIENT_CONFIRM_EXTENSION_SUPPORTED:
-	case LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER:
-	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_CLIENT_VERIFY_CERTS:
-		lwsl_err(WSUBUS_PROTO_NAME ": proto received client callback %d\n", reason);
-		assert(reason != reason);
-		break;
-
-#endif
 	}
 	return 0;
 }

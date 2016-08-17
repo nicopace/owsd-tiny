@@ -182,80 +182,11 @@ static int ws_http_cb(struct lws *wsi,
 		lwsl_info("http callback %d\n", reason);
 		return 0;
 
-#ifndef NO_DEBUG_CALLBACKS
-		// callbacks just for debug
-
-		// locking the fd polling table - we won't need this (single thread)
-	case LWS_CALLBACK_LOCK_POLL:
-		lwsl_info("lock poll\n");
-		break;
-	case LWS_CALLBACK_UNLOCK_POLL:
-		lwsl_info("unlock poll\n");
-		break;
-		// proto init-destroy (maybe can put init here)
-	case LWS_CALLBACK_PROTOCOL_INIT:
-		lwsl_info("create proto\n");
-		break;
-	case LWS_CALLBACK_PROTOCOL_DESTROY:
-		lwsl_info("destroy proto\n");
-		break;
-		// new client is connecting
-	case LWS_CALLBACK_FILTER_NETWORK_CONNECTION:
-		lwsl_info("network client connected\n");
-		break;
-	case LWS_CALLBACK_WSI_CREATE:
-		lwsl_info("created wsi\n");
-		break;
-	case LWS_CALLBACK_SERVER_NEW_CLIENT_INSTANTIATED:
-		lwsl_info("instantiated client\n");
-		break;
-	case LWS_CALLBACK_WSI_DESTROY:
-		lwsl_info("destroyed wsi\n");
-		break;
-
 	case LWS_CALLBACK_RECEIVE_PONG:
 		break;
 
-		// callbacks that shouldn't happen
-
-		// misc
-	case LWS_CALLBACK_CONFIRM_EXTENSION_OKAY:
-	case LWS_CALLBACK_WS_EXT_DEFAULTS:
-	case LWS_CALLBACK_GET_THREAD_ID:
-	case LWS_CALLBACK_USER:
-		lwsl_err("unexpected misc callback reason %d\n", reason);
-		assert(reason != reason);
+	default:
 		break;
-		// won't happen since we deny in FILTER_PROTOCOL_CONNECTION
-	case LWS_CALLBACK_ESTABLISHED:
-	case LWS_CALLBACK_RECEIVE:
-	case LWS_CALLBACK_SERVER_WRITEABLE:
-	case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE:
-	case LWS_CALLBACK_CLOSED:
-		lwsl_err("unexpected protocol callback happened");
-		assert(reason != reason);
-		break;
-		// SSL callbacks that we don't expect
-	case LWS_CALLBACK_OPENSSL_PERFORM_CLIENT_CERT_VERIFICATION:
-	case LWS_CALLBACK_OPENSSL_CONTEXT_REQUIRES_PRIVATE_KEY:
-		lwsl_warn("unexpected ssl callback %d\n", reason);
-		assert(reason != reason);
-		break;
-		// we are server, we don't need to handle these...
-	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-	case LWS_CALLBACK_CLIENT_FILTER_PRE_ESTABLISH:
-	case LWS_CALLBACK_CLIENT_ESTABLISHED:
-	case LWS_CALLBACK_CLIENT_RECEIVE:
-	case LWS_CALLBACK_CLIENT_RECEIVE_PONG:
-	case LWS_CALLBACK_CLIENT_WRITEABLE:
-	case LWS_CALLBACK_CLIENT_CONFIRM_EXTENSION_SUPPORTED:
-	case LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER:
-	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_CLIENT_VERIFY_CERTS:
-		lwsl_err("Client callback reason received: %d\n", reason);
-		assert(reason != reason);
-		break;
-
-#endif
 	}
 
 	return 0;
