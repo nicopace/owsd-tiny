@@ -59,12 +59,12 @@ static int wsubus_filter(struct lws *wsi)
 	int len = lws_hdr_total_length(wsi, WSI_TOKEN_ORIGIN) + 1;
 	assert(len > 0);
 	char *origin = malloc((size_t)len);
-	origin[len-1] = '\0';
 
 	if (!origin) {
 		lwsl_err("error allocating origin header: %s\n", strerror(errno));
 		return -1;
 	}
+	origin[len-1] = '\0';
 
 	int rc = 0;
 	int e;
