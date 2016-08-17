@@ -254,13 +254,11 @@ int main(int argc, char *argv[])
 		1,              // strlen of "/"
 	};
 
-	int num = 0;
-
 	for (struct lws_context_creation_info *c = vh_info; c <= curr_vh_info; ++c) {
 		c->protocols = ws_protocols;
 		c->mounts = &wwwmount;
 
-		lwsl_debug("create vhost %d for port %d with %s , c %s k %s\n", ++num, c->port, (c->options & LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT) ? "ssl" : "no ssl",
+		lwsl_debug("create vhost for port %d with %s , c %s k %s\n", c->port, (c->options & LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT) ? "ssl" : "no ssl",
 				c->ssl_cert_filepath, c->ssl_private_key_filepath);
 
 		struct lws_vhost *vh = lws_create_vhost(lws_ctx, c);
