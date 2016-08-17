@@ -181,7 +181,7 @@ static void add_last_modified_header(struct lws *wsi, struct file_meta *meta)
 	}
 }
 
-bool can_reply_notmodified(struct lws *wsi, struct file_meta *meta)
+static bool can_reply_notmodified(struct lws *wsi, struct file_meta *meta)
 {
 	if (meta->status) {
 		lwsl_debug("file doesn't exist, not doing 304: %d\n", meta->status);
