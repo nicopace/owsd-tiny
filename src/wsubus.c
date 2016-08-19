@@ -29,6 +29,7 @@
 
 #include <errno.h>
 #include <assert.h>
+#include <fnmatch.h>
 
 #define WSUBUS_PROTO_NAME "ubus-json"
 
@@ -43,15 +44,16 @@ struct lws_protocols wsubus_proto = {
 	NULL, // - user pointer
 };
 
-static bool check_origin(struct list_head *origin_list, char *origin, size_t len)
+static bool origin_allowed(struct list_head *origin_list, char *origin)
 {
 	struct origin *origin_el;
 
-	list_for_each_entry(origin_el, origin_list, list)
-		if (!strncmp(origin_el->url, origin, len))
-			return false;
+	list_for_each_entry(origin_el, origin_list, list) {
+		if (!fnmatch(origin_el->url, origin, 0))
+			return true;
+	}
 
-	return true;
+	return false;
 }
 
 static int wsubus_filter(struct lws *wsi)
@@ -82,7 +84,7 @@ static int wsubus_filter(struct lws *wsi)
 				lws_get_protocol(wsi)))) {
 		lwsl_err("no list of origins%d\n");
 		rc = -4;
-	} else if (check_origin(origin_list, origin, (size_t)len)) {
+	} else if (!origin_allowed(origin_list, origin)) {
 		lwsl_err("origin %s not allowed\n", origin);
 		rc = -5;
 	}
