@@ -35,3 +35,17 @@ INCLUDE_DIRECTORIES(${LIBWEBSOCKETS_INCLUDE_DIRS})
 TARGET_LINK_LIBRARIES(owsd ${LIBWEBSOCKETS_LIBRARIES})
 
 INSTALL(TARGETS owsd RUNTIME DESTINATION bin)
+
+ADD_EXECUTABLE(owsclient-wifiimport
+	client-poc/src/main.c
+	client-poc/src/wsubus-wifiimport.c
+	client-poc/src/wifiimport.c
+	)
+
+ADD_EXECUTABLE(owsclient-blinkwps
+	client-poc/src/main.c
+	client-poc/src/wsubus-blinkwps.c
+	)
+
+TARGET_LINK_LIBRARIES(owsclient-wifiimport ${ubox} ${json} ${blobmsg_json} ${LIBWEBSOCKETS_LIBRARIES})
+TARGET_LINK_LIBRARIES(owsclient-blinkwps ${ubox} ${json} ${blobmsg_json} ${LIBWEBSOCKETS_LIBRARIES})
