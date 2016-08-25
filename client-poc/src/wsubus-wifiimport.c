@@ -95,6 +95,8 @@ static int wsubus_cb(struct lws *wsi,
 		return 0;
 
 	case LWS_CALLBACK_CLIENT_RECEIVE: {
+
+		lwsl_notice("receive len %d < %.*s >\n", (int)len, (int)len, in);
 		struct json_tokener *jtok = json_tokener_new();
 		struct json_object *jobj = json_tokener_parse_ex(jtok, in, len);
 
@@ -149,7 +151,7 @@ static int wsubus_cb(struct lws *wsi,
 
 	case LWS_CALLBACK_CLIENT_WRITEABLE: {
 		if (client->write.data) {
-			lwsl_notice("writing %.*s", (int)client->write.len, client->write.data);
+			lwsl_notice("writing len %d < %.*s>\n", (int)client->write.len, (int)client->write.len, client->write.data);
 			return (int)client->write.len != lws_write(wsi, client->write.data, client->write.len, LWS_WRITE_TEXT);
 		} else {
 			return -1;
