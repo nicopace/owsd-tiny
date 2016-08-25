@@ -141,7 +141,7 @@ static int wsubus_cb(struct lws *wsi,
 		struct json_tokener *jtok = json_tokener_new();
 		struct json_object *jobj = json_tokener_parse_ex(jtok, in, len);
 
-		lwsl_debug("\nlen %d %.*s\n\n", len, len, in);
+		lwsl_notice("received, len %d < %.*s > \n\n", len, len, in);
 
 		if (jobj && client->state == WAIT_LOGINOK) {
 			struct json_object *tmp;
@@ -159,7 +159,7 @@ static int wsubus_cb(struct lws *wsi,
 				uloop_timeout_set(&client->utimer, 0);
 			} else {
 				// TODO
-				lwsl_info("response to login not valid\n");
+				lwsl_err("response to login not valid\n");
 				//return -1;
 			}
 		} else if (jobj && client->state == WAIT_LEDGET) {
@@ -185,7 +185,7 @@ static int wsubus_cb(struct lws *wsi,
 				lws_callback_on_writable(wsi);
 			} else {
 				// TODO
-				lwsl_info("response to led status not valid\n");
+				lwsl_err("response to led status not valid\n");
 				return -1;
 			}
 		} else if (jobj && client->state == WAIT_LEDSET) {
@@ -197,7 +197,7 @@ static int wsubus_cb(struct lws *wsi,
 			   ) {
 				uloop_timeout_set(&client->utimer, 5000);
 			} else {
-				lwsl_info("response to led set not valid\n");
+				lwsl_err("response to led set not valid\n");
 			}
 		}
 
@@ -211,7 +211,7 @@ static int wsubus_cb(struct lws *wsi,
 
 	case LWS_CALLBACK_CLIENT_WRITEABLE: {
 		if (client->write.data) {
-			lwsl_debug("\nsending, len %d %.s\n\n", client->write.len, client->write.len, client->write.data);
+			lwsl_notice("sending, len %d < %.*s> \n\n", client->write.len, client->write.len, client->write.data);
 			return (int)client->write.len != lws_write(wsi, client->write.data, client->write.len, LWS_WRITE_TEXT);
 		} else {
 			return -1;

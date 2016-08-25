@@ -102,7 +102,7 @@ static int ws_http_cb(struct lws *wsi,
 	switch (reason) {
 		// fd handling
 	case LWS_CALLBACK_ADD_POLL_FD: {
-		lwsl_notice("add fd %d mask %x\n", in_pollargs->fd, in_pollargs->events);
+		lwsl_info("add fd %d mask %x\n", in_pollargs->fd, in_pollargs->events);
 
 		assert(prog->ufd.fd == -1);
 
@@ -119,7 +119,7 @@ static int ws_http_cb(struct lws *wsi,
 	}
 
 	case LWS_CALLBACK_DEL_POLL_FD: {
-		lwsl_notice("del fd %d\n", in_pollargs->fd);
+		lwsl_info("del fd %d\n", in_pollargs->fd);
 
 		if (prog->ufd.fd == -1)
 			return 0;
@@ -133,7 +133,7 @@ static int ws_http_cb(struct lws *wsi,
 	}
 
 	case LWS_CALLBACK_CHANGE_MODE_POLL_FD: {
-		lwsl_notice("modify fd %d to mask %x %s%s\n", in_pollargs->fd, in_pollargs->events,
+		lwsl_info("modify fd %d to mask %x %s%s\n", in_pollargs->fd, in_pollargs->events,
 				in_pollargs->events & POLLIN ? "IN" : "", in_pollargs->events & POLLOUT ? "OUT" : "");
 
 		assert(prog->ufd.fd == in_pollargs->fd);
@@ -155,7 +155,7 @@ static int ws_http_cb(struct lws *wsi,
 
 		// deny websocket clients with default (no) subprotocol
 	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
-		lwsl_notice("client handshaking without subproto - denying\n");
+		lwsl_info("client handshaking without subproto - denying\n");
 		return 1;
 	default:
 		return 0;

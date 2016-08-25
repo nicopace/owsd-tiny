@@ -107,6 +107,7 @@ static int wsubus_cb(struct lws *wsi,
 				client->state = LISTENING;
 			} else {
 				// TODO
+				lwsl_err("invalid response to event listen\n");
 			}
 		} else if (jobj && client->state == LISTENING) {
 			struct json_object *p, *q;
@@ -134,7 +135,7 @@ static int wsubus_cb(struct lws *wsi,
 				exec_wifi_import(q);
 			} else {
 				// TODO
-				lwsl_info("response not valid event\n");
+				lwsl_err("response not valid event\n");
 			}
 		}
 
@@ -148,7 +149,7 @@ static int wsubus_cb(struct lws *wsi,
 
 	case LWS_CALLBACK_CLIENT_WRITEABLE: {
 		if (client->write.data) {
-			lwsl_info("writing %.*s", (int)client->write.len, client->write.data);
+			lwsl_notice("writing %.*s", (int)client->write.len, client->write.data);
 			return (int)client->write.len != lws_write(wsi, client->write.data, client->write.len, LWS_WRITE_TEXT);
 		} else {
 			return -1;
