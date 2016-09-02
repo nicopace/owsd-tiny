@@ -42,7 +42,7 @@
 #endif
 
 #ifndef WSD_MAX_VHOSTS
-#define WSD_MAX_VHOSTS 4
+#define WSD_MAX_VHOSTS 10
 #endif
 
 void utimer_service(struct uloop_timeout *utimer)
