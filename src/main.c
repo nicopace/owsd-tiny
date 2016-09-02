@@ -115,8 +115,8 @@ int main(int argc, char *argv[])
 		case 'p':
 			if (!have_vh) {
 				have_vh = true;
-			} else if (curr_vh_info >= vh_info + ARRAY_SIZE(vh_info)) {
-				lwsl_err("Too many ports [ max " WSD_2str(WSD_MAX_VHOSTS) " ]");
+			} else if (curr_vh_info >= vh_info + ARRAY_SIZE(vh_info) - 1) {
+				lwsl_err("Too many ports [ max " WSD_2str(WSD_MAX_VHOSTS) " ]\n");
 				goto error;
 			} else {
 				vh_init_default(++curr_vh_info);
