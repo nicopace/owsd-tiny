@@ -45,6 +45,31 @@
 #define WSD_MAX_VHOSTS 10
 #endif
 
+struct prog_context global;
+
+static void usage(char *name)
+{
+	fprintf(stderr,
+			"Usage: %s <global options> [[-p <port>] <per-port options> ] ...\n\n"
+			" global options:\n"
+			"  -s <socket>      path to ubus socket [" WSD_DEF_UBUS_PATH "]\n"
+			"  -w <www_path>    HTTP resources path [" WSD_DEF_WWW_PATH "]\n"
+			"  -r <from>:<to>   HTTP path redirect pair\n"
+			" per-port options:\n"
+			"  -p <port>        port number [" WSD_2str(WSD_DEF_PORT_NO) "]\n"
+			"  -L <label>       _owsd_listen label\n"
+			"  -i <interface>   interface to bind to \n"
+			"  -o <origin>      origin url address to whitelist\n"
+#ifdef LWS_USE_IPV6
+			"  -6               enable IPv6, repeat to disable IPv4 [off]\n"
+#endif // LWS_USE_IPV6
+#ifdef LWS_OPENSSL_SUPPORT
+			"  -c <cert_path>   SSL cert path if SSL wanted\n"
+			"  -k <key_path>    SSL key path if SSL wanted\n"
+#endif // LWS_OPENSSL_SUPPORT
+			"\n", name);
+}
+
 void utimer_service(struct uloop_timeout *utimer)
 {
 	struct prog_context *prog = container_of(utimer, struct prog_context, utimer);
@@ -52,8 +77,6 @@ void utimer_service(struct uloop_timeout *utimer)
 	lws_service_fd(prog->lws_ctx, NULL);
 	uloop_timeout_set(utimer, 1000);
 }
-
-struct prog_context global;
 
 static void vh_init_default(struct lws_context_creation_info *vh) {
 	static const struct lws_context_creation_info default_vh = {
@@ -169,25 +192,7 @@ int main(int argc, char *argv[])
 
 		case 'h':
 		default:
-			fprintf(stderr,
-					"Usage: %s <global options> [[-p <port>] <per-port options> ] ...\n\n"
-					" global options:\n"
-					"  -s <socket>      path to ubus socket [" WSD_DEF_UBUS_PATH "]\n"
-					"  -w <www_path>    HTTP resources path [" WSD_DEF_WWW_PATH "]\n"
-					"  -r <from>:<to>   HTTP path redirect pair\n"
-					" per-port options:\n"
-					"  -p <port>        port number [" WSD_2str(WSD_DEF_PORT_NO) "]\n"
-					"  -L <label>       _owsd_listen label\n"
-					"  -i <interface>   interface to bind to \n"
-					"  -o <origin>      origin url address to whitelist\n"
-#ifdef LWS_USE_IPV6
-					"  -6               enable IPv6, repeat to disable IPv4 [off]\n"
-#endif // LWS_USE_IPV6
-#ifdef LWS_OPENSSL_SUPPORT
-					"  -c <cert_path>   SSL cert path if SSL wanted\n"
-					"  -k <key_path>    SSL key path if SSL wanted\n"
-#endif // LWS_OPENSSL_SUPPORT
-					"\n", argv[0]);
+			usage(argv[0]);
 			return c == 'h' ? 0 : -2;
 		}
 	}
