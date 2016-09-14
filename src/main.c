@@ -61,8 +61,10 @@ static void vh_init_default(struct lws_context_creation_info *vh) {
 	};
 
 	*vh = default_vh;
-	vh->user = malloc(sizeof(struct list_head));
-	INIT_LIST_HEAD(vh->user);
+	struct vh_context *vh_c = malloc(sizeof *vh_c);
+	INIT_LIST_HEAD(&vh_c->origins);
+	vh_c->name = NULL;
+	vh->user = vh_c;
 
 	vh->options |= LWS_SERVER_OPTION_DISABLE_IPV6; // FIXME lwsbug ipv6 doesn't work with iface
 }
@@ -87,7 +89,7 @@ int main(int argc, char *argv[])
 					/* global */
 					"s:w:r:h"
 					/* per-vhost */
-					"p:i:o:"
+					"p:i:o:L:"
 #ifdef LWS_USE_IPV6
 					"6"
 #endif // LWS_USE_IPV6
@@ -139,7 +141,10 @@ int main(int argc, char *argv[])
 			if (!origin_el)
 				break;
 			origin_el->url = optarg;
-			list_add_tail(&origin_el->list, curr_vh_info->user);
+			list_add_tail(&origin_el->list, &((struct vh_context*)curr_vh_info->user)->origins);
+			break;
+		case 'L':
+			((struct vh_context*)curr_vh_info->user)->name = optarg;
 			break;
 #ifdef LWS_USE_IPV6
 		case '6':
@@ -172,6 +177,7 @@ int main(int argc, char *argv[])
 					"  -r <from>:<to>   HTTP path redirect pair\n"
 					" per-port options:\n"
 					"  -p <port>        port number [" WSD_2str(WSD_DEF_PORT_NO) "]\n"
+					"  -L <label>       _owsd_listen label\n"
 					"  -i <interface>   interface to bind to \n"
 					"  -o <origin>      origin url address to whitelist\n"
 #ifdef LWS_USE_IPV6
@@ -269,14 +275,19 @@ int main(int argc, char *argv[])
 			goto error_ubus_ufds_ctx;
 		}
 
-		struct list_head *vh_origins = lws_protocol_vh_priv_zalloc(vh, &c->protocols[1] /* ubus */, sizeof *vh_origins);
-		INIT_LIST_HEAD(vh_origins);
-		list_splice(c->user, vh_origins);
+		// allocate per-vhost storage
+		struct vh_context *vh_context = lws_protocol_vh_priv_zalloc(vh, &c->protocols[1] /* ubus */, sizeof *vh_context);
+
+		// copy all data
+		memcpy(vh_context, c->user, sizeof *vh_context);
+		// list needs separate copying becuase it points to itself
+		INIT_LIST_HEAD(&vh_context->origins);
+		list_splice(&((struct vh_context*)c->user)->origins, &vh_context->origins);
 
 		free(c->user);
 		c->user = NULL;
 
-		if (list_empty(vh_origins)) {
+		if (list_empty(&vh_context->origins)) {
 			lwsl_warn("No origins whitelisted on port %d = reject all ws clients\n", c->port);
 		}
 

@@ -35,3 +35,8 @@ struct origin {
 	struct list_head list;
 	const char *url;
 };
+
+struct vh_context {
+	struct list_head origins;
+	const char *name;
+};

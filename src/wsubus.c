@@ -71,7 +71,7 @@ static int wsubus_filter(struct lws *wsi)
 	int rc = 0;
 	int e;
 
-	struct list_head *origin_list;
+	struct vh_context *vc;
 
 	if (len == 0) {
 		lwsl_err("no or empty origin header\n");
@@ -79,12 +79,12 @@ static int wsubus_filter(struct lws *wsi)
 	} else if ((e = lws_hdr_copy(wsi, origin, len, WSI_TOKEN_ORIGIN)) < 0) {
 		lwsl_err("error copying origin header %d\n", e);
 		rc = -3;
-	} else if (!(origin_list = lws_protocol_vh_priv_get(
-				lws_vhost_get(wsi), // TODO deprecation soon
+	} else if (!(vc = lws_protocol_vh_priv_get(
+				lws_get_vhost(wsi),
 				lws_get_protocol(wsi)))) {
 		lwsl_err("no list of origins%d\n");
 		rc = -4;
-	} else if (!origin_allowed(origin_list, origin)) {
+	} else if (!origin_allowed(&vc->origins, origin)) {
 		lwsl_err("origin %s not allowed\n", origin);
 		rc = -5;
 	}
@@ -386,13 +386,13 @@ static int wsubus_cb(struct lws *wsi,
 		break;
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
 		lwsl_info(WSUBUS_PROTO_NAME ": destroy proto\n");
-		struct list_head *origin_list = lws_protocol_vh_priv_get(
-				lws_vhost_get(wsi), // TODO deprecation soon
+		struct vh_context *vc = lws_protocol_vh_priv_get(
+				lws_get_vhost(wsi),
 				lws_get_protocol(wsi));
 
-		if (!list_empty(origin_list)) {
+		if (!list_empty(&vc->origins)) {
 			struct origin *origin_el, *origin_tmp;
-			list_for_each_entry_safe(origin_el, origin_tmp, origin_list, list) {
+			list_for_each_entry_safe(origin_el, origin_tmp, &vc->origins, list) {
 				list_del(&origin_el->list);
 				free(origin_el);
 			}

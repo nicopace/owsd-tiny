@@ -72,6 +72,8 @@ int ubusrpc_blob_call_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob
 	blobmsg_for_each_attr(cur, tb[3], rem) {
 		if (!strcmp("ubus_rpc_session", blobmsg_name(cur)))
 			ret = -5;
+		if (!strcmp("_owsd_listen", blobmsg_name(cur)))
+			ret = -5;
 	}
 
 	if (ret) {
@@ -308,6 +310,11 @@ static int wsubus_call_do(struct wsubus_percall_ctx *curr_call)
 	}
 
 	blobmsg_add_string(curr_call->call_args->params_buf, "ubus_rpc_session", curr_call->call_args->sid);
+
+	if (!strcmp(curr_call->call_args->sid, UBUS_DEFAULT_SID)) {
+		struct vh_context *vc = lws_protocol_vh_priv_get(lws_get_vhost(curr_call->wsi), lws_get_protocol(curr_call->wsi));
+		blobmsg_add_string(curr_call->call_args->params_buf, "_owsd_listen", vc->name);
+	}
 
 	lwsl_info("ubus call request %p...\n", call_req);
 	ret = ubus_invoke_async(prog->ubus_ctx, object_id, curr_call->call_args->method, curr_call->call_args->params_buf->head, call_req);
