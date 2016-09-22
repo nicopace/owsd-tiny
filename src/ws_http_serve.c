@@ -25,6 +25,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <linux/limits.h>
 
 int ws_http_serve_interpret_retcode(struct lws *wsi, int ret)
 {
