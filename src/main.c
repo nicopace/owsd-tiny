@@ -257,13 +257,13 @@ int main(int argc, char *argv[])
 		NULL,
 		"/",
 		"/dev/null/",   // anything not-a-dir is ok, so our HTTP code runs and not lws
-		"index.html",
-		NULL, NULL, 0,  // no CGI
-		3600,           // cache_max_age
-		1, 1, 0,        // reuse cache, revalidate cache, private cache
-		LWSMPRO_FILE,
-		1,              // strlen of "/"
+		"index.html"
 	};
+	wwwmount.cache_reusable = 1;
+	wwwmount.cache_revalidate = 1;
+	wwwmount.cache_max_age = 3600;
+	wwwmount.mountpoint_len = strlen(wwwmount.mountpoint);
+	wwwmount.origin_protocol = LWSMPRO_FILE;
 
 	for (struct lws_context_creation_info *c = vh_info; c <= curr_vh_info; ++c) {
 		c->protocols = ws_protocols;
