@@ -166,11 +166,6 @@ static const char *const http_timestr = "%a, %d %b %Y %H:%M:%S %Z";
 
 static void add_last_modified_header(struct lws *wsi, struct file_meta *meta)
 {
-	if (meta->status) {
-		lwsl_debug("file doesn't exist, not putting timestamp in header: %d\n", meta->status);
-		return;
-	}
-
 	char buf[256];
 	strftime(buf, sizeof buf, http_timestr,
 			gmtime(&meta->filestat.st_mtime));
@@ -248,6 +243,12 @@ int ws_http_serve_file(struct lws *wsi, const char *in)
 	} else {
 		if (meta.enc && (rc = lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_ENCODING, (const unsigned char*)meta.enc, (int)strlen(meta.enc), &meta.headers_cur, meta.headers + sizeof meta.headers)))
 			goto out;
+		if (meta.status) {
+			lwsl_debug("file doesn't exist, not putting timestamp in header: %d\n", meta.status);
+			rc = lws_return_http_status(wsi, HTTP_STATUS_NOT_FOUND, NULL);
+			goto out;
+		}
+
 		add_last_modified_header(wsi, &meta);
 		rc = lws_serve_http_file(wsi, meta.real_filepath, meta.mime, (const char*)meta.headers, (int)(meta.headers_cur - meta.headers));
 	}
