@@ -72,6 +72,11 @@ static void ufd_service_cb(struct uloop_fd *ufd, unsigned int revents)
 	}
 
 	lws_service_fd(global.lws_ctx, &pfd);
+
+	for (int count = 30; count && !lws_service_adjust_timeout(global.lws_ctx, 1, 0); --count) {
+		lwsl_notice("re-service pipelined data\n");
+		lws_plat_service_tsi(global.lws_ctx, -1, 0);
+	}
 }
 
 static int ws_http_cb(struct lws *wsi,
