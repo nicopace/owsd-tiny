@@ -168,7 +168,7 @@ void print_usage(const char *argv0)
 	fprintf(stderr,
 			"Usage: %s [ <options> ] <host> <port>\n"
 			"  -o <origin>      origin url address to use\n"
-			"  -S               SSL cert path\n"
+			"  -S               SSL mode\n"
 			"\n", argv0);
 }
 
@@ -182,7 +182,7 @@ int main(int argc, char *argv[])
 	lws_info.options = LWS_SERVER_OPTION_DISABLE_IPV6;
 
 	int c;
-	while ((c = getopt(argc, argv, "o:Sh")) != -1) {
+	while ((c = getopt(argc, argv, "o:S6h")) != -1) {
 		switch (c) {
 		case 'o':
 			wsi_info.origin = optarg;
@@ -193,6 +193,7 @@ int main(int argc, char *argv[])
 		case 'S':
 			wsi_info.ssl_connection = 1;
 			lws_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+			break;
 		case 'h':
 		default:
 			print_usage(argv[0]);
