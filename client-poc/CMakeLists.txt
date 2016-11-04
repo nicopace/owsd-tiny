@@ -15,7 +15,13 @@ ADD_EXECUTABLE(owsclient-blinkwps
 	src/wsubus-blinkwps.c
 	)
 
+ADD_EXECUTABLE(owsclient-stubproxy
+	src/main.c
+	src/wsubus-stubproxy.c
+	)
+
 FIND_LIBRARY(ubox NAMES ubox)
+FIND_LIBRARY(ubus NAMES ubus)
 FIND_LIBRARY(json NAMES json-c)
 FIND_LIBRARY(blobmsg_json NAMES blobmsg_json)
 FIND_PACKAGE(libwebsockets REQUIRED)
@@ -23,6 +29,8 @@ INCLUDE_DIRECTORIES(${LIBWEBSOCKETS_INCLUDE_DIRS})
 
 TARGET_LINK_LIBRARIES(owsclient-wifiimport ${ubox} ${json} ${blobmsg_json} ${LIBWEBSOCKETS_LIBRARIES})
 TARGET_LINK_LIBRARIES(owsclient-blinkwps ${ubox} ${json} ${blobmsg_json} ${LIBWEBSOCKETS_LIBRARIES})
+TARGET_LINK_LIBRARIES(owsclient-stubproxy ${ubox} ${ubus} ${json} ${blobmsg_json} ${LIBWEBSOCKETS_LIBRARIES})
 
 INSTALL(TARGETS owsclient-wifiimport RUNTIME DESTINATION usr/bin)
 INSTALL(TARGETS owsclient-blinkwps RUNTIME DESTINATION usr/bin)
+INSTALL(TARGETS owsclient-stubproxy RUNTIME DESTINATION usr/bin)
