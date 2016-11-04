@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdlib.h>
+#include <libubus.h>
 #include <libubox/uloop.h>
 
 struct prog_context {
@@ -8,4 +9,7 @@ struct prog_context {
 
 	struct lws_context *lws_ctx;
 
+	char *ubus_path;
+
+	struct ubus_context ubus_ctx;
 };

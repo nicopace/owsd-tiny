@@ -168,6 +168,7 @@ void print_usage(const char *argv0)
 	fprintf(stderr,
 			"Usage: %s [ <options> ] <host> <port>\n"
 			"  -o <origin>      origin url address to use\n"
+			"  -s <path>        ubus socket path\n"
 			"  -S               SSL mode\n"
 			"\n", argv0);
 }
@@ -181,8 +182,10 @@ int main(int argc, char *argv[])
 
 	lws_info.options = LWS_SERVER_OPTION_DISABLE_IPV6;
 
+	global.ubus_path = "/run/ubus.sock";
+
 	int c;
-	while ((c = getopt(argc, argv, "o:S6h")) != -1) {
+	while ((c = getopt(argc, argv, "o:s:S6h")) != -1) {
 		switch (c) {
 		case 'o':
 			wsi_info.origin = optarg;
@@ -193,6 +196,9 @@ int main(int argc, char *argv[])
 		case 'S':
 			wsi_info.ssl_connection = 1;
 			lws_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+			break;
+		case 's':
+			global.ubus_path = optarg;
 			break;
 		case 'h':
 		default:
