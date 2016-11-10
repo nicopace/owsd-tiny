@@ -19,7 +19,8 @@
 #include "wsubus.h"
 
 #include <libubox/uloop.h>
-
+#include <libubox/blobmsg_json.h>
+#include <libubox/avl-cmp.h>
 #include <json-c/json.h>
 
 #include <libwebsockets.h>
@@ -27,22 +28,32 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include <strings.h>
 #include <assert.h>
 
 #define WSUBUS_PROTO_NAME "ubus-json"
 
+#define MAX_INFLIGHT_CALLS 20
+
+#define find_first_zero(x) ffs(~(x))
+
 static lws_callback_function wsubus_cb;
 
-struct ubus_remote {
+struct remote_ubus {
 	int call_id;
 	char sid[64];
 
-	enum {
-		W8ing4_NONE = 0,
-		W8ing4_LOGIN,
-		W8ing4_LISTEN,
-		W8ing4_LIST,
+	struct {
+		unsigned int login  : 1;
+		unsigned int listen : 1;
+		unsigned int list   : 1;
+		unsigned int call   : MAX_INFLIGHT_CALLS;
 	} waiting_for;
+
+	struct proxied_call {
+		int jsonrpc_id;
+		struct ubus_request_data ureq;
+	} calls[MAX_INFLIGHT_CALLS];
 
 	struct {
 		unsigned char *data;
@@ -50,12 +61,13 @@ struct ubus_remote {
 	} write;
 
 	struct lws *wsi;
+	struct avl_tree stubs;
 };
 
 struct lws_protocols wsubus_proto = {
 	WSUBUS_PROTO_NAME,
 	wsubus_cb,
-	sizeof (struct ubus_remote),
+	sizeof (struct remote_ubus),
 	655360, // arbitrary length
 	0,    // - id
 	NULL, // - user pointer
@@ -112,15 +124,91 @@ static char *make_jsonrpc_ubus_listen(int id, const char *sid, const char *patte
 	return buf;
 }
 
-void remote_stub_create(struct ubus_remote *remote, const char *object, json_object *signature)
+struct remote_stub {
+	struct remote_ubus *remote;
+
+	struct avl_node avl;
+
+	struct blobmsg_policy *method_args;
+
+	struct ubus_object obj;
+	struct ubus_object_type obj_type;
+	struct ubus_method methods[0];
+};
+
+int remote_stub_handle_call(struct ubus_context *ubus_ctx, struct ubus_object *obj, struct ubus_request_data *req,
+		const char *method, struct blob_attr *args)
 {
-	struct ubus_method *mets = calloc(json_object_object_length(signature), sizeof *mets), *m;
-	m = mets;
+	lwsl_notice("stub %s %s called\n", obj->name, method);
+	lwsl_notice("obj name %s , path %s , type name %s\n", obj->name, obj->path, obj->type->name);
+
+	struct remote_stub *stub = container_of(obj, struct remote_stub, obj);
+
+	unsigned call_idx = find_first_zero(stub->remote->waiting_for.call);
+
+	if (!call_idx || call_idx > MAX_INFLIGHT_CALLS) {
+		lwsl_err("no space, too many calls being proxied, max %d\n", MAX_INFLIGHT_CALLS);
+		return UBUS_STATUS_NOT_SUPPORTED;
+	}
+
+	char *args_json = blobmsg_format_json(args, false);
+	json_object *args_jobj = args_json ? json_tokener_parse(args_json) : NULL;
+
+	char *local_name = strchr(obj->name, '/')+1;
+	lwsl_notice("will call %s obj on ...\n", local_name);
+
+	// TODO save req + id somewhere so we can respond
+	// or reuse seq as id and to it that way?
+
+	char *d = make_jsonrpc_ubus_call(++stub->remote->call_id, stub->remote->sid, local_name, method, args_jobj);
+
+	free(args_json);
+
+	if (stub->remote->write.data) {
+		lwsl_err("writing in progress, can't proxy call\n");
+		return UBUS_STATUS_UNKNOWN_ERROR;
+	}
+
+	--call_idx;
+	stub->remote->calls[call_idx].jsonrpc_id = stub->remote->call_id;
+	ubus_defer_request(ubus_ctx, req, &stub->remote->calls[call_idx].ureq);
+	stub->remote->waiting_for.call |= (1U << call_idx);
+
+	stub->remote->write.data = (unsigned char*)d;
+	stub->remote->write.len = strlen(d);
+	lws_callback_on_writable(stub->remote->wsi);
+
+	return 0;
+}
+
+struct remote_stub* remote_stub_create(struct remote_ubus *remote, const char *object, json_object *signature)
+{
+	size_t num_methods = json_object_object_length(signature);
+	size_t num_args = 0;
+	{
+		json_object_object_foreach(signature, mname, margs) {
+			num_args += json_object_object_length(margs);
+			(void)mname;
+		}
+	}
+
+	struct remote_stub *stub = calloc(1, sizeof *stub + num_methods * sizeof stub->methods[0]);
+	stub->method_args = calloc(num_args, sizeof stub->method_args[0]);
+	stub->remote = remote;
+
+	stub->obj.type = &stub->obj_type;
+	stub->obj_type.n_methods = num_methods;
+	stub->obj_type.methods = stub->methods;
+
+	struct ubus_method *m = stub->methods;
+	struct blobmsg_policy *b = stub->method_args;
 
 	json_object_object_foreach(signature, mname, margs) {
-		m->name = mname;
-		m->policy = calloc(json_object_object_length(margs), sizeof *m->policy);
-		struct blobmsg_policy *b = (struct blobmsg_policy*)m->policy;
+		m->name = strdup(mname);
+		m->n_policy = json_object_object_length(margs);
+		m->policy = &stub->method_args[m - stub->methods];
+		m->handler = remote_stub_handle_call;
+
 		json_object_object_foreach(margs, aname, atype) {
 			char c = json_object_get_string(atype)[0];
 			b->type = (
@@ -129,34 +217,44 @@ void remote_stub_create(struct ubus_remote *remote, const char *object, json_obj
 					c == 's' ? BLOBMSG_TYPE_STRING :
 					c == 'n' ? BLOBMSG_TYPE_INT32  :
 					c == 'b' ? BLOBMSG_TYPE_INT8   : BLOBMSG_TYPE_UNSPEC);
-			b->name = aname;
+			b->name = strdup(aname);
 			++b;
 		}
 		++m;
 	};
 
-	struct ubus_object *obj = calloc(1, sizeof *obj);
-	char *objname = malloc(strlen(object) + INET6_ADDRSTRLEN + 2);
+	size_t objname_sz = strlen(object) + INET6_ADDRSTRLEN + 2;
+	char *objname = malloc(objname_sz);
 
-	objname[0] = '\0';
-	strcat(objname, "REMOTE/");
+	lws_get_peer_simple(remote->wsi, objname, objname_sz);
+	strcat(objname, "/");
 	strcat(objname, object);
 
-	obj->name = objname;
-	obj->methods = mets;
+	stub->obj_type.name = objname;
 
-	// TODO attach obj somewhere to track it
+	stub->obj.name = objname;
+	stub->obj.type = &stub->obj_type;
+	stub->obj.n_methods = stub->obj_type.n_methods;
+	stub->obj.methods = stub->obj_type.methods;
 
-	struct prog_context *global = lws_context_user(lws_get_context(remote->wsi));
+	stub->avl.key = strchr(objname, '/')+1;
+	avl_insert(&remote->stubs, &stub->avl);
 
-	int rc = ubus_add_object(&global->ubus_ctx, obj);
+	struct prog_context *global = lws_context_user(lws_get_context(stub->remote->wsi));
+	ubus_add_object(&global->ubus_ctx, &stub->obj);
 
-	lwsl_notice("adding ubus object %s -> RC %d\n", objname, rc);
+	return stub;
 }
 
-void remote_stub_destroy(struct ubus_remote *remote, const char *object)
+void remote_stub_destroy(struct remote_stub *stub)
 {
-	// TODO find object and remove it, free memory
+	struct prog_context *global = lws_context_user(lws_get_context(stub->remote->wsi));
+	ubus_remove_object(&global->ubus_ctx, &stub->obj);
+
+	avl_delete(&stub->remote->stubs, &stub->avl);
+	free((char*)stub->obj_type.name);
+	free(stub->method_args);
+	free(stub);
 }
 
 static int wsubus_cb(struct lws *wsi,
@@ -165,7 +263,7 @@ static int wsubus_cb(struct lws *wsi,
 		void *in,
 		size_t len)
 {
-	struct ubus_remote *remote = user;
+	struct remote_ubus *remote = user;
 
 	struct prog_context *global = lws_context_user(lws_get_context(wsi));
 
@@ -175,23 +273,26 @@ static int wsubus_cb(struct lws *wsi,
 			lwsl_err("failed to connect to ubus\n");
 			return -1;
 		}
+		ubus_add_uloop(&global->ubus_ctx);
 		return 0;
 
 	case LWS_CALLBACK_CLIENT_ESTABLISHED: {
+		remote->wsi = wsi;
+		memset(&remote->waiting_for, 0, sizeof remote->waiting_for);
+		avl_init(&remote->stubs, avl_strcmp, false, NULL);
+
+		remote->waiting_for.login = 1;
+
 		json_object *adminadmin = json_object_new_object();
 		json_object_object_add(adminadmin, "username", json_object_new_string("admin"));
 		json_object_object_add(adminadmin, "password", json_object_new_string("admin"));
 
-		char *d = make_jsonrpc_ubus_call(remote->call_id, NULL, "session", "login", adminadmin);
+		char *d = make_jsonrpc_ubus_call(++remote->call_id, NULL, "session", "login", adminadmin);
 		remote->write.data = (unsigned char*)d;
 		remote->write.len = strlen(d);
 
-		remote->wsi = wsi;
-
 		json_object_put(adminadmin);
 		lws_callback_on_writable(wsi);
-
-		remote->waiting_for = W8ing4_LOGIN;
 
 		return 0;
 	}
@@ -203,7 +304,7 @@ static int wsubus_cb(struct lws *wsi,
 		struct json_tokener *jtok = json_tokener_new();
 		struct json_object *jobj = json_tokener_parse_ex(jtok, in, len);
 
-		lwsl_notice("received, len %d < %.*s > \n\n", len, len, in);
+		lwsl_notice("received, len %d < %.*s > \n", len, len > 200 ? 200 : len, in);
 
 		if (!jobj)
 			goto out;
@@ -211,8 +312,7 @@ static int wsubus_cb(struct lws *wsi,
 		struct json_object *tmp;
 		if (json_object_object_get_ex(jobj, "result", &tmp)) {
 			// result came back
-			switch (remote->waiting_for) {
-			case W8ing4_LOGIN: {
+			if (remote->waiting_for.login) {
 				if (
 						json_object_is_type(tmp, json_type_array)
 						&& !json_object_get_int(json_object_array_get_idx(tmp, 0))
@@ -220,6 +320,7 @@ static int wsubus_cb(struct lws *wsi,
 						&& json_object_object_get_ex(tmp, "ubus_rpc_session", &tmp)
 						&& json_object_is_type(tmp, json_type_string)
 				   ) {
+					remote->waiting_for.login = 0;
 					strcpy(remote->sid, json_object_get_string(tmp));
 				} else {
 					// TODO
@@ -230,30 +331,26 @@ static int wsubus_cb(struct lws *wsi,
 				char *d = make_jsonrpc_ubus_listen(++remote->call_id, remote->sid, "*");
 				remote->write.data = (unsigned char*)d;
 				remote->write.len = strlen(d);
-				remote->waiting_for = W8ing4_LISTEN;
+				remote->waiting_for.listen = 1;
 				lws_callback_on_writable(wsi);
-
-				break;
-			}
-			case W8ing4_LISTEN: {
+			} else if (remote->waiting_for.listen) {
 				if (
 						json_object_is_type(tmp, json_type_array)
 						&& !json_object_get_int(json_object_array_get_idx(tmp, 0))) {
-					;
+					remote->waiting_for.listen = 0;
 				} else {
 					// TODO
 					lwsl_err("response to ubus listen not valid\n");
 					goto out;
 				}
 
-				char *d = make_jsonrpc_ubus_list(++remote->call_id, remote->sid, "*");
+				char *d = make_jsonrpc_ubus_list(++remote->call_id, remote->sid, "system");
 				remote->write.data = (unsigned char*)d;
 				remote->write.len = strlen(d);
-				remote->waiting_for = W8ing4_LIST;
+				remote->waiting_for.list = 1;
 				lws_callback_on_writable(wsi);
 				break;
-			}
-			case W8ing4_LIST: {
+			} else if (remote->waiting_for.list) {
 				if (
 						json_object_is_type(tmp, json_type_array)
 						&& !json_object_get_int(json_object_array_get_idx(tmp, 0))
@@ -265,13 +362,49 @@ static int wsubus_cb(struct lws *wsi,
 				}
 
 				// FIXME when multiple object add events fire, only first one will be handled
-				remote->waiting_for = 0;
-				break;
-			}
+				remote->waiting_for.list = 0;
+			} else if (remote->waiting_for.call) {
+				json_object *id_jobj, *rc_jobj;
+				int id, call_idx = -1;
+				if (
+						json_object_object_get_ex(jobj, "id", &id_jobj)
+						&& json_object_is_type(id_jobj, json_type_int)
+						&& (id = json_object_get_int(id_jobj), 1) ) {
+					lwsl_notice("got response to call %d \n", id);
+					int call_bit;
+					while ((call_bit = (remote->waiting_for.call & -remote->waiting_for.call))) {
+						int idx = __builtin_ctz(call_bit);
+						if (remote->calls[idx].jsonrpc_id == id) {
+							call_idx = idx;
+							remote->waiting_for.call &= ~call_bit;
+							break;
+						}
+					}
+				}
 
-			case 0:
-			default:
-				break;
+				if (call_idx < 0) {
+					lwsl_err("call id not found, ignoring\n");
+					return 0;
+				}
+
+				struct prog_context *global = lws_context_user(lws_get_context(remote->wsi));
+				// will send response to found request
+
+				if (
+						(rc_jobj = json_object_array_get_idx(tmp, 0))
+						&& json_object_is_type(rc_jobj, json_type_int)
+						&& (tmp = json_object_array_get_idx(tmp, 1))
+						&& json_object_is_type(tmp, json_type_object)) {
+					struct blob_buf b = {};
+					blob_buf_init(&b, 0);
+					blobmsg_add_object(&b, tmp);
+
+					ubus_send_reply(&global->ubus_ctx, &remote->calls[call_idx].ureq, b.head);
+					blob_buf_free(&b);
+					ubus_complete_deferred_request(&global->ubus_ctx, &remote->calls[call_idx].ureq, json_object_get_int(rc_jobj));
+				} else {
+					ubus_complete_deferred_request(&global->ubus_ctx, &remote->calls[call_idx].ureq, UBUS_STATUS_UNKNOWN_ERROR);
+				}
 			}
 		} else if (json_object_object_get_ex(jobj, "method", &tmp)) {
 			json_object *t;
@@ -297,18 +430,18 @@ static int wsubus_cb(struct lws *wsi,
 					lws_callback_on_writable(wsi);
 #endif
 					// FIXME: above should be used, but below is workaround because we can't wait for multiple lists
-					if (0 == (remote->waiting_for & W8ing4_LIST)) {
+					if (!remote->waiting_for.list) {
 						char *d = make_jsonrpc_ubus_list(++remote->call_id, remote->sid, "*");
 						remote->write.data = (unsigned char*)d;
 						remote->write.len = strlen(d);
-						remote->waiting_for = W8ing4_LIST;
+						remote->waiting_for.list = 1;
 						lws_callback_on_writable(wsi);
 					}
 				} else if (
 						!strcmp("ubus.object.remove", json_object_get_string(t))
 						&& json_object_object_get_ex(tmp, "path", &tmp)
 						&& json_object_is_type(tmp, json_type_string)) {
-					remote_stub_destroy(remote, json_object_get_string(tmp));
+					//remote_stub_destroy(remote, json_object_get_string(tmp));
 				}
 			}
 		}
@@ -324,8 +457,11 @@ out:
 
 	case LWS_CALLBACK_CLIENT_WRITEABLE: {
 		if (remote->write.data) {
-			lwsl_notice("sending, len %d < %.*s> \n\n", remote->write.len, remote->write.len, remote->write.data);
-			return (int)remote->write.len != lws_write(wsi, remote->write.data, remote->write.len, LWS_WRITE_TEXT);
+			lwsl_notice("sending, len %d < %.*s> \n", remote->write.len, remote->write.len, remote->write.data);
+			int ret = (int)remote->write.len != lws_write(wsi, remote->write.data, remote->write.len, LWS_WRITE_TEXT);
+			remote->write.data = NULL;
+			remote->write.len = 0;
+			return ret;
 		} else {
 			return -1;
 		}
