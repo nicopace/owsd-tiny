@@ -206,7 +206,7 @@ struct remote_stub* remote_stub_create(struct remote_ubus *remote, const char *o
 	json_object_object_foreach(signature, mname, margs) {
 		m->name = strdup(mname);
 		m->n_policy = json_object_object_length(margs);
-		m->policy = &stub->method_args[m - stub->methods];
+		m->policy = b;
 		m->handler = remote_stub_handle_call;
 
 		json_object_object_foreach(margs, aname, atype) {
@@ -344,7 +344,7 @@ static int wsubus_cb(struct lws *wsi,
 					goto out;
 				}
 
-				char *d = make_jsonrpc_ubus_list(++remote->call_id, remote->sid, "system");
+				char *d = make_jsonrpc_ubus_list(++remote->call_id, remote->sid, "*");
 				remote->write.data = (unsigned char*)d;
 				remote->write.len = strlen(d);
 				remote->waiting_for.list = 1;
@@ -390,17 +390,18 @@ static int wsubus_cb(struct lws *wsi,
 				struct prog_context *global = lws_context_user(lws_get_context(remote->wsi));
 				// will send response to found request
 
-				if (
-						(rc_jobj = json_object_array_get_idx(tmp, 0))
-						&& json_object_is_type(rc_jobj, json_type_int)
-						&& (tmp = json_object_array_get_idx(tmp, 1))
-						&& json_object_is_type(tmp, json_type_object)) {
-					struct blob_buf b = {};
-					blob_buf_init(&b, 0);
-					blobmsg_add_object(&b, tmp);
+				rc_jobj = json_object_array_get_idx(tmp, 0);
+				if (json_object_is_type(rc_jobj, json_type_int)) {
+					if ((tmp = json_object_array_get_idx(tmp, 1)) && json_object_is_type(tmp, json_type_object))  {
+						struct blob_buf b = {};
+						blob_buf_init(&b, 0);
+						blobmsg_add_object(&b, tmp);
 
-					ubus_send_reply(&global->ubus_ctx, &remote->calls[call_idx].ureq, b.head);
-					blob_buf_free(&b);
+						ubus_send_reply(&global->ubus_ctx, &remote->calls[call_idx].ureq, b.head);
+
+						blob_buf_free(&b);
+					}
+
 					ubus_complete_deferred_request(&global->ubus_ctx, &remote->calls[call_idx].ureq, json_object_get_int(rc_jobj));
 				} else {
 					ubus_complete_deferred_request(&global->ubus_ctx, &remote->calls[call_idx].ureq, UBUS_STATUS_UNKNOWN_ERROR);
