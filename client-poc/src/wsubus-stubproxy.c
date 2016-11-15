@@ -35,7 +35,8 @@
 
 #define MAX_INFLIGHT_CALLS 20
 
-#define find_first_zero(x) ffs(~(x))
+#define lowest_zero_bit_1idx(X) ffs(~(X))
+#define lowest_set_bit(X) ((X) & (-X))
 
 static lws_callback_function wsubus_cb;
 
@@ -63,6 +64,34 @@ struct remote_ubus {
 	struct lws *wsi;
 	struct avl_tree stubs;
 };
+
+struct proxied_call *proxied_call_new(struct remote_ubus *remote)
+{
+	unsigned call_idx = lowest_zero_bit_1idx(remote->waiting_for.call);
+	if (!call_idx || call_idx > MAX_INFLIGHT_CALLS) {
+		return NULL;
+	}
+	--call_idx;
+
+	remote->waiting_for.call |= (1U << call_idx);
+
+	return &remote->calls[call_idx];
+}
+
+void proxied_call_free(struct remote_ubus *remote, struct proxied_call *p)
+{
+	int idx = p - remote->calls;
+	if (idx >= 0 && idx < MAX_INFLIGHT_CALLS)
+		remote->waiting_for.call &= ~(1U << idx);
+}
+
+#define proxied_call_foreach(REMOTE, P) \
+	for (int _mask_##REMOTE = (REMOTE->waiting_for.call), _callbit_##REMOTE = lowest_set_bit(_mask_##REMOTE), _idx_##REMOTE; \
+			(_callbit_##REMOTE = lowest_set_bit(_mask_##REMOTE)) \
+			&& (_idx_##REMOTE = __builtin_ctz(_callbit_##REMOTE), P = &REMOTE->calls[_idx_##REMOTE], \
+				_callbit_##REMOTE); \
+			_mask_##REMOTE &= ~_callbit_##REMOTE)
+
 
 struct lws_protocols wsubus_proto = {
 	WSUBUS_PROTO_NAME,
@@ -144,14 +173,7 @@ int remote_stub_handle_call(struct ubus_context *ubus_ctx, struct ubus_object *o
 
 	struct remote_stub *stub = container_of(obj, struct remote_stub, obj);
 
-	unsigned call_idx = find_first_zero(stub->remote->waiting_for.call);
-
-	if (!call_idx || call_idx > MAX_INFLIGHT_CALLS) {
-		lwsl_err("no space, too many calls being proxied, max %d\n", MAX_INFLIGHT_CALLS);
-		return UBUS_STATUS_NOT_SUPPORTED;
-	}
-
-	char *args_json = blobmsg_format_json(args, false);
+	char *args_json = blobmsg_format_json(args, true);
 	json_object *args_jobj = args_json ? json_tokener_parse(args_json) : NULL;
 
 	char *local_name = strchr(obj->name, '/')+1;
@@ -169,10 +191,15 @@ int remote_stub_handle_call(struct ubus_context *ubus_ctx, struct ubus_object *o
 		return UBUS_STATUS_UNKNOWN_ERROR;
 	}
 
-	--call_idx;
-	stub->remote->calls[call_idx].jsonrpc_id = stub->remote->call_id;
-	ubus_defer_request(ubus_ctx, req, &stub->remote->calls[call_idx].ureq);
-	stub->remote->waiting_for.call |= (1U << call_idx);
+	struct proxied_call *p = proxied_call_new(stub->remote);
+
+	if (!p) {
+		lwsl_err("Can't find slot to proxy call, max num calls %d", MAX_INFLIGHT_CALLS);
+		return UBUS_STATUS_NOT_SUPPORTED;
+	}
+
+	p->jsonrpc_id = stub->remote->call_id;
+	ubus_defer_request(ubus_ctx, req, &p->ureq);
 
 	stub->remote->write.data = (unsigned char*)d;
 	stub->remote->write.len = strlen(d);
@@ -364,25 +391,26 @@ static int wsubus_cb(struct lws *wsi,
 				// FIXME when multiple object add events fire, only first one will be handled
 				remote->waiting_for.list = 0;
 			} else if (remote->waiting_for.call) {
-				json_object *id_jobj, *rc_jobj;
-				int id, call_idx = -1;
+				json_object *id_jobj;
+				int id;
+				struct proxied_call *p = NULL;
 				if (
 						json_object_object_get_ex(jobj, "id", &id_jobj)
 						&& json_object_is_type(id_jobj, json_type_int)
 						&& (id = json_object_get_int(id_jobj), 1) ) {
 					lwsl_notice("got response to call %d \n", id);
-					int call_bit;
-					while ((call_bit = (remote->waiting_for.call & -remote->waiting_for.call))) {
-						int idx = __builtin_ctz(call_bit);
-						if (remote->calls[idx].jsonrpc_id == id) {
-							call_idx = idx;
-							remote->waiting_for.call &= ~call_bit;
+
+					proxied_call_foreach(remote, p) {
+						if (p->jsonrpc_id == id) {
 							break;
+						} else {
+							lwsl_notice("try call id %d\n", p->jsonrpc_id);
+							p = NULL;
 						}
 					}
 				}
 
-				if (call_idx < 0) {
+				if (!p) {
 					lwsl_err("call id not found, ignoring\n");
 					return 0;
 				}
@@ -390,35 +418,45 @@ static int wsubus_cb(struct lws *wsi,
 				struct prog_context *global = lws_context_user(lws_get_context(remote->wsi));
 				// will send response to found request
 
-				rc_jobj = json_object_array_get_idx(tmp, 0);
-				if (json_object_is_type(rc_jobj, json_type_int)) {
-					if ((tmp = json_object_array_get_idx(tmp, 1)) && json_object_is_type(tmp, json_type_object))  {
-						struct blob_buf b = {};
-						blob_buf_init(&b, 0);
-						blobmsg_add_object(&b, tmp);
-
-						ubus_send_reply(&global->ubus_ctx, &remote->calls[call_idx].ureq, b.head);
-
-						blob_buf_free(&b);
-					}
-
-					ubus_complete_deferred_request(&global->ubus_ctx, &remote->calls[call_idx].ureq, json_object_get_int(rc_jobj));
-				} else {
-					ubus_complete_deferred_request(&global->ubus_ctx, &remote->calls[call_idx].ureq, UBUS_STATUS_UNKNOWN_ERROR);
+				// send data if result contains any
+				json_object *data_jobj;
+				if (
+						json_object_is_type(tmp, json_type_array)
+						&& (data_jobj = json_object_array_get_idx(tmp, 1))
+						&& json_object_is_type(data_jobj, json_type_object))  {
+					struct blob_buf b = {};
+					blob_buf_init(&b, 0);
+					blobmsg_add_object(&b, data_jobj);
+					ubus_send_reply(&global->ubus_ctx, &p->ureq, b.head);
+					blob_buf_free(&b);
 				}
+
+				// send status code
+				json_object *rc_jobj;
+				if (
+						json_object_is_type(tmp, json_type_array)
+						&& (rc_jobj = json_object_array_get_idx(tmp, 0))
+						&& json_object_is_type(rc_jobj, json_type_int)) {
+					ubus_complete_deferred_request(&global->ubus_ctx, &p->ureq, json_object_get_int(rc_jobj));
+				} else {
+					ubus_complete_deferred_request(&global->ubus_ctx, &p->ureq, UBUS_STATUS_UNKNOWN_ERROR);
+				}
+
+				proxied_call_free(remote, p);
 			}
 		} else if (json_object_object_get_ex(jobj, "method", &tmp)) {
-			json_object *t;
+			// call or event came in, we need to proxy it
+			json_object *type_jobj;
 			if (
 					!strcmp("event", json_object_get_string(tmp))
 					&& json_object_object_get_ex(jobj, "params", &tmp)
 					&& json_object_is_type(tmp, json_type_object)
-					&& json_object_object_get_ex(tmp, "type", &t)
-					&& json_object_is_type(t, json_type_string)
+					&& json_object_object_get_ex(tmp, "type", &type_jobj)
+					&& json_object_is_type(type_jobj, json_type_string)
 					&& json_object_object_get_ex(tmp, "data", &tmp)) {
 				// object add/remove event
 				if (
-						!strcmp("ubus.object.add", json_object_get_string(t))
+						!strcmp("ubus.object.add", json_object_get_string(type_jobj))
 						&& json_object_object_get_ex(tmp, "path", &tmp)
 						&& json_object_is_type(tmp, json_type_string)) {
 					// object added, look it up, when done
@@ -439,9 +477,10 @@ static int wsubus_cb(struct lws *wsi,
 						lws_callback_on_writable(wsi);
 					}
 				} else if (
-						!strcmp("ubus.object.remove", json_object_get_string(t))
+						!strcmp("ubus.object.remove", json_object_get_string(type_jobj))
 						&& json_object_object_get_ex(tmp, "path", &tmp)
 						&& json_object_is_type(tmp, json_type_string)) {
+					// TODO implement
 					//remote_stub_destroy(remote, json_object_get_string(tmp));
 				}
 			}
