@@ -47,9 +47,10 @@ struct remote_ubus {
 	struct {
 		unsigned int login  : 1;
 		unsigned int listen : 1;
-		unsigned int list   : 1;
 		unsigned int call   : MAX_INFLIGHT_CALLS;
+		int list_id;
 	} waiting_for;
+
 
 	struct proxied_call {
 		int jsonrpc_id;
@@ -208,6 +209,45 @@ int remote_stub_handle_call(struct ubus_context *ubus_ctx, struct ubus_object *o
 	return 0;
 }
 
+static enum blobmsg_type blobmsg_type_from_str(const char *c)
+{
+	return
+		!c        ? __BLOBMSG_TYPE_LAST :
+		*c == 'a' ? BLOBMSG_TYPE_ARRAY  :
+		*c == 'o' ? BLOBMSG_TYPE_TABLE  :
+		*c == 's' ? BLOBMSG_TYPE_STRING :
+		*c == 'n' ? BLOBMSG_TYPE_INT32  :
+		*c == 'b' ? BLOBMSG_TYPE_INT8   : BLOBMSG_TYPE_UNSPEC;
+}
+
+bool remote_stub_is_same_signature(struct remote_stub *stub, json_object *signature)
+{
+	// TODO validate signature jobj somewhere before this is called, we asume valid json
+
+	if (stub->obj_type.n_methods != json_object_object_length(signature))
+		return false;
+
+	const struct ubus_method *m = stub->methods;
+	json_object_object_foreach(signature, mname, margs) {
+		if (m->n_policy != json_object_object_length(margs))
+			return false;
+		if (strcmp(m->name, mname))
+			return false;
+
+		const struct blobmsg_policy *b = m->policy;
+		json_object_object_foreach(margs, aname, atype) {
+			if (b->type != blobmsg_type_from_str(json_object_get_string(atype)))
+				return false;
+			if (strcmp(b->name, aname))
+				return false;
+			++b;
+		}
+		++m;
+	}
+
+	return true;
+}
+
 struct remote_stub* remote_stub_create(struct remote_ubus *remote, const char *object, json_object *signature)
 {
 	size_t num_methods = json_object_object_length(signature);
@@ -218,6 +258,8 @@ struct remote_stub* remote_stub_create(struct remote_ubus *remote, const char *o
 			(void)mname;
 		}
 	}
+
+	// TODO validate signature jobj somewhere before this is called, we asume valid json
 
 	struct remote_stub *stub = calloc(1, sizeof *stub + num_methods * sizeof stub->methods[0]);
 	stub->method_args = calloc(num_args, sizeof stub->method_args[0]);
@@ -237,13 +279,7 @@ struct remote_stub* remote_stub_create(struct remote_ubus *remote, const char *o
 		m->handler = remote_stub_handle_call;
 
 		json_object_object_foreach(margs, aname, atype) {
-			char c = json_object_get_string(atype)[0];
-			b->type = (
-					c == 'a' ? BLOBMSG_TYPE_ARRAY  :
-					c == 'o' ? BLOBMSG_TYPE_TABLE  :
-					c == 's' ? BLOBMSG_TYPE_STRING :
-					c == 'n' ? BLOBMSG_TYPE_INT32  :
-					c == 'b' ? BLOBMSG_TYPE_INT8   : BLOBMSG_TYPE_UNSPEC);
+			b->type = blobmsg_type_from_str(json_object_get_string(atype));
 			b->name = strdup(aname);
 			++b;
 		}
@@ -336,7 +372,10 @@ static int wsubus_cb(struct lws *wsi,
 		if (!jobj)
 			goto out;
 
-		struct json_object *tmp;
+		json_object *id_jobj;
+		json_object_object_get_ex(jobj, "id", &id_jobj);
+
+		json_object *tmp;
 		if (json_object_object_get_ex(jobj, "result", &tmp)) {
 			// result came back
 			if (remote->waiting_for.login) {
@@ -374,29 +413,69 @@ static int wsubus_cb(struct lws *wsi,
 				char *d = make_jsonrpc_ubus_list(++remote->call_id, remote->sid, "*");
 				remote->write.data = (unsigned char*)d;
 				remote->write.len = strlen(d);
-				remote->waiting_for.list = 1;
+				remote->waiting_for.list_id = remote->call_id;
 				lws_callback_on_writable(wsi);
 				break;
-			} else if (remote->waiting_for.list) {
+			} else if (remote->waiting_for.list_id
+					&& json_object_is_type(id_jobj, json_type_int)
+					&& json_object_get_int(id_jobj) == remote->waiting_for.list_id) {
 				if (
 						json_object_is_type(tmp, json_type_array)
 						&& !json_object_get_int(json_object_array_get_idx(tmp, 0))
 						&& (tmp = json_object_array_get_idx(tmp, 1))
 						&& json_object_is_type(tmp, json_type_object)) {
-					json_object_object_foreach(tmp, obj_name, obj_methods) {
-						remote_stub_create(remote, obj_name, obj_methods);
-					}
-				}
 
-				// FIXME when multiple object add events fire, only first one will be handled
-				remote->waiting_for.list = 0;
+					// iterate through our stubs as we iterate through listed objects,
+					int cmp_result = 1;
+					struct remote_stub *cur = NULL, *last = avl_last_element(&remote->stubs, last, avl), *next;
+					{
+						json_object_object_foreach(tmp, obj_name, obj_methods) {
+							cur = avl_find_ge_element(&remote->stubs, obj_name, cur, avl);
+							//lwsl_notice("after find, cur is %p\n", cur);
+							if (cur)
+								cmp_result = remote->stubs.comp(cur->avl.key, obj_name, remote->stubs.cmp_ptr);
+							(void)obj_methods;
+							break;
+						}
+					}
+
+					json_object_object_foreach(tmp, obj_name, obj_methods) {
+						if (cur) {
+							// advance pointer cur until it's on or after objname
+							avl_for_element_range_safe(cur, last, cur, avl, next) {
+								cmp_result = remote->stubs.comp(cur->avl.key, obj_name, remote->stubs.cmp_ptr);
+								if (cmp_result >= 0)
+									break;
+							}
+						}
+
+						if (cmp_result) {
+							// we don't have that object proxied, create new
+							lwsl_notice("create stub object for %s\n", obj_name);
+							remote_stub_create(remote, obj_name, obj_methods);
+						} else if (!remote_stub_is_same_signature(cur, obj_methods)) {
+							lwsl_notice("signatures differ for %s\n", obj_name);
+							// we have old version of object type / signature
+							remote_stub_destroy(cur);
+							cur = next;
+							// TODO could avoid realloc here if remote_stub_create is converted to caller-allocated
+							lwsl_notice("create NEW stub object for %s\n", obj_name);
+							remote_stub_create(remote, obj_name, obj_methods);
+						}
+					}
+
+					// FIXME when multiple object add events fire, only first one will be handled
+					remote->waiting_for.list_id = 0;
+				} else {
+					// TODO
+					lwsl_err("response to ubus list not valid, ignorind\n");
+					goto out;
+				}
 			} else if (remote->waiting_for.call) {
-				json_object *id_jobj;
 				int id;
 				struct proxied_call *p = NULL;
 				if (
-						json_object_object_get_ex(jobj, "id", &id_jobj)
-						&& json_object_is_type(id_jobj, json_type_int)
+						json_object_is_type(id_jobj, json_type_int)
 						&& (id = json_object_get_int(id_jobj), 1) ) {
 					lwsl_notice("got response to call %d \n", id);
 
@@ -404,7 +483,6 @@ static int wsubus_cb(struct lws *wsi,
 						if (p->jsonrpc_id == id) {
 							break;
 						} else {
-							lwsl_notice("try call id %d\n", p->jsonrpc_id);
 							p = NULL;
 						}
 					}
@@ -412,7 +490,7 @@ static int wsubus_cb(struct lws *wsi,
 
 				if (!p) {
 					lwsl_err("call id not found, ignoring\n");
-					return 0;
+					goto out;
 				}
 
 				struct prog_context *global = lws_context_user(lws_get_context(remote->wsi));
@@ -468,12 +546,12 @@ static int wsubus_cb(struct lws *wsi,
 					remote->waiting_for = W8ing4_LIST;
 					lws_callback_on_writable(wsi);
 #endif
-					// FIXME: above should be used, but below is workaround because we can't wait for multiple lists
-					if (!remote->waiting_for.list) {
+					// FIXME: because we can't wait for multiple lists
+					if (!remote->waiting_for.list_id) {
 						char *d = make_jsonrpc_ubus_list(++remote->call_id, remote->sid, "*");
 						remote->write.data = (unsigned char*)d;
 						remote->write.len = strlen(d);
-						remote->waiting_for.list = 1;
+						remote->waiting_for.list_id = remote->call_id;
 						lws_callback_on_writable(wsi);
 					}
 				} else if (
