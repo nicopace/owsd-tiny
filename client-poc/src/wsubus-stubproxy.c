@@ -248,6 +248,20 @@ bool remote_stub_is_same_signature(struct remote_stub *stub, json_object *signat
 	return true;
 }
 
+size_t proxied_name_size(const struct remote_ubus *remote, const char *name)
+{
+	(void)remote;
+	return strlen(name) + INET6_ADDRSTRLEN + 2;
+}
+
+void proxied_name_fill(char *proxied_name, size_t proxied_name_sz, const struct remote_ubus *remote, const char *name)
+{
+	lws_get_peer_simple(remote->wsi, proxied_name, proxied_name_sz);
+	strcat(proxied_name, "/");
+	strcat(proxied_name, name);
+	lwsl_notice("proxying remote name %s ad %s locally\n", name, proxied_name);
+}
+
 struct remote_stub* remote_stub_create(struct remote_ubus *remote, const char *object, json_object *signature)
 {
 	size_t num_methods = json_object_object_length(signature);
@@ -286,21 +300,22 @@ struct remote_stub* remote_stub_create(struct remote_ubus *remote, const char *o
 		++m;
 	};
 
-	size_t objname_sz = strlen(object) + INET6_ADDRSTRLEN + 2;
-	char *objname = malloc(objname_sz);
+	size_t proxied_objname_sz = proxied_name_size(remote, object);
+	char *proxied_objname = malloc(proxied_objname_sz);
+	proxied_name_fill(proxied_objname, proxied_objname_sz, remote, object);
 
-	lws_get_peer_simple(remote->wsi, objname, objname_sz);
-	strcat(objname, "/");
-	strcat(objname, object);
+	lws_get_peer_simple(remote->wsi, proxied_objname, proxied_objname_sz);
+	strcat(proxied_objname, "/");
+	strcat(proxied_objname, object);
 
-	stub->obj_type.name = objname;
+	stub->obj_type.name = proxied_objname;
 
-	stub->obj.name = objname;
+	stub->obj.name = proxied_objname;
 	stub->obj.type = &stub->obj_type;
 	stub->obj.n_methods = stub->obj_type.n_methods;
 	stub->obj.methods = stub->obj_type.methods;
 
-	stub->avl.key = strchr(objname, '/')+1;
+	stub->avl.key = strchr(proxied_objname, '/')+1;
 	avl_insert(&remote->stubs, &stub->avl);
 
 	struct prog_context *global = lws_context_user(lws_get_context(stub->remote->wsi));
@@ -530,36 +545,48 @@ static int wsubus_cb(struct lws *wsi,
 					&& json_object_object_get_ex(jobj, "params", &tmp)
 					&& json_object_is_type(tmp, json_type_object)
 					&& json_object_object_get_ex(tmp, "type", &type_jobj)
-					&& json_object_is_type(type_jobj, json_type_string)
-					&& json_object_object_get_ex(tmp, "data", &tmp)) {
-				// object add/remove event
+					&& json_object_is_type(type_jobj, json_type_string)) {
+				json_object_object_get_ex(tmp, "data", &tmp);
 				if (
 						!strcmp("ubus.object.add", json_object_get_string(type_jobj))
 						&& json_object_object_get_ex(tmp, "path", &tmp)
 						&& json_object_is_type(tmp, json_type_string)) {
-					// object added, look it up, when done
+					// object added, look it up, when done, we'll add it
 
-#if 0
-					char *d = make_jsonrpc_ubus_list(++remote->call_id, remote->sid, json_object_get_string(tmp));
+					if (!remote->waiting_for.list_id) {
+						// FIXME: because we can't wait for multiple lists
+						lwsl_warn("calling list again...\n");
+					}
+
+					char *d = make_jsonrpc_ubus_list(++remote->call_id, remote->sid, "*");
 					remote->write.data = (unsigned char*)d;
 					remote->write.len = strlen(d);
-					remote->waiting_for = W8ing4_LIST;
+					remote->waiting_for.list_id = remote->call_id;
 					lws_callback_on_writable(wsi);
-#endif
-					// FIXME: because we can't wait for multiple lists
-					if (!remote->waiting_for.list_id) {
-						char *d = make_jsonrpc_ubus_list(++remote->call_id, remote->sid, "*");
-						remote->write.data = (unsigned char*)d;
-						remote->write.len = strlen(d);
-						remote->waiting_for.list_id = remote->call_id;
-						lws_callback_on_writable(wsi);
-					}
 				} else if (
 						!strcmp("ubus.object.remove", json_object_get_string(type_jobj))
 						&& json_object_object_get_ex(tmp, "path", &tmp)
 						&& json_object_is_type(tmp, json_type_string)) {
-					// TODO implement
-					//remote_stub_destroy(remote, json_object_get_string(tmp));
+					// object removed, lookup and remove
+					struct remote_stub *cur = avl_find_element(&remote->stubs, json_object_get_string(tmp), cur, avl);
+					if (cur) {
+						lwsl_notice("removing stub object for %s\n", cur->avl.key);
+						remote_stub_destroy(cur);
+					}
+				} else {
+					struct blob_buf b = {};
+					const char *eventname = json_object_get_string(type_jobj);
+
+					size_t proxied_eventname_sz = proxied_name_size(remote, eventname);
+					char *proxied_eventname = malloc(proxied_eventname_sz);
+					proxied_name_fill(proxied_eventname, proxied_eventname_sz, remote, eventname);
+
+					blob_buf_init(&b, 0);
+					if (json_object_is_type(tmp, json_type_object))
+						blobmsg_add_object(&b, tmp);
+					ubus_send_event(&global->ubus_ctx, proxied_eventname, b.head);
+					blob_buf_free(&b);
+					free(proxied_eventname);
 				}
 			}
 		}
