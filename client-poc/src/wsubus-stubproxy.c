@@ -329,6 +329,17 @@ void remote_stub_destroy(struct remote_stub *stub)
 	struct prog_context *global = lws_context_user(lws_get_context(stub->remote->wsi));
 	ubus_remove_object(&global->ubus_ctx, &stub->obj);
 
+	for (struct ubus_method *m = (struct ubus_method *)stub->obj_type.methods;
+			m < stub->obj_type.methods + stub->obj_type.n_methods;
+			++m) {
+		for (struct blobmsg_policy *b = (struct blobmsg_policy *)m->policy;
+				b < m->policy + m->n_policy;
+				++b) {
+			free((char*)b->name);
+		}
+		free((char*)m->name);
+	}
+
 	avl_delete(&stub->remote->stubs, &stub->avl);
 	free((char*)stub->obj_type.name);
 	free(stub->method_args);
@@ -354,6 +365,12 @@ static int wsubus_cb(struct lws *wsi,
 		ubus_add_uloop(&global->ubus_ctx);
 		return 0;
 
+	case LWS_CALLBACK_PROTOCOL_DESTROY: {
+		lwsl_err("DESTROY PROTO, wsi=%p, user=%p, global=%p \n", wsi, user, global);
+		ubus_shutdown(&global->ubus_ctx);
+		return 0;
+	}
+
 	case LWS_CALLBACK_CLIENT_ESTABLISHED: {
 		remote->wsi = wsi;
 		memset(&remote->waiting_for, 0, sizeof remote->waiting_for);
@@ -375,8 +392,13 @@ static int wsubus_cb(struct lws *wsi,
 		return 0;
 	}
 
-	case LWS_CALLBACK_CLOSED:
+	case LWS_CALLBACK_CLOSED: {
+		struct remote_stub *cur, *next;
+		avl_for_each_element_safe(&remote->stubs, cur, avl, next) {
+			remote_stub_destroy(cur);
+		}
 		return 0;
+	}
 
 	case LWS_CALLBACK_CLIENT_RECEIVE: {
 		struct json_tokener *jtok = json_tokener_new();
@@ -430,7 +452,6 @@ static int wsubus_cb(struct lws *wsi,
 				remote->write.len = strlen(d);
 				remote->waiting_for.list_id = remote->call_id;
 				lws_callback_on_writable(wsi);
-				break;
 			} else if (remote->waiting_for.list_id
 					&& json_object_is_type(id_jobj, json_type_int)
 					&& json_object_get_int(id_jobj) == remote->waiting_for.list_id) {
