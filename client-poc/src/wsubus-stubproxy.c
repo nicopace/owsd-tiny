@@ -304,10 +304,6 @@ struct remote_stub* remote_stub_create(struct remote_ubus *remote, const char *o
 	char *proxied_objname = malloc(proxied_objname_sz);
 	proxied_name_fill(proxied_objname, proxied_objname_sz, remote, object);
 
-	lws_get_peer_simple(remote->wsi, proxied_objname, proxied_objname_sz);
-	strcat(proxied_objname, "/");
-	strcat(proxied_objname, object);
-
 	stub->obj_type.name = proxied_objname;
 
 	stub->obj.name = proxied_objname;
@@ -421,8 +417,7 @@ static int wsubus_cb(struct lws *wsi,
 						&& !json_object_get_int(json_object_array_get_idx(tmp, 0))
 						&& (tmp = json_object_array_get_idx(tmp, 1))
 						&& json_object_object_get_ex(tmp, "ubus_rpc_session", &tmp)
-						&& json_object_is_type(tmp, json_type_string)
-				   ) {
+						&& json_object_is_type(tmp, json_type_string)) {
 					remote->waiting_for.login = 0;
 					strcpy(remote->sid, json_object_get_string(tmp));
 				} else {
