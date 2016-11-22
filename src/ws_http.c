@@ -26,7 +26,7 @@ static lws_callback_function ws_http_cb;
 
 struct lws_protocols ws_http_proto = {
 	/*  we don't want any subprotocol name to match this, and it won't */
-	NULL,
+	",,,,,,,,",
 	ws_http_cb,
 	// following other fields we don't use:
 	0,    // - per-session data size

@@ -14,12 +14,12 @@
 /*
  * ubus over websocket - ubus call
  */
-#include "wsubus_rpc_call.h"
+#include "rpc_call.h"
 
 #include "common.h"
 #include "wsubus.impl.h"
-#include "wsubus_rpc.h"
-#include "wsubus_access_check.h"
+#include "rpc.h"
+#include "access_check.h"
 
 #include <libubox/blobmsg.h>
 #include <libubus.h>
@@ -177,7 +177,7 @@ static void wsubus_call_on_retdata(struct ubus_request *req, int type, struct bl
 int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, struct blob_attr *id)
 {
 	struct ubusrpc_blob_call *ubusrpc_req = &ubusrpc_blob->call;
-	struct wsubus_client_session *client = lws_wsi_user(wsi);
+	struct wsu_client_session *client = wsi_to_client(wsi);
 
 	int ret;
 
@@ -209,8 +209,8 @@ respond_with_ubus_error:
 	if (ret != UBUS_STATUS_OK) {
 		// invoke never happened, we need to send ubus error status
 		// (jsonrpc success, but ubus code != 0)
-		char *response = jsonrpc_response_from_blob(id, ret, NULL);
-		wsubus_write_response_str(wsi, response);
+		char *response = jsonrpc__resp_ubus(id, ret, NULL);
+		wsu_queue_write_str(wsi, response);
 		free(response);
 	}
 
@@ -220,13 +220,13 @@ respond_with_ubus_error:
 static int wsubus_call_do_check_then_do_call(struct wsubus_percall_ctx *curr_call)
 {
 	struct prog_context *prog = lws_context_user(lws_get_context(curr_call->wsi));
-	struct wsubus_client_session *client = lws_wsi_user(curr_call->wsi);
+	struct wsu_client_session *client = wsi_to_client(curr_call->wsi);
 
 	assert(curr_call->state == WSUBUS_CALL_STATE_PREP);
 
 	int ret = UBUS_STATUS_OK;
 
-	if (wsubus_check_and_update_sid(lws_wsi_user(curr_call->wsi), curr_call->call_args->sid) != 0) {
+	if (wsu_check_and_update_sid(wsi_to_peer(curr_call->wsi), curr_call->call_args->sid) != 0) {
 		ret = UBUS_STATUS_NOT_SUPPORTED;
 		goto out;
 	}
@@ -279,8 +279,8 @@ out:
 	if (ret != UBUS_STATUS_OK) {
 		// hide all error codes in access behind permission denied
 		ret = UBUS_STATUS_PERMISSION_DENIED;
-		char *json_str = jsonrpc_response_from_blob(curr_call->id, ret, NULL);
-		wsubus_write_response_str(curr_call->wsi, json_str);
+		char *json_str = jsonrpc__resp_ubus(curr_call->id, ret, NULL);
+		wsu_queue_write_str(curr_call->wsi, json_str);
 		free(json_str);
 
 		list_del(&curr_call->cq);
@@ -351,9 +351,9 @@ static void wsubus_call_on_completed(struct ubus_request *req, int status)
 		lwsl_warn("status != req->status_code (%d != %d)\n", status, req->status_code);
 
 	// retdata is deep copied pointer from retdata handler 
-	char *json_str = jsonrpc_response_from_blob(curr_call->id, status, curr_call->retdata);
+	char *json_str = jsonrpc__resp_ubus(curr_call->id, status, curr_call->retdata);
 
-	wsubus_write_response_str(curr_call->wsi, json_str);
+	wsu_queue_write_str(curr_call->wsi, json_str);
 	free(json_str);
 	free(req);
 	curr_call->invoke_req = NULL;

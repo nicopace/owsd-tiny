@@ -11,7 +11,7 @@
  * Author: Denis Osvald <denis.osvald@sartura.hr>
  *
  */
-#include "wsubus_access_check.h"
+#include "access_check.h"
 
 struct wsubus_access_check_req {
 	struct ubus_request req;

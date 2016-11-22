@@ -15,7 +15,7 @@
 
 #include "ws_http.h"
 #include "wsubus.h"
-#include "wsubus_rpc.h"
+#include "rpc.h"
 
 #include <libubox/uloop.h>
 #include <libubus.h>
@@ -197,6 +197,9 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	argc -= optind;
+	argv += optind;
+
 	lws_set_log_level(-1, NULL);
 
 	uloop_init();
@@ -295,6 +298,21 @@ int main(int argc, char *argv[])
 		if (list_empty(&vh_context->origins)) {
 			lwsl_warn("No origins whitelisted on port %d = reject all ws clients\n", c->port);
 		}
+
+	}
+
+	if (argc >= 2) {
+		struct lws_client_connect_info client_info = {};
+		client_info.context = lws_ctx;
+		client_info.protocol = ws_protocols[1].name;
+		client_info.port = atoi(argv[1]);
+		client_info.address = argv[0];
+		client_info.host = argv[0];
+		client_info.origin = argv[0];
+		client_info.path = "/";
+
+		lwsl_warn("connecting as client too to %s %s\n", argv[0], argv[1]);
+		lws_client_connect_via_info(&client_info);
 
 	}
 

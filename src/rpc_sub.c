@@ -14,12 +14,12 @@
 /*
  * ubus over websocket - ubus event subscription
  */
-#include "wsubus_rpc_sub.h"
+#include "rpc_sub.h"
 
 #include "common.h"
 #include "wsubus.impl.h"
-#include "wsubus_rpc.h"
-#include "wsubus_access_check.h"
+#include "rpc.h"
+#include "access_check.h"
 
 #include <libubox/blobmsg_json.h>
 #include <libubox/blobmsg.h>
@@ -208,10 +208,10 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blo
 		goto out;
 	}
 
-	struct wsubus_client_session *client = lws_wsi_user(wsi);
+	struct wsu_peer *peer = wsi_to_peer(wsi);
 	// TODO check_and_update_sid should go in one common place
-	if (wsubus_check_and_update_sid(client, ubusrpc->sub.sid) != 0) {
-		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->sub.sid, client->last_known_sid);
+	if (wsu_check_and_update_sid(peer, ubusrpc->sub.sid) != 0) {
+		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->sub.sid, peer->sid);
 		ret = UBUS_STATUS_NOT_SUPPORTED;
 		free(subinfo);
 		goto out;
@@ -246,8 +246,8 @@ out:
 		free(ubusrpc->sub.src_blob);
 		ubusrpc->src_blob = NULL;
 	}
-	char *response = jsonrpc_response_from_blob(id, ret, NULL);
-	wsubus_write_response_str(wsi, response);
+	char *response = jsonrpc__resp_ubus(id, ret, NULL);
+	wsu_queue_write_str(wsi, response);
 	free(response);
 	free(ubusrpc);
 
@@ -269,10 +269,10 @@ int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struc
 	char *response_str;
 	int ret = 0;
 
-	struct wsubus_client_session *client = lws_wsi_user(wsi);
+	struct wsu_peer *peer = wsi_to_peer(wsi);
 	// TODO check_and_update_sid should go in one common place
-	if (wsubus_check_and_update_sid(client, ubusrpc->sub.sid) != 0) {
-		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->sub.sid, client->last_known_sid);
+	if (wsu_check_and_update_sid(peer, ubusrpc->sub.sid) != 0) {
+		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->sub.sid, peer->sid);
 		ret = UBUS_STATUS_NOT_SUPPORTED;
 		goto out;
 	}
@@ -290,14 +290,14 @@ int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struc
 
 out:
 	if (ret) {
-		response_str = jsonrpc_response_from_blob(id, ret, NULL);
+		response_str = jsonrpc__resp_ubus(id, ret, NULL);
 	} else {
 		// using blobmsg_data here to pass only array part of blobmsg
-		response_str = jsonrpc_response_from_blob(id, 0, blobmsg_data(sub_list_blob.head));
+		response_str = jsonrpc__resp_ubus(id, 0, blobmsg_data(sub_list_blob.head));
 		blob_buf_free(&sub_list_blob);
 	}
 
-	wsubus_write_response_str(wsi, response_str);
+	wsu_queue_write_str(wsi, response_str);
 
 	// free memory
 	free(response_str);
@@ -311,10 +311,10 @@ int ubusrpc_handle_unsub_by_id(struct lws *wsi, struct ubusrpc_blob *ubusrpc, st
 	char *response;
 	int ret = 0;
 
-	struct wsubus_client_session *client = lws_wsi_user(wsi);
+	struct wsu_peer *peer = wsi_to_peer(wsi);
 	// TODO check_and_update_sid should go in one common place
-	if (wsubus_check_and_update_sid(client, ubusrpc->unsub_by_id.sid) != 0) {
-		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->unsub_by_id.sid, client->last_known_sid);
+	if (wsu_check_and_update_sid(peer, ubusrpc->unsub_by_id.sid) != 0) {
+		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->unsub_by_id.sid, peer->sid);
 		ret = UBUS_STATUS_NOT_SUPPORTED;
 		goto out;
 	}
@@ -326,8 +326,8 @@ int ubusrpc_handle_unsub_by_id(struct lws *wsi, struct ubusrpc_blob *ubusrpc, st
 		ret = UBUS_STATUS_NOT_FOUND;
 
 out:
-	response = jsonrpc_response_from_blob(id, ret, NULL);
-	wsubus_write_response_str(wsi, response);
+	response = jsonrpc__resp_ubus(id, ret, NULL);
+	wsu_queue_write_str(wsi, response);
 	free(response);
 	free(ubusrpc);
 
@@ -339,10 +339,10 @@ int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct b
 	char *response;
 	int ret = 0;
 
-	struct wsubus_client_session *client = lws_wsi_user(wsi);
+	struct wsu_peer *peer = wsi_to_peer(wsi);
 	// TODO check_and_update_sid should go in one common place
-	if (wsubus_check_and_update_sid(client, ubusrpc->sub.sid) != 0) {
-		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->sub.sid, client->last_known_sid);
+	if (wsu_check_and_update_sid(peer, ubusrpc->sub.sid) != 0) {
+		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->sub.sid, peer->sid);
 		ret = UBUS_STATUS_NOT_SUPPORTED;
 		goto out;
 	}
@@ -354,8 +354,8 @@ int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct b
 		ret = UBUS_STATUS_NOT_FOUND;
 
 out:
-	response = jsonrpc_response_from_blob(id, ret, NULL);
-	wsubus_write_response_str(wsi, response);
+	response = jsonrpc__resp_ubus(id, ret, NULL);
+	wsu_queue_write_str(wsi, response);
 	free(response);
 	free(ubusrpc->sub.src_blob);
 	free(ubusrpc);
@@ -407,7 +407,7 @@ static void wsubus_ev_check_cb(struct wsubus_access_check_req *req, void *ctx, b
 	char *response = blobmsg_format_json(resp_buf.head, true);
 	blob_buf_free(&resp_buf);
 
-	wsubus_write_response_str(t->sub->wsi, response);
+	wsu_queue_write_str(t->sub->wsi, response);
 	free(response);
 
 out:
@@ -424,13 +424,14 @@ static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *e
 			mtype == BLOBMSG_TYPE_ARRAY ? "[]" : "<>");
 
 	struct wsubus_sub_info *sub = container_of(ev, struct wsubus_sub_info, ubus_handler);
-	struct wsubus_client_session *client = lws_wsi_user(sub->wsi);
+	struct wsu_client_session *client = wsi_to_client(sub->wsi);
+	struct wsu_peer *peer = wsi_to_peer(sub->wsi);
 
 	struct wsubus_ev_notif *t = malloc(sizeof *t);
 	t->type = strdup(type);
 	t->msg = blob_memdup(msg);
 	t->sub = sub;
-	t->cr.req = wsubus_access_check__event(ctx, type, client->last_known_sid, t, wsubus_ev_check_cb);
+	t->cr.req = wsubus_access_check__event(ctx, type, peer->sid, t, wsubus_ev_check_cb);
 
 	if (!t->cr.req) {
 		wsubus_ev_destroy_ctx(t);

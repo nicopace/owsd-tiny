@@ -14,12 +14,13 @@ SET(SOURCES
 	src/ws_http.c
 	src/ws_http_serve.c
 	src/wsubus.c
-	src/wsubus.impl.c
-	src/wsubus_rpc.c
-	src/wsubus_rpc_call.c
-	src/wsubus_rpc_list.c
-	src/wsubus_rpc_sub.c
-	src/wsubus_access_check.c
+	src/rpc.c
+	src/rpc_call.c
+	src/rpc_list.c
+	src/rpc_sub.c
+	src/access_check.c
+	src/local_stub.c
+	src/util_jsonrpc.c
 	)
 
 ADD_EXECUTABLE(owsd ${SOURCES})
