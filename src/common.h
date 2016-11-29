@@ -38,5 +38,5 @@ struct origin {
 
 struct vh_context {
 	struct list_head origins;
-	const char *name;
+	char *name;
 };

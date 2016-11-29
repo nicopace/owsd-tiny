@@ -26,23 +26,12 @@
 #include <locale.h>
 #include <sys/resource.h>
 
-#ifndef WSD_DEF__PORT_NO
-#define WSD_DEF_PORT_NO 8843
-#endif
-
-#define WSD_2str_(_) #_
-#define WSD_2str(_) WSD_2str_(_)
-
 #ifndef WSD_DEF_UBUS_PATH
 #define WSD_DEF_UBUS_PATH "/var/run/ubus.sock"
 #endif
 
 #ifndef WSD_DEF_WWW_PATH
 #define WSD_DEF_WWW_PATH "/www"
-#endif
-
-#ifndef WSD_MAX_VHOSTS
-#define WSD_MAX_VHOSTS 10
 #endif
 
 struct prog_context global;
@@ -56,7 +45,7 @@ static void usage(char *name)
 			"  -w <www_path>    HTTP resources path [" WSD_DEF_WWW_PATH "]\n"
 			"  -r <from>:<to>   HTTP path redirect pair\n"
 			" per-port options:\n"
-			"  -p <port>        port number [" WSD_2str(WSD_DEF_PORT_NO) "]\n"
+			"  -p <port>        port number\n"
 			"  -L <label>       _owsd_listen label\n"
 			"  -i <interface>   interface to bind to \n"
 			"  -o <origin>      origin url address to whitelist\n"
@@ -78,20 +67,6 @@ void utimer_service(struct uloop_timeout *utimer)
 	uloop_timeout_set(utimer, 1000);
 }
 
-static void vh_init_default(struct lws_context_creation_info *vh) {
-	static const struct lws_context_creation_info default_vh = {
-		.port = WSD_DEF_PORT_NO,
-	};
-
-	*vh = default_vh;
-	struct vh_context *vh_c = malloc(sizeof *vh_c);
-	INIT_LIST_HEAD(&vh_c->origins);
-	vh_c->name = NULL;
-	vh->user = vh_c;
-
-	vh->options |= LWS_SERVER_OPTION_DISABLE_IPV6; // FIXME lwsbug ipv6 doesn't work with iface
-}
-
 int main(int argc, char *argv[])
 {
 	int rc = 0;
@@ -102,10 +77,11 @@ int main(int argc, char *argv[])
 	char *redir_to = NULL;
 	bool any_ssl = false;
 
-	struct lws_context_creation_info vh_info[WSD_MAX_VHOSTS] = { };
-	struct lws_context_creation_info *curr_vh_info = vh_info;
-	bool have_vh = false;
-	vh_init_default(curr_vh_info);
+	struct vhinfo_list {
+		struct lws_context_creation_info vh_info;
+		struct vhinfo_list *next;
+		struct vh_context vh_ctx;
+	} *currvh = NULL;
 
 	int c;
 	while ((c = getopt(argc, argv,
@@ -137,56 +113,62 @@ int main(int argc, char *argv[])
 			redir_from = optarg;
 			break;
 
-		case 'p':
-			if (!have_vh) {
-				have_vh = true;
-			} else if (curr_vh_info >= vh_info + ARRAY_SIZE(vh_info) - 1) {
-				lwsl_err("Too many ports [ max " WSD_2str(WSD_MAX_VHOSTS) " ]\n");
+		case 'p': {
+			struct vhinfo_list *newvh = malloc(sizeof *newvh);
+			if (!newvh) {
+				lwsl_err("OOM vhinfo init\n");
 				goto error;
-			} else {
-				vh_init_default(++curr_vh_info);
 			}
+
+			*newvh = (struct vhinfo_list){};
+			INIT_LIST_HEAD(&newvh->vh_ctx.origins);
+			newvh->vh_ctx.name = "";
+			newvh->vh_info.options |= LWS_SERVER_OPTION_DISABLE_IPV6;
 
 			char *error;
 			int port = strtol(optarg, &error, 10);
 			if (*error) {
-				lwsl_err("Invalid port specified");
+				lwsl_err("Invalid port '%s' specified\n", optarg);
 				goto error;
 			}
+			newvh->vh_info.port = port;
+			newvh->vh_ctx.name = optarg;
 
-			curr_vh_info->port = port;
+			newvh->next = currvh;
+			currvh = newvh;
 			break;
+		}
 		case 'i':
-			curr_vh_info->iface = optarg;
+			currvh->vh_info.iface = optarg;
 			break;
 		case 'o':;
 			struct origin *origin_el = malloc(sizeof(struct origin));
 			if (!origin_el)
 				break;
 			origin_el->url = optarg;
-			list_add_tail(&origin_el->list, &((struct vh_context*)curr_vh_info->user)->origins);
+			list_add_tail(&origin_el->list, &currvh->vh_ctx.origins);
 			break;
 		case 'L':
-			((struct vh_context*)curr_vh_info->user)->name = optarg;
+			currvh->vh_ctx.name = optarg;
 			break;
 #ifdef LWS_USE_IPV6
 		case '6':
-			if (curr_vh_info->options & LWS_SERVER_OPTION_DISABLE_IPV6) {
-				curr_vh_info->options &= ~LWS_SERVER_OPTION_DISABLE_IPV6;
+			if (currvh->vh_info.options & LWS_SERVER_OPTION_DISABLE_IPV6) {
+				currvh->vh_info.options &= ~LWS_SERVER_OPTION_DISABLE_IPV6;
 			} else {
-				curr_vh_info->options |= LWS_SERVER_OPTION_IPV6_V6ONLY_MODIFY | LWS_SERVER_OPTION_IPV6_V6ONLY_VALUE;
+				currvh->vh_info.options |= LWS_SERVER_OPTION_IPV6_V6ONLY_MODIFY | LWS_SERVER_OPTION_IPV6_V6ONLY_VALUE;
 			}
 			break;
 #endif // LWS_USE_IPV6
 #ifdef LWS_OPENSSL_SUPPORT
 		case 'c':
-			curr_vh_info->options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
-			curr_vh_info->ssl_cert_filepath = optarg;
+			currvh->vh_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+			currvh->vh_info.ssl_cert_filepath = optarg;
 			any_ssl = true;
 			break;
 		case 'k':
-			curr_vh_info->options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
-			curr_vh_info->ssl_private_key_filepath = optarg;
+			currvh->vh_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+			currvh->vh_info.ssl_private_key_filepath = optarg;
 			break;
 #endif // LWS_OPENSSL_SUPPORT
 
@@ -257,7 +239,7 @@ int main(int argc, char *argv[])
 		{ }
 	};
 
-	struct lws_http_mount wwwmount = {
+	static struct lws_http_mount wwwmount = {
 		NULL,
 		"/",
 		"/dev/null/",   // anything not-a-dir is ok, so our HTTP code runs and not lws
@@ -269,14 +251,14 @@ int main(int argc, char *argv[])
 	wwwmount.mountpoint_len = strlen(wwwmount.mountpoint);
 	wwwmount.origin_protocol = LWSMPRO_FILE;
 
-	for (struct lws_context_creation_info *c = vh_info; c <= curr_vh_info; ++c) {
-		c->protocols = ws_protocols;
-		c->mounts = &wwwmount;
+	for (struct vhinfo_list *c = currvh, *prev = NULL; c; prev = c, c = c->next, free(prev)) {
+		c->vh_info.protocols = ws_protocols;
+		c->vh_info.mounts = &wwwmount;
 
-		lwsl_debug("create vhost for port %d with %s , c %s k %s\n", c->port, (c->options & LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT) ? "ssl" : "no ssl",
-				c->ssl_cert_filepath, c->ssl_private_key_filepath);
+		lwsl_debug("create vhost for port %d with %s , c %s k %s\n", c->vh_info.port, (c->vh_info.options & LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT) ? "ssl" : "no ssl",
+				c->vh_info.ssl_cert_filepath, c->vh_info.ssl_private_key_filepath);
 
-		struct lws_vhost *vh = lws_create_vhost(lws_ctx, c);
+		struct lws_vhost *vh = lws_create_vhost(lws_ctx, &c->vh_info);
 
 		if (!vh) {
 			lwsl_err("lws_create_vhost error\n");
@@ -284,22 +266,19 @@ int main(int argc, char *argv[])
 			goto error_ubus_ufds_ctx;
 		}
 
-		// allocate per-vhost storage
-		struct vh_context *vh_context = lws_protocol_vh_priv_zalloc(vh, &c->protocols[1] /* ubus */, sizeof *vh_context);
+		// per-vhost storage is lws-allocated
+		struct vh_context *vh_context = lws_protocol_vh_priv_zalloc(vh, &c->vh_info.protocols[1] /* ubus */, sizeof *vh_context);
 
-		// copy all data
-		memcpy(vh_context, c->user, sizeof *vh_context);
-		// list needs separate copying becuase it points to itself
+		// copy all data to lws-allocated per-vhost storage
+		memcpy(vh_context, &c->vh_ctx, sizeof *vh_context);
+		// list needs separate copying becuase it references its own address
 		INIT_LIST_HEAD(&vh_context->origins);
-		list_splice(&((struct vh_context*)c->user)->origins, &vh_context->origins);
+		list_splice(&c->vh_ctx.origins, &vh_context->origins);
 
-		free(c->user);
-		c->user = NULL;
 
 		if (list_empty(&vh_context->origins)) {
-			lwsl_warn("No origins whitelisted on port %d = reject all ws clients\n", c->port);
+			lwsl_warn("No origins whitelisted on port %d = reject all ws clients\n", c->vh_info.port);
 		}
-
 	}
 
 	if (argc >= 2) {
