@@ -44,6 +44,7 @@ static void usage(char *name)
 			"  -s <socket>      path to ubus socket [" WSD_DEF_UBUS_PATH "]\n"
 			"  -w <www_path>    HTTP resources path [" WSD_DEF_WWW_PATH "]\n"
 			"  -r <from>:<to>   HTTP path redirect pair\n"
+			"  -C <url>         URL of remote websocket ubus to connect to\n"
 			" per-port options:\n"
 			"  -p <port>        port number\n"
 			"  -L <label>       _owsd_listen label\n"
@@ -83,12 +84,15 @@ int main(int argc, char *argv[])
 		struct vh_context vh_ctx;
 	} *currvh = NULL;
 
+	struct clvh_context connect_infos;
+	INIT_LIST_HEAD(&connect_infos.clients);
+
 	int c;
 	while ((c = getopt(argc, argv,
 					/* global */
 					"s:w:r:h"
 					/* per-vhost */
-					"p:i:o:L:"
+					"C:p:i:o:L:"
 #ifdef LWS_USE_IPV6
 					"6"
 #endif // LWS_USE_IPV6
@@ -112,6 +116,38 @@ int main(int argc, char *argv[])
 			*redir_to++ = '\0';
 			redir_from = optarg;
 			break;
+
+		case 'C': {
+			struct reconnect_info *newcl = malloc(sizeof *newcl);
+			newcl->wsi = NULL;
+			newcl->timer = (struct uloop_timeout){};
+			newcl->cl_info = (struct lws_client_connect_info){};
+			if (!newcl) {
+				lwsl_err("OOM clinfo init\n");
+				goto error;
+			}
+
+			const char *proto, *addr, *path;
+			int port;
+			if (lws_parse_uri(optarg, &proto, &addr, &port, &path)) {
+				lwsl_err("invalid connect URL for client\n");
+				goto error;
+			}
+			newcl->cl_info.port = port;
+			newcl->cl_info.address = addr;
+			newcl->cl_info.host = addr;
+			newcl->cl_info.origin = addr;
+			newcl->cl_info.path = path;
+			if (!strcmp("wss", proto) || !strcmp("https", proto))  {
+				newcl->cl_info.ssl_connection = 1;
+				any_ssl = true;
+			}
+			newcl->cl_info.pwsi = &newcl->wsi;
+			newcl->reconnect_count = 0;
+
+			list_add_tail(&newcl->list, &connect_infos.clients);
+			break;
+		}
 
 		case 'p': {
 			struct vhinfo_list *newvh = malloc(sizeof *newvh);
@@ -281,19 +317,25 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (argc >= 2) {
-		struct lws_client_connect_info client_info = {};
-		client_info.context = lws_ctx;
-		client_info.protocol = ws_protocols[1].name;
-		client_info.port = atoi(argv[1]);
-		client_info.address = argv[0];
-		client_info.host = argv[0];
-		client_info.origin = argv[0];
-		client_info.path = "/";
 
-		lwsl_warn("connecting as client too to %s %s\n", argv[0], argv[1]);
-		lws_client_connect_via_info(&client_info);
+	if (!list_empty(&connect_infos.clients)) {
+		struct lws_context_creation_info clvh_info = {};
+		clvh_info.port = CONTEXT_PORT_NO_LISTEN;
+		clvh_info.protocols = ws_protocols;
+		struct lws_vhost *clvh = lws_create_vhost(lws_ctx, &clvh_info);
+		if (clvh) {
+			struct clvh_context *clvh_context = lws_protocol_vh_priv_zalloc(clvh, &clvh_info.protocols[0] /* protocols[0] handles reconnects */, sizeof *clvh_context);
+			memcpy(clvh_context, &connect_infos, sizeof *clvh_context);
+			INIT_LIST_HEAD(&clvh_context->clients);
+			list_splice(&connect_infos.clients, &clvh_context->clients);
 
+			struct reconnect_info *c;
+			list_for_each_entry(c, &clvh_context->clients, list) {
+				c->cl_info.vhost = clvh;
+				c->cl_info.context = lws_ctx;
+				c->cl_info.protocol = ws_protocols[1].name;
+			}
+		}
 	}
 
 	global.utimer.cb = utimer_service;

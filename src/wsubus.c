@@ -397,7 +397,7 @@ static int wsubus_cb(struct lws *wsi,
 				lws_get_vhost(wsi),
 				lws_get_protocol(wsi));
 
-		if (!list_empty(&vc->origins)) {
+		if (vc && !list_empty(&vc->origins)) {
 			struct origin *origin_el, *origin_tmp;
 			list_for_each_entry_safe(origin_el, origin_tmp, &vc->origins, list) {
 				list_del(&origin_el->list);
@@ -406,7 +406,6 @@ static int wsubus_cb(struct lws *wsi,
 		}
 
 		break;
-
 
 	case LWS_CALLBACK_CLIENT_ESTABLISHED: {
 		if (0 != wsu_peer_init(peer, WSUBUS_ROLE_REMOTE))

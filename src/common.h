@@ -13,7 +13,7 @@
  */
 #pragma once
 #include <stddef.h>
-
+#include <libwebsockets.h>
 #include <libubus.h>
 
 struct prog_context {
@@ -31,12 +31,26 @@ struct prog_context {
 	const char *redir_to;
 };
 
+// each listen vhost keeps origin whitelist
+struct vh_context {
+	struct list_head origins;
+	char *name;
+};
 struct origin {
 	struct list_head list;
 	const char *url;
 };
 
-struct vh_context {
-	struct list_head origins;
-	char *name;
+
+// the vhost for clients has list of client infos so they can be reconnected
+struct clvh_context {
+	struct list_head clients;
+};
+
+struct reconnect_info {
+	struct list_head list;
+	struct lws *wsi;
+	int reconnect_count;
+	struct uloop_timeout timer;
+	struct lws_client_connect_info cl_info;
 };
