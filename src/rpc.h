@@ -23,8 +23,6 @@
  */
 #pragma once
 
-// TODO<deps> refactor curr_call blob_call somehow to not depend on its
-// complete type here, just pointers
 #include "rpc_call.h"
 #include "rpc_list.h"
 #include "rpc_sub.h"
@@ -55,4 +53,3 @@ struct ubusrpc_blob {
 int jsonrpc_blob_req_parse(struct jsonrpc_blob_req *req, const struct blob_attr *blob);
 
 enum jsonrpc_error_code ubusrpc_blob_parse(struct ubusrpc_blob *ubusrpc, const char *method, struct blob_attr *params_blob);
-

@@ -94,4 +94,3 @@ enum jsonrpc_error_code ubusrpc_blob_parse(struct ubusrpc_blob *ubusrpc, const c
 
 	return JSONRPC_ERRORCODE__METHOD_NOT_FOUND;
 }
-

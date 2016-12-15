@@ -31,11 +31,6 @@
 #include <libubox/blobmsg.h>
 #include <libubus.h>
 
-// TODO<deps> refactor should maybe drop this big include if all lws-specific
-// is put in wsubus.impl.h, and when client context is refactored (so we have
-// it passed around, not wsi). We would have to add own debug logging then.
-#include <libwebsockets.h>
-
 #include <assert.h>
 
 int ubusrpc_blob_call_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob)
