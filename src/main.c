@@ -50,7 +50,13 @@ static void usage(char *name)
 			"  -s <socket>      path to ubus socket [" WSD_DEF_UBUS_PATH "]\n"
 			"  -w <www_path>    HTTP resources path [" WSD_DEF_WWW_PATH "]\n"
 			"  -r <from>:<to>   HTTP path redirect pair\n"
-			"  -C <url>         URL of remote websocket ubus to connect to\n"
+			" client options\n"
+			"  -P <url>         URL of remote WS ubus to connect to as client\n"
+#ifdef LWS_OPENSSL_SUPPORT
+			"  -C <cert_path>   SSL client cert path\n"
+			"  -K <cert_path>   SSL client key path\n"
+			"  -A <ca_file>   SSL CA file path trusted by client\n"
+#endif // LWS_OPENSSL_SUPPORT
 			" per-port options:\n"
 			"  -p <port>        port number\n"
 			"  -L <label>       _owsd_listen label\n"
@@ -62,6 +68,7 @@ static void usage(char *name)
 #ifdef LWS_OPENSSL_SUPPORT
 			"  -c <cert_path>   SSL cert path if SSL wanted\n"
 			"  -k <key_path>    SSL key path if SSL wanted\n"
+			"  -a <ca_file>     path to SSL CA file that makes clients trusted\n"
 #endif // LWS_OPENSSL_SUPPORT
 			"\n", name);
 }
@@ -83,6 +90,7 @@ int main(int argc, char *argv[])
 	char *redir_from = NULL;
 	char *redir_to = NULL;
 	bool any_ssl = false;
+	bool any_ssl_client = false;
 
 	struct vhinfo_list {
 		struct lws_context_creation_info vh_info;
@@ -93,17 +101,26 @@ int main(int argc, char *argv[])
 	struct clvh_context connect_infos;
 	INIT_LIST_HEAD(&connect_infos.clients);
 
+	struct lws_context_creation_info clvh_info = {};
+	// FIXME to support different certs per different client, this becomes per-client
+
 	int c;
 	while ((c = getopt(argc, argv,
 					/* global */
 					"s:w:r:h"
+
+					/* per-client */
+					"P:"
+#ifdef LWS_OPENSSL_SUPPORT
+					"C:K:A:"
+#endif
 					/* per-vhost */
-					"C:p:i:o:L:"
+					"p:i:o:L:"
 #ifdef LWS_USE_IPV6
 					"6"
 #endif // LWS_USE_IPV6
 #ifdef LWS_OPENSSL_SUPPORT
-					"c:k:"
+					"c:k:a:"
 #endif // LWS_OPENSSL_SUPPORT
 					)) != -1) {
 		switch (c) {
@@ -123,7 +140,8 @@ int main(int argc, char *argv[])
 			redir_from = optarg;
 			break;
 
-		case 'C': {
+			// client
+		case 'P': {
 			struct reconnect_info *newcl = malloc(sizeof *newcl);
 			newcl->wsi = NULL;
 			newcl->timer = (struct uloop_timeout){};
@@ -145,8 +163,9 @@ int main(int argc, char *argv[])
 			newcl->cl_info.origin = addr;
 			newcl->cl_info.path = path;
 			if (!strcmp("wss", proto) || !strcmp("https", proto))  {
-				newcl->cl_info.ssl_connection = 1;
+				newcl->cl_info.ssl_connection = LCCSCF_USE_SSL | LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
 				any_ssl = true;
+				any_ssl_client = true;
 			}
 			newcl->cl_info.pwsi = &newcl->wsi;
 			newcl->reconnect_count = 0;
@@ -154,7 +173,19 @@ int main(int argc, char *argv[])
 			list_add_tail(&newcl->list, &connect_infos.clients);
 			break;
 		}
+#ifdef LWS_OPENSSL_SUPPORT
+		case 'C':
+			clvh_info.ssl_cert_filepath = optarg;
+			break;
+		case 'K':
+			clvh_info.ssl_private_key_filepath = optarg;
+			break;
+		case 'A':
+			clvh_info.ssl_ca_filepath = optarg;
+			break;
+#endif
 
+			// vhost
 		case 'p': {
 			struct vhinfo_list *newvh = malloc(sizeof *newvh);
 			if (!newvh) {
@@ -204,13 +235,18 @@ int main(int argc, char *argv[])
 #endif // LWS_USE_IPV6
 #ifdef LWS_OPENSSL_SUPPORT
 		case 'c':
-			currvh->vh_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 			currvh->vh_info.ssl_cert_filepath = optarg;
-			any_ssl = true;
-			break;
+			goto ssl;
 		case 'k':
-			currvh->vh_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 			currvh->vh_info.ssl_private_key_filepath = optarg;
+			goto ssl;
+		case 'a':
+			currvh->vh_info.ssl_ca_filepath = optarg;
+			goto ssl;
+
+ssl:
+			any_ssl = true;
+			currvh->vh_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 			break;
 #endif // LWS_OPENSSL_SUPPORT
 
@@ -297,6 +333,10 @@ int main(int argc, char *argv[])
 		c->vh_info.protocols = ws_protocols;
 		c->vh_info.mounts = &wwwmount;
 
+		if (c->vh_info.ssl_ca_filepath) {
+			c->vh_info.options |= LWS_SERVER_OPTION_PEER_CERT_NOT_REQUIRED | LWS_SERVER_OPTION_REQUIRE_VALID_OPENSSL_CLIENT_CERT;
+		}
+
 		lwsl_debug("create vhost for port %d with %s , c %s k %s\n", c->vh_info.port, (c->vh_info.options & LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT) ? "ssl" : "no ssl",
 				c->vh_info.ssl_cert_filepath, c->vh_info.ssl_private_key_filepath);
 
@@ -325,9 +365,11 @@ int main(int argc, char *argv[])
 
 
 	if (!list_empty(&connect_infos.clients)) {
-		struct lws_context_creation_info clvh_info = {};
 		clvh_info.port = CONTEXT_PORT_NO_LISTEN;
 		clvh_info.protocols = ws_protocols;
+		if (any_ssl_client) {
+			clvh_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT | LWS_SERVER_OPTION_DISABLE_OS_CA_CERTS;
+		}
 		struct lws_vhost *clvh = lws_create_vhost(lws_ctx, &clvh_info);
 		if (clvh) {
 			struct clvh_context *clvh_context = lws_protocol_vh_priv_zalloc(clvh, &clvh_info.protocols[0] /* protocols[0] handles reconnects */, sizeof *clvh_context);
