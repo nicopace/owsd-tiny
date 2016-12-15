@@ -202,6 +202,11 @@ static int ws_http_cb(struct lws *wsi,
 		lwsl_notice("client handshaking without subproto - denying\n");
 		return 1;
 
+
+	case LWS_CALLBACK_OPENSSL_PERFORM_CLIENT_CERT_VERIFICATION:
+		// we don't deny any clients here, we check later if authed and allow extra access
+		return 0;
+
 		// temporary - libwebsockets 1.7+ calls this always... TODO lwsbug
 	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS:
 		return 0;

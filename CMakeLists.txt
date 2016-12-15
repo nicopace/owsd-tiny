@@ -18,6 +18,7 @@ SET(SOURCES
 	src/rpc_call.c
 	src/rpc_list.c
 	src/rpc_sub.c
+	src/rpc_login.c
 	src/access_check.c
 	src/local_stub.c
 	src/util_jsonrpc.c
@@ -34,5 +35,14 @@ TARGET_LINK_LIBRARIES(owsd ${ubox} ${ubus} ${json} ${blobmsg_json})
 FIND_PACKAGE(libwebsockets REQUIRED)
 INCLUDE_DIRECTORIES(${LIBWEBSOCKETS_INCLUDE_DIRS})
 TARGET_LINK_LIBRARIES(owsd ${LIBWEBSOCKETS_LIBRARIES})
+
+INCLUDE(CheckSymbolExists)
+CHECK_SYMBOL_EXISTS(LWS_OPENSSL_SUPPORT "lws_version.h" LWS_HAS_SSL)
+
+IF (DEFINED LWS_HAS_SSL)
+	FIND_LIBRARY(ssl NAMES ssl)
+	FIND_LIBRARY(crypto NAMES crypto)
+	TARGET_LINK_LIBRARIES(owsd ${ssl} ${crypto})
+ENDIF()
 
 INSTALL(TARGETS owsd RUNTIME DESTINATION bin)

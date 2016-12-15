@@ -80,6 +80,7 @@ enum jsonrpc_error_code ubusrpc_blob_parse(struct ubusrpc_blob *ubusrpc, const c
 		{ "subscribe-list", ubusrpc_blob_sub_list_parse, ubusrpc_handle_sub_list },
 		{ "unsubscribe", ubusrpc_blob_sub_parse, ubusrpc_handle_unsub }, // parse is same as sub since args same
 		{ "unsubscribe-id", ubusrpc_blob_unsub_by_id_parse, ubusrpc_handle_unsub_by_id },
+		{ "login", ubusrpc_blob_authreq_parse, ubusrpc_handle_authreq },
 	};
 
 	for (unsigned long i = 0; i < ARRAY_SIZE(supported_methods); ++i)

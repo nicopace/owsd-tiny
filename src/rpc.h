@@ -26,6 +26,7 @@
 #include "rpc_call.h"
 #include "rpc_list.h"
 #include "rpc_sub.h"
+#include "rpc_login.h"
 #include "util_jsonrpc.h"
 
 struct jsonrpc_blob_req {
@@ -50,6 +51,8 @@ struct ubusrpc_blob {
 
 		struct ubusrpc_blob_sub sub;
 		struct ubusrpc_blob_unsub_by_id unsub_by_id;
+
+		struct ubusrpc_blob_login login;
 	};
 	int (*handler)(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);
 };
