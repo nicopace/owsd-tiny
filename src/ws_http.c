@@ -181,6 +181,7 @@ static int ws_http_cb(struct lws *wsi,
 			c->timer.cb = utimer_reconnect_cb;
 			uloop_timeout_set(&c->timer, 0);
 		}
+		return 0;
 	}
 
 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR: {
