@@ -49,8 +49,6 @@ struct wsubus_sub_info {
 	struct lws *wsi;
 };
 
-static struct wsubus_sub_info list_of_subscriptions = { .list = LIST_HEAD_INIT(list_of_subscriptions.list) };
-
 static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *ev, const char *type, struct blob_attr *msg);
 
 static void wsubus_unsub_elem(struct wsubus_sub_info *elem)
@@ -62,27 +60,13 @@ static void wsubus_unsub_elem(struct wsubus_sub_info *elem)
 	free(elem);
 }
 
-void wsubus_clean_all_subscriptions(void)
-{
-	int count = 0;
-	struct wsubus_sub_info *elem, *tmp;
-
-	list_for_each_entry_safe(elem, tmp, &list_of_subscriptions.list, list) {
-		free(elem->src_blob);
-		list_del(&elem->list);
-		free(elem);
-		++count;
-	}
-	if (count)
-		lwsl_warn("%d subscriptions cleaned at exit\n", count);
-}
-
-int wsubus_unsubscribe_by_wsi_and_id(struct lws *wsi, uint32_t id)
+int wsubus_unsubscribe_by_id(struct lws *wsi, uint32_t id)
 {
 	struct wsubus_sub_info *elem, *tmp;
 	int ret = 1;
+	struct wsu_client_session *client = wsi_to_client(wsi);
 
-	list_for_each_entry_safe(elem, tmp, &list_of_subscriptions.list, list) {
+	list_for_each_entry_safe(elem, tmp, &client->listen_list, list) {
 		// check id
 		if (elem->wsi == wsi && elem->sub_id == id) {
 			wsubus_unsub_elem(elem);
@@ -92,13 +76,14 @@ int wsubus_unsubscribe_by_wsi_and_id(struct lws *wsi, uint32_t id)
 	return ret;
 }
 
-int wsubus_unsubscribe_by_wsi_and_pattern(struct lws *wsi, const char *pattern)
+int wsubus_unsubscribe_by_pattern(struct lws *wsi, const char *pattern)
 {
 	struct wsubus_sub_info *elem, *tmp;
 	int ret = 1;
+	struct wsu_client_session *client = wsi_to_client(wsi);
 
-	list_for_each_entry_safe(elem, tmp, &list_of_subscriptions.list, list) {
-		// check sid, pattern
+	list_for_each_entry_safe(elem, tmp, &client->listen_list, list) {
+		// check pattern
 		if (elem->wsi == wsi && !strcmp(pattern, elem->pattern)) {
 			wsubus_unsub_elem(elem);
 			elem = NULL;
@@ -108,18 +93,16 @@ int wsubus_unsubscribe_by_wsi_and_pattern(struct lws *wsi, const char *pattern)
 	return ret;
 }
 
-int wsubus_unsubscribe_all_by_wsi(struct lws *wsi)
+int wsubus_unsubscribe_all(struct lws *wsi)
 {
 	struct wsubus_sub_info *elem, *tmp;
 	int ret = 1;
+	struct wsu_client_session *client = wsi_to_client(wsi);
 
-	list_for_each_entry_safe(elem, tmp, &list_of_subscriptions.list, list) {
-		// check sid
-		if (elem->wsi == wsi) {
-			wsubus_unsub_elem(elem);
-			elem = NULL;
-			ret = 0;
-		}
+	list_for_each_entry_safe(elem, tmp, &client->listen_list, list) {
+		wsubus_unsub_elem(elem);
+		elem = NULL;
+		ret = 0;
 	}
 	return ret;
 }
@@ -207,6 +190,7 @@ int ubusrpc_blob_unsub_by_id_parse(struct ubusrpc_blob *ubusrpc, struct blob_att
 int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
 {
 	int ret;
+	struct wsu_client_session *client = wsi_to_client(wsi);
 
 	struct wsubus_sub_info *subinfo = malloc(sizeof *subinfo);
 	if (!subinfo) {
@@ -237,7 +221,7 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blo
 
 	ubusrpc->src_blob = NULL;
 
-	list_add_tail(&subinfo->list, &list_of_subscriptions.list);
+	list_add_tail(&subinfo->list, &client->listen_list);
 
 out:
 	if (ret) {
@@ -264,6 +248,7 @@ static void blobmsg_add_sub_info(struct blob_buf *buf, const char *name, const s
 
 int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
 {
+	struct wsu_client_session *client = wsi_to_client(wsi);
 	char *response_str;
 	int ret = 0;
 
@@ -272,9 +257,8 @@ int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struc
 
 	void* array_ticket = blobmsg_open_array(&sub_list_blob, "");
 	struct wsubus_sub_info *elem, *tmp;
-	list_for_each_entry_safe(elem, tmp, &list_of_subscriptions.list, list) {
-		if (elem->wsi == wsi)
-			blobmsg_add_sub_info(&sub_list_blob, "", elem);
+	list_for_each_entry_safe(elem, tmp, &client->listen_list, list) {
+		blobmsg_add_sub_info(&sub_list_blob, "", elem);
 	}
 	blobmsg_close_array(&sub_list_blob, array_ticket);
 
@@ -301,7 +285,7 @@ int ubusrpc_handle_unsub_by_id(struct lws *wsi, struct ubusrpc_blob *ubusrpc, st
 	int ret = 0;
 
 	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->unsub_by_id.id, ret);
-	ret = wsubus_unsubscribe_by_wsi_and_id(wsi, ubusrpc->unsub_by_id.id);
+	ret = wsubus_unsubscribe_by_id(wsi, ubusrpc->unsub_by_id.id);
 
 	if (ret != 0)
 		ret = UBUS_STATUS_NOT_FOUND;
@@ -320,7 +304,7 @@ int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct b
 	int ret = 0;
 
 	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->unsub_by_id.id, ret);
-	ret = wsubus_unsubscribe_by_wsi_and_pattern(wsi, ubusrpc->sub.pattern);
+	ret = wsubus_unsubscribe_by_pattern(wsi, ubusrpc->sub.pattern);
 
 	if (ret != 0)
 		ret = UBUS_STATUS_NOT_FOUND;

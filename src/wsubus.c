@@ -113,6 +113,7 @@ static inline int wsu_peer_init(struct wsu_peer *peer, enum wsu_role role)
 		peer->u.client.id = clientid++;
 		INIT_LIST_HEAD(&peer->u.client.rpc_call_q);
 		INIT_LIST_HEAD(&peer->u.client.access_check_q);
+		INIT_LIST_HEAD(&peer->u.client.listen_list);
 	} else if (role ==  WSUBUS_ROLE_REMOTE) {
 	} else {
 		return -1;
@@ -150,8 +151,6 @@ static void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
 	if (peer->role == WSUBUS_ROLE_CLIENT) {
 		struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 
-		wsubus_unsubscribe_all_by_wsi(wsi);
-
 		{
 			struct wsubus_client_access_check_ctx *p, *n;
 			list_for_each_entry_safe(p, n, &peer->u.client.access_check_q, acq) {
@@ -171,6 +170,9 @@ static void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
 				lwsl_info("free call in progress %p\n", p);
 			}
 		}
+
+		wsubus_unsubscribe_all(wsi);
+
 	} else if (peer->role == WSUBUS_ROLE_REMOTE) {
 		struct wsu_local_stub *cur, *next;
 		avl_for_each_element_safe(&peer->u.remote.stubs, cur, avl, next) {

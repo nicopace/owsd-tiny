@@ -351,8 +351,6 @@ int main(int argc, char *argv[])
 	lwsl_info("running uloop...\n");
 	uloop_run();
 
-	wsubus_clean_all_subscriptions();
-
 error_ubus_ufds_ctx:
 	lws_context_destroy(lws_ctx);
 
