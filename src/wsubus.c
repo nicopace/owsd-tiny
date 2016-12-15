@@ -441,7 +441,7 @@ static int wsubus_cb(struct lws *wsi,
 		json_object_object_add(adminadmin, "username", json_object_new_string("admin"));
 		json_object_object_add(adminadmin, "password", json_object_new_string("admin"));
 
-		char *d = jsonrpc__req_ubuscall(++remote->call_id, NULL, "session", "login", adminadmin);
+		char *d = jsonrpc__req_login(++remote->call_id, NULL, "tls-certificate");
 		wsu_queue_write_str(wsi, d);
 
 		json_object_put(adminadmin);
