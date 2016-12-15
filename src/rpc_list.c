@@ -65,6 +65,7 @@ int ubusrpc_blob_list_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob
 		return -2;
 
 	ubusrpc->list.src_blob = dup_blob;
+	ubusrpc->call.sid = tb[0] ? blobmsg_get_string(tb[0]) : UBUS_DEFAULT_SID;
 	ubusrpc->list.pattern = blobmsg_get_string(tb[1]);
 
 	return 0;

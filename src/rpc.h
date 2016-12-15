@@ -39,7 +39,11 @@ struct lws;
 
 struct ubusrpc_blob {
 	union {
-		struct blob_attr *src_blob;
+		struct {
+			struct blob_attr *src_blob;
+			const char *sid;
+		};
+
 		struct ubusrpc_blob_call call;
 
 		struct ubusrpc_blob_list list;

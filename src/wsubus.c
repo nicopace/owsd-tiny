@@ -208,6 +208,15 @@ static void wsu_on_msg_from_client(struct lws *wsi,
 		goto out;
 	}
 
+	if (wsu_check_and_update_sid(wsi_to_peer(wsi), ubusrpc_req->sid) != 0) {
+		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc_req->sid, wsi_to_peer(wsi)->sid);
+		char *response = jsonrpc__resp_ubus(jsonrpc_req->id, UBUS_STATUS_NOT_SUPPORTED, NULL);
+		wsu_queue_write_str(wsi, response);
+		free(response);
+		e = 0;
+		goto out;
+	}
+
 	if (ubusrpc_req->handler(wsi, ubusrpc_req, jsonrpc_req->id) != 0) {
 		lwsl_info("ubusrpc method handler failed\n");
 		e = JSONRPC_ERRORCODE__OTHER;

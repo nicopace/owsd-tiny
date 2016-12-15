@@ -27,6 +27,7 @@
 
 struct ubusrpc_blob_list {
 	struct blob_attr *src_blob;
+	const char *sid;
 
 	const char *pattern;
 };

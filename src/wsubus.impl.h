@@ -221,7 +221,6 @@ static inline int wsu_check_and_update_sid(struct wsu_peer *peer, const char *si
 	}
 
 	if (strcmp(peer->sid, sid)) {
-		lwsl_warn("curr sid %s != prev sid %s\n", sid, peer->sid);
 		return 1;
 	}
 	return 0;

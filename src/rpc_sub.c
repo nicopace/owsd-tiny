@@ -215,15 +215,6 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blo
 		goto out;
 	}
 
-	struct wsu_peer *peer = wsi_to_peer(wsi);
-	// TODO check_and_update_sid should go in one common place
-	if (wsu_check_and_update_sid(peer, ubusrpc->sub.sid) != 0) {
-		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->sub.sid, peer->sid);
-		ret = UBUS_STATUS_NOT_SUPPORTED;
-		free(subinfo);
-		goto out;
-	}
-
 	subinfo->ubus_handler = (struct ubus_event_handler){};
 
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
@@ -276,14 +267,6 @@ int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struc
 	char *response_str;
 	int ret = 0;
 
-	struct wsu_peer *peer = wsi_to_peer(wsi);
-	// TODO check_and_update_sid should go in one common place
-	if (wsu_check_and_update_sid(peer, ubusrpc->sub.sid) != 0) {
-		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->sub.sid, peer->sid);
-		ret = UBUS_STATUS_NOT_SUPPORTED;
-		goto out;
-	}
-
 	struct blob_buf sub_list_blob = {};
 	blob_buf_init(&sub_list_blob, 0);
 
@@ -295,7 +278,6 @@ int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struc
 	}
 	blobmsg_close_array(&sub_list_blob, array_ticket);
 
-out:
 	if (ret) {
 		response_str = jsonrpc__resp_ubus(id, ret, NULL);
 	} else {
@@ -318,21 +300,12 @@ int ubusrpc_handle_unsub_by_id(struct lws *wsi, struct ubusrpc_blob *ubusrpc, st
 	char *response;
 	int ret = 0;
 
-	struct wsu_peer *peer = wsi_to_peer(wsi);
-	// TODO check_and_update_sid should go in one common place
-	if (wsu_check_and_update_sid(peer, ubusrpc->unsub_by_id.sid) != 0) {
-		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->unsub_by_id.sid, peer->sid);
-		ret = UBUS_STATUS_NOT_SUPPORTED;
-		goto out;
-	}
-
 	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->unsub_by_id.id, ret);
 	ret = wsubus_unsubscribe_by_wsi_and_id(wsi, ubusrpc->unsub_by_id.id);
 
 	if (ret != 0)
 		ret = UBUS_STATUS_NOT_FOUND;
 
-out:
 	response = jsonrpc__resp_ubus(id, ret, NULL);
 	wsu_queue_write_str(wsi, response);
 	free(response);
@@ -346,21 +319,12 @@ int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct b
 	char *response;
 	int ret = 0;
 
-	struct wsu_peer *peer = wsi_to_peer(wsi);
-	// TODO check_and_update_sid should go in one common place
-	if (wsu_check_and_update_sid(peer, ubusrpc->sub.sid) != 0) {
-		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc->sub.sid, peer->sid);
-		ret = UBUS_STATUS_NOT_SUPPORTED;
-		goto out;
-	}
-
 	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->unsub_by_id.id, ret);
 	ret = wsubus_unsubscribe_by_wsi_and_pattern(wsi, ubusrpc->sub.pattern);
 
 	if (ret != 0)
 		ret = UBUS_STATUS_NOT_FOUND;
 
-out:
 	response = jsonrpc__resp_ubus(id, ret, NULL);
 	wsu_queue_write_str(wsi, response);
 	free(response);

@@ -223,12 +223,6 @@ static int wsubus_call_do_check_then_do_call(struct wsubus_percall_ctx *curr_cal
 	assert(curr_call->state == WSUBUS_CALL_STATE_PREP);
 
 	int ret = UBUS_STATUS_OK;
-
-	if (wsu_check_and_update_sid(wsi_to_peer(curr_call->wsi), curr_call->call_args->sid) != 0) {
-		ret = UBUS_STATUS_NOT_SUPPORTED;
-		goto out;
-	}
-
 	curr_call->access_check.destructor = NULL; // XXX
 
 	list_add_tail(&curr_call->access_check.acq, &client->access_check_q);

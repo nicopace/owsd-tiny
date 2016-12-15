@@ -25,8 +25,8 @@
 
 struct ubusrpc_blob_call {
 	struct blob_attr *src_blob;
-
 	const char *sid;
+
 	const char *object;
 	const char *method;
 	struct blob_buf *params_buf;
