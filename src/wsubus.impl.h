@@ -216,7 +216,7 @@ static inline int wsu_check_and_update_sid(struct wsu_peer *peer, const char *si
 	}
 	if (!strcmp(peer->sid, UBUS_DEFAULT_SID)) {
 		peer->sid[0] = '\0';
-		strncat(peer->sid, sid, sizeof peer->sid);
+		strncat(peer->sid, sid, sizeof peer->sid - 1);
 		return 0;
 	}
 
