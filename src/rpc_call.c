@@ -204,11 +204,7 @@ int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, stru
 
 		list_del(&curr_call->cq);
 		wsubus_percall_ctx_destroy(curr_call);
-		goto respond_with_ubus_error;
-	}
 
-respond_with_ubus_error:
-	if (ret != UBUS_STATUS_OK) {
 		// invoke never happened, we need to send ubus error status
 		// (jsonrpc success, but ubus code != 0)
 		char *response = jsonrpc__resp_ubus(id, ret, NULL);
