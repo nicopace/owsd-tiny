@@ -180,6 +180,7 @@ int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, stru
 {
 	struct ubusrpc_blob_call *ubusrpc_req = &ubusrpc_blob->call;
 	struct wsu_client_session *client = wsi_to_client(wsi);
+	struct wsu_peer *peer = wsi_to_peer(wsi);
 
 	int ret;
 
@@ -193,10 +194,15 @@ int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, stru
 	}
 
 	curr_call = wsubus_percall_ctx_create(wsi, id, ubusrpc_req);
-	curr_call->state = WSUBUS_CALL_STATE_PREP;
 
 	list_add_tail(&curr_call->cq, &client->rpc_call_q);
-	ret = wsubus_call_do_check_then_do_call(curr_call);
+	if (!wsu_sid_is_extended(peer->sid)) {
+		curr_call->state = WSUBUS_CALL_STATE_PREP;
+		ret = wsubus_call_do_check_then_do_call(curr_call);
+	} else {
+		curr_call->state = WSUBUS_CALL_STATE_CALL_PRE;
+		ret = wsubus_call_do(curr_call);
+	}
 
 	if (ret != UBUS_STATUS_OK) {
 		// we hide the real error with access check
@@ -284,6 +290,7 @@ static int wsubus_call_do(struct wsubus_percall_ctx *curr_call)
 {
 	struct prog_context *prog = lws_context_user(lws_get_context(curr_call->wsi));
 	int ret;
+	struct wsu_peer *peer = wsi_to_peer(curr_call->wsi);
 
 	assert(curr_call->state == WSUBUS_CALL_STATE_CALL_PRE);
 
@@ -301,11 +308,13 @@ static int wsubus_call_do(struct wsubus_percall_ctx *curr_call)
 		goto out;
 	}
 
-	blobmsg_add_string(curr_call->call_args->params_buf, "ubus_rpc_session", curr_call->call_args->sid);
+	if (!wsu_sid_is_extended(peer->sid)) {
+		blobmsg_add_string(curr_call->call_args->params_buf, "ubus_rpc_session", curr_call->call_args->sid);
 
-	if (!strcmp(curr_call->call_args->sid, UBUS_DEFAULT_SID)) {
-		struct vh_context *vc = lws_protocol_vh_priv_get(lws_get_vhost(curr_call->wsi), lws_get_protocol(curr_call->wsi));
-		blobmsg_add_string(curr_call->call_args->params_buf, "_owsd_listen", vc->name);
+		if (!strcmp(curr_call->call_args->sid, UBUS_DEFAULT_SID)) {
+			struct vh_context *vc = lws_protocol_vh_priv_get(lws_get_vhost(curr_call->wsi), lws_get_protocol(curr_call->wsi));
+			blobmsg_add_string(curr_call->call_args->params_buf, "_owsd_listen", vc->name);
+		}
 	}
 
 	lwsl_info("ubus call request %p...\n", call_req);

@@ -74,10 +74,15 @@ int ubusrpc_handle_authreq(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct
 			X509_free(x);
 			lwsl_notice("wsi %p was TLS authenticated with cert CN= %s\n", wsi, peer->tls.cert_subj);
 
-			// TODO ubus call session create, with username cert_subj
 			struct blob_buf b = {};
 			blob_buf_init(&b, 0);
 			blobmsg_add_string(&b, "CN", peer->tls.cert_subj);
+
+			char sid[UBUS_SID_MAX_STRLEN] = SID_EXTENDED_PREFIX;
+			strncat(sid, ubusrpc->login.auth_type, sizeof sid - strlen(sid) - 1);
+
+			wsu_sid_check_and_update(peer, sid);
+
 			char *resp = jsonrpc__resp_ubus(id, 0, b.head);
 			blob_buf_free(&b);
 			wsu_queue_write_str(wsi, resp);
