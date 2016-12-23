@@ -18,7 +18,6 @@ SET(SOURCES
 	src/rpc_call.c
 	src/rpc_list.c
 	src/rpc_sub.c
-	src/rpc_login.c
 	src/access_check.c
 	src/local_stub.c
 	src/util_jsonrpc.c
