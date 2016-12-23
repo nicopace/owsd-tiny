@@ -208,7 +208,7 @@ static void wsu_on_msg_from_client(struct lws *wsi,
 		goto out;
 	}
 
-	if (wsu_check_and_update_sid(wsi_to_peer(wsi), ubusrpc_req->sid) != 0) {
+	if (wsu_sid_check_and_update(wsi_to_peer(wsi), ubusrpc_req->sid) != 0) {
 		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc_req->sid, wsi_to_peer(wsi)->sid);
 		char *response = jsonrpc__resp_ubus(jsonrpc_req->id, UBUS_STATUS_NOT_SUPPORTED, NULL);
 		wsu_queue_write_str(wsi, response);
@@ -475,7 +475,7 @@ static int wsubus_cb(struct lws *wsi,
 						&& json_object_object_get_ex(tmp, "ubus_rpc_session", &tmp)
 						&& json_object_is_type(tmp, json_type_string)) {
 					remote->waiting_for.login = 0;
-					wsu_check_and_update_sid(peer, json_object_get_string(tmp));
+					wsu_sid_check_and_update(peer, json_object_get_string(tmp));
 				} else {
 					// TODO
 					lwsl_err("response to login not valid\n");

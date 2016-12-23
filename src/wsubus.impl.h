@@ -208,7 +208,7 @@ static inline void wsu_read_reset(struct wsu_peer *peer)
 }
 //}}}
 
-static inline int wsu_check_and_update_sid(struct wsu_peer *peer, const char *sid)
+static inline int wsu_sid_check_and_update(struct wsu_peer *peer, const char *sid)
 {
 	if (*peer->sid == '\0') {
 		strncat(peer->sid, sid, sizeof peer->sid);
