@@ -37,8 +37,6 @@
 #include <assert.h>
 
 struct wsubus_sub_info {
-	uint32_t sub_id;
-
 	struct list_head list;
 
 	struct blob_attr *src_blob;
@@ -58,22 +56,6 @@ static void wsubus_unsub_elem(struct wsubus_sub_info *elem)
 	free(elem->src_blob);
 	list_del(&elem->list);
 	free(elem);
-}
-
-int wsubus_unsubscribe_by_id(struct lws *wsi, uint32_t id)
-{
-	struct wsubus_sub_info *elem, *tmp;
-	int ret = 1;
-	struct wsu_client_session *client = wsi_to_client(wsi);
-
-	list_for_each_entry_safe(elem, tmp, &client->listen_list, list) {
-		// check id
-		if (elem->wsi == wsi && elem->sub_id == id) {
-			wsubus_unsub_elem(elem);
-			ret = 0;
-		}
-	}
-	return ret;
 }
 
 int wsubus_unsubscribe_by_pattern(struct lws *wsi, const char *pattern)
@@ -160,33 +142,6 @@ int ubusrpc_blob_sub_list_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *
 	return 0;
 }
 
-int ubusrpc_blob_unsub_by_id_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob)
-{
-	static const struct blobmsg_policy rpc_ubus_param_policy[] = {
-		[0] = { .type = BLOBMSG_TYPE_STRING }, // ubus-session id
-		[1] = { .type = BLOBMSG_TYPE_INT32 }, // subscribe id
-	};
-	enum { __RPC_U_MAX = (sizeof rpc_ubus_param_policy / sizeof rpc_ubus_param_policy[0]) };
-	struct blob_attr *tb[__RPC_U_MAX];
-
-	// TODO<blob> blob_(data|len) vs blobmsg_xxx usage, what is the difference
-	// and which is right here? (uhttpd ubus uses blobmsg_data for blob which
-	// comes from another blob's table... here and so do we)
-	blobmsg_parse_array(rpc_ubus_param_policy, __RPC_U_MAX, tb, blobmsg_data(blob), (unsigned)blobmsg_len(blob));
-
-	if (!tb[0])
-		return 2;
-	if (!tb[1])
-		return 2;
-
-	ubusrpc->unsub_by_id.src_blob = NULL;
-	ubusrpc->unsub_by_id.sid = tb[0] ? blobmsg_get_string(tb[0]) : UBUS_DEFAULT_SID;
-	ubusrpc->unsub_by_id.id = blobmsg_get_u32(tb[1]);
-
-	return 0;
-}
-
-
 int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
 {
 	int ret;
@@ -210,10 +165,8 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blo
 		goto out;
 	}
 
-	static uint32_t subscribe_id = 1;
 	subinfo->ubus_handler.cb = wsubus_sub_cb;
 
-	subinfo->sub_id = subscribe_id++;
 	subinfo->src_blob = ubusrpc->sub.src_blob;
 	subinfo->pattern = ubusrpc->sub.pattern;
 	// subinfo->ubus_handler inited above in ubus_register_...
@@ -241,7 +194,6 @@ static void blobmsg_add_sub_info(struct blob_buf *buf, const char *name, const s
 	void *tkt = blobmsg_open_table(buf, name);
 
 	blobmsg_add_string(buf, "pattern", sub->pattern);
-	blobmsg_add_u32(buf, "id", sub->sub_id);
 
 	blobmsg_close_table(buf, tkt);
 }
@@ -279,31 +231,12 @@ int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struc
 	return 0;
 }
 
-int ubusrpc_handle_unsub_by_id(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
-{
-	char *response;
-	int ret = 0;
-
-	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->unsub_by_id.id, ret);
-	ret = wsubus_unsubscribe_by_id(wsi, ubusrpc->unsub_by_id.id);
-
-	if (ret != 0)
-		ret = UBUS_STATUS_NOT_FOUND;
-
-	response = jsonrpc__resp_ubus(id, ret, NULL);
-	wsu_queue_write_str(wsi, response);
-	free(response);
-	free(ubusrpc);
-
-	return 0;
-}
-
 int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
 {
 	char *response;
 	int ret = 0;
 
-	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->unsub_by_id.id, ret);
+	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->sub.pattern, ret);
 	ret = wsubus_unsubscribe_by_pattern(wsi, ubusrpc->sub.pattern);
 
 	if (ret != 0)

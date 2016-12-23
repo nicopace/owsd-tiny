@@ -50,7 +50,6 @@ struct ubusrpc_blob {
 		struct ubusrpc_blob_list list;
 
 		struct ubusrpc_blob_sub sub;
-		struct ubusrpc_blob_unsub_by_id unsub_by_id;
 
 		struct ubusrpc_blob_login login;
 	};
