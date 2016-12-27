@@ -321,13 +321,14 @@ static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *e
 	t->type = strdup(type);
 	t->msg = blob_memdup(msg);
 	t->sub = sub;
+	t->cr.destructor = wsubus_ev_check__destroy;
+	list_add_tail(&t->cr.acq, &client->access_check_q);
+
 	t->cr.req = wsubus_access_check__event(ctx, type, sub->sid, t, wsubus_ev_check_cb);
 
 	if (!t->cr.req) {
+		list_del(&t->cr.acq);
 		wsubus_ev_destroy_ctx(t);
 		return;
 	}
-
-	t->cr.destructor = wsubus_ev_check__destroy;
-	list_add_tail(&t->cr.acq, &client->access_check_q);
 }

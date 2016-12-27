@@ -38,8 +38,6 @@
 #define UBUS_DEFAULT_SID "00000000000000000000000000000000"
 #define UBUS_SID_MAX_STRLEN 32
 
-#define SID_EXTENDED_PREFIX "X-"
-
 #define MAX_PROXIED_CALLS 20
 
 struct wsu_peer {
@@ -213,11 +211,6 @@ static inline void wsu_read_reset(struct wsu_peer *peer)
 	json_tokener_reset(peer->curr_msg.jtok);
 }
 //}}}
-
-static inline bool wsu_sid_is_extended(const char *sid)
-{
-	return strstr(sid, SID_EXTENDED_PREFIX) == sid;
-}
 
 static inline int wsu_sid_check_and_update(struct wsu_peer *peer, const char *sid)
 {
