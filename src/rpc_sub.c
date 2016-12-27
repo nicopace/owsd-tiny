@@ -41,6 +41,7 @@ struct wsubus_sub_info {
 
 	struct blob_attr *src_blob;
 	const char *pattern;
+	const char *sid;
 
 	struct ubus_event_handler ubus_handler;
 
@@ -169,6 +170,7 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blo
 
 	subinfo->src_blob = ubusrpc->sub.src_blob;
 	subinfo->pattern = ubusrpc->sub.pattern;
+	subinfo->sid = ubusrpc->sub.sid;
 	// subinfo->ubus_handler inited above in ubus_register_...
 	subinfo->wsi = wsi;
 
@@ -194,6 +196,7 @@ static void blobmsg_add_sub_info(struct blob_buf *buf, const char *name, const s
 	void *tkt = blobmsg_open_table(buf, name);
 
 	blobmsg_add_string(buf, "pattern", sub->pattern);
+	blobmsg_add_string(buf, "ubus_rpc_session", sub->sid);
 
 	blobmsg_close_table(buf, tkt);
 }
@@ -313,13 +316,12 @@ static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *e
 
 	struct wsubus_sub_info *sub = container_of(ev, struct wsubus_sub_info, ubus_handler);
 	struct wsu_client_session *client = wsi_to_client(sub->wsi);
-	struct wsu_peer *peer = wsi_to_peer(sub->wsi);
 
 	struct wsubus_ev_notif *t = malloc(sizeof *t);
 	t->type = strdup(type);
 	t->msg = blob_memdup(msg);
 	t->sub = sub;
-	t->cr.req = wsubus_access_check__event(ctx, type, peer->sid, t, wsubus_ev_check_cb);
+	t->cr.req = wsubus_access_check__event(ctx, type, sub->sid, t, wsubus_ev_check_cb);
 
 	if (!t->cr.req) {
 		wsubus_ev_destroy_ctx(t);
