@@ -57,6 +57,7 @@ static struct wsubus_access_check_req * wsubus_access_check(
 		const char *scope,
 		const char *object,
 		const char *method,
+		struct blob_attr *args,
 		const char *sid,
 		void *ctx,
 		wsubus_access_cb cb)
@@ -82,6 +83,9 @@ static struct wsubus_access_check_req * wsubus_access_check(
 		blobmsg_add_string(&blob_for_access, "function", method);
 	if (scope)
 		blobmsg_add_string(&blob_for_access, "scope", scope);
+	if (args) {
+		blobmsg_add_field(&blob_for_access, BLOBMSG_TYPE_TABLE, "params", blobmsg_data(args), blobmsg_len(args));
+	}
 
 	ret = ubus_invoke_async(ubus_ctx, access_id, "access", blob_for_access.head, &r->req);
 
@@ -118,20 +122,22 @@ struct wsubus_access_check_req * wsubus_access_check__call(
 		struct ubus_context *ubus_ctx,
 		const char *object,
 		const char *method,
+		struct blob_attr *args,
 		const char *sid,
 		void *ctx,
 		wsubus_access_cb cb)
 {
-	return wsubus_access_check(ubus_ctx, NULL, object, method, sid, ctx, cb);
+	return wsubus_access_check(ubus_ctx, NULL, object, method, args, sid, ctx, cb);
 }
 
 struct wsubus_access_check_req * wsubus_access_check__event(
 		struct ubus_context *ubus_ctx,
 		const char *event,
+		struct blob_attr *data,
 		const char *sid,
 		void *ctx,
 		wsubus_access_cb cb)
 {
-	return wsubus_access_check(ubus_ctx, "owsd", event, "read", sid, ctx, cb);
+	return wsubus_access_check(ubus_ctx, "owsd", event, "read", data, sid, ctx, cb);
 }
 

@@ -29,6 +29,7 @@ struct wsubus_access_check_req * wsubus_access_check__call(
 		struct ubus_context *ubus_ctx,
 		const char *object,
 		const char *method,
+		struct blob_attr *args,
 		const char *sid,
 		void *ctx,
 		wsubus_access_cb cb);
@@ -36,6 +37,7 @@ struct wsubus_access_check_req * wsubus_access_check__call(
 struct wsubus_access_check_req * wsubus_access_check__event(
 		struct ubus_context *ubus_ctx,
 		const char *event,
+		struct blob_attr *data,
 		const char *sid,
 		void *ctx,
 		wsubus_access_cb cb);
