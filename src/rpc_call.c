@@ -68,20 +68,14 @@ int ubusrpc_blob_call_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob
 		if (!tb[i])
 			ret = -i-1;
 
-	// does not allow ubus_rpc_session arg in params, as we will add it
 	unsigned int rem;
 	struct blob_attr *cur;
 	blobmsg_for_each_attr(cur, tb[3], rem) {
-		if (!strcmp("ubus_rpc_session", blobmsg_name(cur)))
-			ret = -5;
-		if (!strcmp("_owsd_listen", blobmsg_name(cur)))
-			ret = -5;
-	}
-
-	if (ret) {
-		free(dup_blob);
-		free(params_buf);
-		return ret;
+		if (!strcmp("_owsd_listen", blobmsg_name(cur))) {
+			free(dup_blob);
+			free(params_buf);
+			return -1;
+		}
 	}
 
 	blob_buf_init(params_buf, 0);
@@ -299,8 +293,6 @@ static int wsubus_call_do(struct wsubus_percall_ctx *curr_call)
 		ret = UBUS_STATUS_UNKNOWN_ERROR;
 		goto out;
 	}
-
-	blobmsg_add_string(curr_call->call_args->params_buf, "ubus_rpc_session", curr_call->call_args->sid);
 
 	if (!strcmp(curr_call->call_args->sid, UBUS_DEFAULT_SID)) {
 		struct vh_context *vc = lws_protocol_vh_priv_get(lws_get_vhost(curr_call->wsi), lws_get_protocol(curr_call->wsi));
