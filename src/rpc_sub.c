@@ -309,6 +309,7 @@ out:
 static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *ev, const char *type, struct blob_attr *msg)
 {
 	__attribute__((unused)) int mtype = blobmsg_type(msg);
+	(void)ctx;
 	lwsl_debug("sub cb called, ev type %s, blob of len %lu thpe %s\n", type, blobmsg_len(msg),
 			mtype == BLOBMSG_TYPE_STRING ? "\"\"" :
 			mtype == BLOBMSG_TYPE_TABLE ? "{}" :
@@ -324,7 +325,7 @@ static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *e
 	t->cr.destructor = wsubus_ev_check__destroy;
 	list_add_tail(&t->cr.acq, &client->access_check_q);
 
-	t->cr.req = wsubus_access_check__event(ctx, type, t->msg, sub->sid, t, wsubus_ev_check_cb);
+	t->cr.req = wsubus_access_check__event(sub->wsi, sub->sid, type, NULL /* XXX */, t, wsubus_ev_check_cb);
 
 	if (!t->cr.req) {
 		list_del(&t->cr.acq);

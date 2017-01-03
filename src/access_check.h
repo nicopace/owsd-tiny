@@ -25,21 +25,37 @@ struct wsubus_access_check_req;
 
 typedef void (*wsubus_access_cb) (struct wsubus_access_check_req *req, void *ctx, bool allow);
 
-struct wsubus_access_check_req * wsubus_access_check__call(
-		struct ubus_context *ubus_ctx,
+struct wsubus_access_check_req* wsubus_access_check_(
+		struct lws *wsi,
+		const char *sid,
+		const char *scope,
 		const char *object,
 		const char *method,
-		struct blob_attr *args,
-		const char *sid,
-		void *ctx,
-		wsubus_access_cb cb);
-
-struct wsubus_access_check_req * wsubus_access_check__event(
-		struct ubus_context *ubus_ctx,
-		const char *event,
-		struct blob_attr *data,
-		const char *sid,
+		struct blob_buf *args,
 		void *ctx,
 		wsubus_access_cb cb);
 
 void wsubus_access_check__cancel(struct ubus_context *ubus_ctx, struct wsubus_access_check_req *req);
+
+static inline struct wsubus_access_check_req * wsubus_access_check__call(
+		struct lws *wsi,
+		const char *sid,
+		const char *object,
+		const char *method,
+		struct blob_buf *args,
+		void *ctx,
+		wsubus_access_cb cb)
+{
+	return wsubus_access_check_(wsi, sid, NULL, object, method, args, ctx, cb);
+}
+
+static inline struct wsubus_access_check_req * wsubus_access_check__event(
+		struct lws *wsi,
+		const char *sid,
+		const char *event,
+		struct blob_buf *data,
+		void *ctx,
+		wsubus_access_cb cb)
+{
+	return wsubus_access_check_(wsi, sid, "owsd", event, "read", data, ctx, cb);
+}

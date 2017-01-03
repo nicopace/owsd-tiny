@@ -52,13 +52,13 @@ static void wsubus_access_check__cb(struct ubus_request *ureq, int status)
 	free(req);
 }
 
-static struct wsubus_access_check_req * wsubus_access_check(
+static struct wsubus_access_check_req * wsubus_access_check_via_session(
 		struct ubus_context *ubus_ctx,
+		const char *sid,
 		const char *scope,
 		const char *object,
 		const char *method,
-		struct blob_attr *args,
-		const char *sid,
+		struct blob_buf *args,
 		void *ctx,
 		wsubus_access_cb cb)
 {
@@ -84,7 +84,7 @@ static struct wsubus_access_check_req * wsubus_access_check(
 	if (scope)
 		blobmsg_add_string(&blob_for_access, "scope", scope);
 	if (args) {
-		blobmsg_add_field(&blob_for_access, BLOBMSG_TYPE_TABLE, "params", blobmsg_data(args), blobmsg_len(args));
+		blobmsg_add_field(&blob_for_access, BLOBMSG_TYPE_TABLE, "params", blobmsg_data(args->head), blobmsg_len(args->head));
 	}
 
 	ret = ubus_invoke_async(ubus_ctx, access_id, "access", blob_for_access.head, &r->req);
@@ -112,32 +112,22 @@ fail:
 	return NULL;
 }
 
+struct wsubus_access_check_req* wsubus_access_check_(
+		struct lws *wsi,
+		const char *sid,
+		const char *scope,
+		const char *object,
+		const char *method,
+		struct blob_buf *args,
+		void *ctx,
+		wsubus_access_cb cb)
+{
+	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
+	return wsubus_access_check_via_session(prog->ubus_ctx, sid, scope, object, method, args, ctx, cb);
+}
+
 void wsubus_access_check__cancel(struct ubus_context *ubus_ctx, struct wsubus_access_check_req *req)
 {
 	ubus_abort_request(ubus_ctx, &req->req);
 	free(req);
 }
-
-struct wsubus_access_check_req * wsubus_access_check__call(
-		struct ubus_context *ubus_ctx,
-		const char *object,
-		const char *method,
-		struct blob_attr *args,
-		const char *sid,
-		void *ctx,
-		wsubus_access_cb cb)
-{
-	return wsubus_access_check(ubus_ctx, NULL, object, method, args, sid, ctx, cb);
-}
-
-struct wsubus_access_check_req * wsubus_access_check__event(
-		struct ubus_context *ubus_ctx,
-		const char *event,
-		struct blob_attr *data,
-		const char *sid,
-		void *ctx,
-		wsubus_access_cb cb)
-{
-	return wsubus_access_check(ubus_ctx, "owsd", event, "read", data, sid, ctx, cb);
-}
-

@@ -227,7 +227,7 @@ static int wsubus_call_do_check_then_do_call(struct wsubus_percall_ctx *curr_cal
 	list_add_tail(&curr_call->access_check.acq, &client->access_check_q);
 	curr_call->state = WSUBUS_CALL_STATE_CHECK;
 
-	curr_call->access_check.req = wsubus_access_check__call(prog->ubus_ctx, curr_call->call_args->object, curr_call->call_args->method, curr_call->call_args->params_buf->head, curr_call->call_args->sid, curr_call, wsubus_access_on_completed);
+	curr_call->access_check.req = wsubus_access_check__call(curr_call->wsi, curr_call->call_args->sid, curr_call->call_args->object, curr_call->call_args->method, curr_call->call_args->params_buf, curr_call, wsubus_access_on_completed);
 
 	if (!curr_call->access_check.req) {
 		lwsl_warn("access check error\n");
