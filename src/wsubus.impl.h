@@ -214,28 +214,7 @@ static inline void wsu_read_reset(struct wsu_peer *peer)
 
 static inline int wsu_sid_check_and_update(struct wsu_peer *peer, const char *sid)
 {
-	if (*peer->sid == '\0') {
-		strncat(peer->sid, sid, sizeof peer->sid);
-		return 0;
-	}
-
-	if (wsu_sid_is_extended(sid)) {
-		peer->sid[0] = '\0';
-		strncat(peer->sid, sid, sizeof peer->sid - 1);
-	}
-
-	if (wsu_sid_is_extended(peer->sid)) {
-		return 0;
-	}
-
-	if (!strcmp(peer->sid, UBUS_DEFAULT_SID)) {
-		peer->sid[0] = '\0';
-		strncat(peer->sid, sid, sizeof peer->sid - 1);
-		return 0;
-	}
-
-	if (strcmp(peer->sid, sid)) {
-		return 1;
-	}
+	peer->sid[0] = '\0';
+	strncat(peer->sid, sid, sizeof peer->sid - 1);
 	return 0;
 }
