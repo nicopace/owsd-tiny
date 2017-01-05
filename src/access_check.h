@@ -19,7 +19,7 @@
  */
 #pragma once
 
-#include <libubus.h>
+#include "wsubus.impl.h"
 
 struct wsubus_access_check_req;
 

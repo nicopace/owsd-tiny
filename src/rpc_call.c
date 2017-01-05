@@ -276,7 +276,6 @@ static int wsubus_call_do(struct wsubus_percall_ctx *curr_call)
 {
 	struct prog_context *prog = lws_context_user(lws_get_context(curr_call->wsi));
 	int ret;
-	struct wsu_peer *peer = wsi_to_peer(curr_call->wsi);
 
 	assert(curr_call->state == WSUBUS_CALL_STATE_CALL_PRE);
 

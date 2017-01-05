@@ -18,12 +18,59 @@
  * 02110-1301 USA
  */
 #include "access_check.h"
+#include "common.h"
+
+#define SID_EXTENDED_PREFIX "X-"
+
+static inline const char* wsu_sid_extended(const char *sid)
+{
+	return strstr(sid, SID_EXTENDED_PREFIX) == sid ? sid+strlen(SID_EXTENDED_PREFIX) : NULL;
+}
+
+enum wsu_ext_result {
+	EXT_CHECK_NEXT, EXT_CHECK_ALLOW, EXT_CHECK_DENY
+};
+
+static enum wsu_ext_result wsu_ext_check_interface(struct lws *wsi)
+{
+	// TODO implement, to support case where a vhost (interface) doesn't require login
+	return EXT_CHECK_NEXT;
+}
+
+#ifdef LWS_OPENSSL_SUPPORT
+static enum wsu_ext_result wsu_ext_check_tls(struct lws *wsi)
+{
+	if (!lws_is_ssl(wsi)) {
+		return EXT_CHECK_NEXT;
+	}
+
+	struct wsu_peer *peer = wsi_to_peer(wsi);
+	SSL *ssl = lws_get_ssl(wsi);
+	X509 *x = SSL_get_peer_certificate(ssl);
+	int have_cert = !!x;
+	X509_free(x);
+	if (have_cert && SSL_get_verify_result(ssl) == X509_V_OK) {
+#ifdef _DEBUG
+		X509_NAME *xname = X509_get_subject_name(x);
+		X509_NAME_get_text_by_NID(xname, NID_commonName, peer->tls.cert_subj, sizeof peer->tls.cert_subj);
+		lwsl_notice("wsi %p was TLS authenticated with cert CN= %s\n", wsi, peer->tls.cert_subj);
+#endif
+		return EXT_CHECK_ALLOW;
+	} else {
+		lwsl_notice("wsi %p was not TLS authenticated\n", wsi);
+		// return DEFAULT since next auth check may allow this session
+		return EXT_CHECK_DENY;
+	}
+}
+#endif
 
 struct wsubus_access_check_req {
 	struct ubus_request req;
 	bool result;
 	wsubus_access_cb cb;
 };
+
+static struct wsubus_access_check_req fake_request;
 
 static void wsubus_access_check__on_ret(struct ubus_request *ureq, int type, struct blob_attr *msg)
 {
@@ -131,12 +178,34 @@ struct wsubus_access_check_req* wsubus_access_check_(
 		void *ctx,
 		wsubus_access_cb cb)
 {
+	const char *esid = wsu_sid_extended(sid);
+
+	// for now ext_allow isnt async, so do everyhing here instead of cb,ctx,req wrapper
+	enum wsu_ext_result res = EXT_CHECK_NEXT;
+	if (esid) {
+		if (!strcmp("mgmt-interface", esid)) {
+			res = wsu_ext_check_interface(wsi);
+		}
+#ifdef LWS_OPENSSL_SUPPORT
+		else if (!strcmp("tls-certificate", esid)) {
+			res = wsu_ext_check_tls(wsi);
+		}
+#endif
+	}
+
+	if (res != EXT_CHECK_NEXT) {
+		// fire the cb here, since we won't be doing async access check
+		cb(&fake_request, ctx, res == EXT_CHECK_ALLOW);
+		return &fake_request;
+	}
+
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 	return wsubus_access_check_via_session(prog->ubus_ctx, sid, scope, object, method, args, ctx, cb);
 }
 
 void wsubus_access_check__cancel(struct ubus_context *ubus_ctx, struct wsubus_access_check_req *req)
 {
+	assert(req != &fake_request);
 	ubus_abort_request(ubus_ctx, &req->req);
 	free(req);
 }
