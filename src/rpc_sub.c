@@ -325,7 +325,7 @@ static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *e
 	t->cr.destructor = wsubus_ev_check__destroy;
 	list_add_tail(&t->cr.acq, &client->access_check_q);
 
-	t->cr.req = wsubus_access_check__event(sub->wsi, sub->sid, type, NULL /* XXX */, t, wsubus_ev_check_cb);
+	t->cr.req = wsubus_access_check__event(sub->wsi, sub->sid, t->type, NULL /* XXX */, t, wsubus_ev_check_cb);
 
 	if (!t->cr.req) {
 		list_del(&t->cr.acq);
