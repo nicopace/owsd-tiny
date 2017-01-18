@@ -50,19 +50,19 @@ static void usage(char *name)
 			"  -s <socket>      path to ubus socket [" WSD_DEF_UBUS_PATH "]\n"
 			"  -w <www_path>    HTTP resources path [" WSD_DEF_WWW_PATH "]\n"
 			"  -r <from>:<to>   HTTP path redirect pair\n"
-			" client options\n"
-			"  -P <url>         URL of remote WS ubus to connect to as client\n"
+			"  -P <url> ...     URL of remote WS ubus to proxy as client\n"
 #ifdef LWS_OPENSSL_SUPPORT
 			"  -C <cert_path>   SSL client cert path\n"
 			"  -K <cert_path>   SSL client key path\n"
-			"  -A <ca_file>   SSL CA file path trusted by client\n"
+			"  -A <ca_file>     SSL CA file path trusted by client\n"
 #endif // LWS_OPENSSL_SUPPORT
-			" per-port options:\n"
-			"  -p <port>        port number\n"
+			"\n"
+			"  -p <port> ...    port number (repeat for multiple):\n"
+			" per-port options (apply to last port (-p))\n"
 			"  -L <label>       _owsd_listen label\n"
 			"  -i <interface>   interface to bind to \n"
-			"  -o <origin>      origin url address to whitelist\n"
-			"  -u <username>    restrict login to this rpcd user\n"
+			"  -o <origin> ...  origin url address to whitelist\n"
+			"  -u <user> ...    restrict login to this rpcd user\n"
 #ifdef LWS_USE_IPV6
 			"  -6               enable IPv6, repeat to disable IPv4 [off]\n"
 #endif // LWS_USE_IPV6
@@ -71,6 +71,7 @@ static void usage(char *name)
 			"  -k <key_path>    SSL key path if SSL wanted\n"
 			"  -a <ca_file>     path to SSL CA file that makes clients trusted\n"
 #endif // LWS_OPENSSL_SUPPORT
+			"Options with ... are repeatable (e.g. -u one -u two ...)\n"
 			"\n", name);
 }
 
