@@ -443,6 +443,7 @@ static int wsubus_cb(struct lws *wsi,
 		memset(&remote->waiting_for, 0, sizeof remote->waiting_for);
 		avl_init(&remote->stubs, avl_strcmp, false, NULL);
 
+#if 0
 		remote->waiting_for.login = 1;
 
 		json_object *adminadmin = json_object_new_object();
@@ -453,6 +454,13 @@ static int wsubus_cb(struct lws *wsi,
 		wsu_queue_write_str(wsi, d);
 
 		json_object_put(adminadmin);
+#else
+		wsu_sid_check_and_update(peer, "X-tls-certificate");
+
+		char *d = jsonrpc__req_ubuslisten(++remote->call_id, peer->sid, "*");
+		remote->waiting_for.listen = 1;
+		wsu_queue_write_str(wsi, d);
+#endif
 
 		return 0;
 	}
