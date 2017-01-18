@@ -40,11 +40,12 @@ struct prog_context {
 // each listen vhost keeps origin whitelist
 struct vh_context {
 	struct list_head origins;
+	struct list_head users;
 	char *name;
 };
-struct origin {
+struct str_list {
 	struct list_head list;
-	const char *url;
+	const char *str;
 };
 
 

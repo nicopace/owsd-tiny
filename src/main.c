@@ -62,6 +62,7 @@ static void usage(char *name)
 			"  -L <label>       _owsd_listen label\n"
 			"  -i <interface>   interface to bind to \n"
 			"  -o <origin>      origin url address to whitelist\n"
+			"  -u <username>    restrict login to this rpcd user\n"
 #ifdef LWS_USE_IPV6
 			"  -6               enable IPv6, repeat to disable IPv4 [off]\n"
 #endif // LWS_USE_IPV6
@@ -115,7 +116,7 @@ int main(int argc, char *argv[])
 					"C:K:A:"
 #endif
 					/* per-vhost */
-					"p:i:o:L:"
+					"p:i:o:L:u:"
 #ifdef LWS_USE_IPV6
 					"6"
 #endif // LWS_USE_IPV6
@@ -195,6 +196,7 @@ int main(int argc, char *argv[])
 
 			*newvh = (struct vhinfo_list){};
 			INIT_LIST_HEAD(&newvh->vh_ctx.origins);
+			INIT_LIST_HEAD(&newvh->vh_ctx.users);
 			newvh->vh_ctx.name = "";
 			newvh->vh_info.options |= LWS_SERVER_OPTION_DISABLE_IPV6;
 
@@ -214,13 +216,22 @@ int main(int argc, char *argv[])
 		case 'i':
 			currvh->vh_info.iface = optarg;
 			break;
-		case 'o':;
-			struct origin *origin_el = malloc(sizeof(struct origin));
-			if (!origin_el)
+		case 'o': {
+			struct str_list *str = malloc(sizeof *str);
+			if (!str)
 				break;
-			origin_el->url = optarg;
-			list_add_tail(&origin_el->list, &currvh->vh_ctx.origins);
+			str->str = optarg;
+			list_add_tail(&str->list, &currvh->vh_ctx.origins);
 			break;
+		}
+		case 'u': {
+			struct str_list *str = malloc(sizeof *str);
+			if (!str)
+				break;
+			str->str = optarg;
+			list_add_tail(&str->list, &currvh->vh_ctx.users);
+			break;
+		}
 		case 'L':
 			currvh->vh_ctx.name = optarg;
 			break;
@@ -356,6 +367,8 @@ ssl:
 		// list needs separate copying becuase it references its own address
 		INIT_LIST_HEAD(&vh_context->origins);
 		list_splice(&c->vh_ctx.origins, &vh_context->origins);
+		INIT_LIST_HEAD(&vh_context->users);
+		list_splice(&c->vh_ctx.users, &vh_context->users);
 
 
 		if (list_empty(&vh_context->origins)) {

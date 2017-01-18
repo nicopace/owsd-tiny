@@ -37,6 +37,35 @@ static enum wsu_ext_result wsu_ext_check_interface(struct lws *wsi)
 	return EXT_CHECK_NEXT;
 }
 
+static enum wsu_ext_result wsu_ext_restrict_interface(struct lws *wsi,
+		const char *sid,
+		const char *scope,
+		const char *object,
+		const char *method,
+		struct blob_buf *args)
+{
+	(void)scope; (void)sid;
+	if (!strcmp(object, "session") && !strcmp(method, "login")) {
+		unsigned rem;
+		struct blob_attr *cur;
+		blobmsg_for_each_attr(cur, args->head, rem) {
+			if (!strcmp("username", blobmsg_name(cur))) {
+				struct vh_context *vc = lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
+				if (!list_empty(&vc->users)) {
+					struct str_list *s;
+					list_for_each_entry(s, &vc->users, list)
+						if (!strcmp(s->str, blobmsg_get_string(cur)))
+							return EXT_CHECK_ALLOW;
+					return EXT_CHECK_DENY;
+				}
+			}
+		}
+	}
+
+	return EXT_CHECK_NEXT;
+}
+
+
 #ifdef LWS_OPENSSL_SUPPORT
 static enum wsu_ext_result wsu_ext_check_tls(struct lws *wsi)
 {
@@ -192,6 +221,14 @@ struct wsubus_access_check_req* wsubus_access_check_(
 		}
 #endif
 	}
+
+	if (res != EXT_CHECK_NEXT) {
+		// fire the cb here, since we won't be doing async access check
+		cb(&fake_request, ctx, res == EXT_CHECK_ALLOW);
+		return &fake_request;
+	}
+
+	res = wsu_ext_restrict_interface(wsi, sid, scope, object, method, args);
 
 	if (res != EXT_CHECK_NEXT) {
 		// fire the cb here, since we won't be doing async access check

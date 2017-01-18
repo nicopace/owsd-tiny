@@ -58,10 +58,10 @@ struct lws_protocols wsubus_proto = {
 
 static bool origin_allowed(struct list_head *origin_list, char *origin)
 {
-	struct origin *origin_el;
+	struct str_list *str;
 
-	list_for_each_entry(origin_el, origin_list, list) {
-		if (!fnmatch(origin_el->url, origin, 0))
+	list_for_each_entry(str, origin_list, list) {
+		if (!fnmatch(str->str, origin, 0))
 			return true;
 	}
 
@@ -416,10 +416,17 @@ static int wsubus_cb(struct lws *wsi,
 				lws_get_protocol(wsi));
 
 		if (vc && !list_empty(&vc->origins)) {
-			struct origin *origin_el, *origin_tmp;
+			struct str_list *origin_el, *origin_tmp;
 			list_for_each_entry_safe(origin_el, origin_tmp, &vc->origins, list) {
 				list_del(&origin_el->list);
 				free(origin_el);
+			}
+		}
+		if (vc && !list_empty(&vc->users)) {
+			struct str_list *user_el, *user_tmp;
+			list_for_each_entry_safe(user_el, user_tmp, &vc->users, list) {
+				list_del(&user_el->list);
+				free(user_el);
 			}
 		}
 
