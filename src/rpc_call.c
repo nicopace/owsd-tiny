@@ -126,7 +126,7 @@ static struct wsubus_percall_ctx *wsubus_percall_ctx_create(
 
 	ret->wsi = wsi;
 
-	ret->id = blob_memdup(id);
+	ret->id = id ? blob_memdup(id): NULL;
 	ret->call_args = call_args;
 	ret->retdata = NULL;
 
