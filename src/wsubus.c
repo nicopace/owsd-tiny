@@ -86,8 +86,9 @@ static int wsubus_filter(struct lws *wsi)
 	struct vh_context *vc;
 
 	if (len == 0) {
-		lwsl_err("no or empty origin header\n");
-		rc = -2;
+		// Origin can be faked by non-browsers, and browsers always send it.
+		// This means we can let in non-web agents since they may lie about origin anyway.
+		rc = 0;
 	} else if ((e = lws_hdr_copy(wsi, origin, len + 1, WSI_TOKEN_ORIGIN)) < 0) {
 		lwsl_err("error copying origin header %d\n", e);
 		rc = -3;
