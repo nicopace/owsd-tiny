@@ -146,9 +146,11 @@ static struct wsubus_access_check_req * wsubus_access_check_via_session(
 	unsigned rem;
 	struct blob_attr *cur;
 	// does not allow ubus_rpc_session arg in params, as we will add it
-	blob_for_each_attr(cur, args->head, rem) {
-		if (!strcmp("ubus_rpc_session", blobmsg_name(cur)))
-			goto fail_mem;
+	if (args) {
+		blob_for_each_attr(cur, args->head, rem) {
+			if (!strcmp("ubus_rpc_session", blobmsg_name(cur)))
+				goto fail_mem;
+		}
 	}
 
 	int ret;
