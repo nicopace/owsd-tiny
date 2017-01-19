@@ -43,6 +43,7 @@ static int wsu_local_stub_handle_call(struct ubus_context *ubus_ctx, struct ubus
 	char *d = jsonrpc__req_ubuscall(++stub->remote->call_id, wsu_remote_to_peer(stub->remote)->sid, local_name, method, args_jobj);
 
 	free(args_json);
+	json_object_put(args_jobj);
 
 	struct wsu_proxied_call *p = wsu_proxied_call_new(stub->remote);
 
