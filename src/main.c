@@ -162,7 +162,6 @@ int main(int argc, char *argv[])
 			newcl->cl_info.port = port;
 			newcl->cl_info.address = addr;
 			newcl->cl_info.host = addr;
-			newcl->cl_info.origin = addr;
 			newcl->cl_info.path = path;
 			if (!strcmp("wss", proto) || !strcmp("https", proto))  {
 				newcl->cl_info.ssl_connection = LCCSCF_USE_SSL | LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
