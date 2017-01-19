@@ -70,15 +70,15 @@ static bool origin_allowed(struct list_head *origin_list, char *origin)
 
 static int wsubus_filter(struct lws *wsi)
 {
-	int len = lws_hdr_total_length(wsi, WSI_TOKEN_ORIGIN) + 1;
-	assert(len > 0);
-	char *origin = malloc((size_t)len);
+	int len = lws_hdr_total_length(wsi, WSI_TOKEN_ORIGIN);
+	assert(len >= 0);
+	char *origin = malloc((size_t)len+1);
 
 	if (!origin) {
 		lwsl_err("error allocating origin header: %s\n", strerror(errno));
 		return -1;
 	}
-	origin[len-1] = '\0';
+	origin[len] = '\0';
 
 	int rc = 0;
 	int e;
@@ -88,7 +88,7 @@ static int wsubus_filter(struct lws *wsi)
 	if (len == 0) {
 		lwsl_err("no or empty origin header\n");
 		rc = -2;
-	} else if ((e = lws_hdr_copy(wsi, origin, len, WSI_TOKEN_ORIGIN)) < 0) {
+	} else if ((e = lws_hdr_copy(wsi, origin, len + 1, WSI_TOKEN_ORIGIN)) < 0) {
 		lwsl_err("error copying origin header %d\n", e);
 		rc = -3;
 	} else if (!(vc = lws_protocol_vh_priv_get(
