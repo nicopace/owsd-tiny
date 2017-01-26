@@ -68,13 +68,15 @@ int ubusrpc_blob_call_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob
 		if (!tb[i])
 			ret = -i-1;
 
+	if (ret)
+		goto out;
+
 	unsigned int rem;
 	struct blob_attr *cur;
 	blobmsg_for_each_attr(cur, tb[3], rem) {
 		if (!strcmp("_owsd_listen", blobmsg_name(cur))) {
-			free(dup_blob);
-			free(params_buf);
-			return -1;
+			ret = -1;
+			goto out;
 		}
 	}
 
@@ -94,6 +96,11 @@ int ubusrpc_blob_call_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob
 	ubusrpc->call.params_buf = params_buf;
 
 	return 0;
+
+out:
+	free(dup_blob);
+	free(params_buf);
+	return ret;
 }
 
 struct wsubus_percall_ctx {
