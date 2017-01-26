@@ -278,6 +278,7 @@ static void wsubus_ev_check_cb(struct wsubus_access_check_req *req, void *ctx, b
 	struct wsubus_ev_notif *t = ctx;
 
 	assert(req == t->cr.req);
+	wsubus_access_check_free(t->cr.req);
 	lwsl_debug("access check for event gave %d\n", access);
 
 	if (!access) {
@@ -325,10 +326,13 @@ static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *e
 	t->cr.destructor = wsubus_ev_check__destroy;
 	list_add_tail(&t->cr.acq, &client->access_check_q);
 
-	t->cr.req = wsubus_access_check__event(sub->wsi, sub->sid, t->type, NULL /* XXX */, t, wsubus_ev_check_cb);
+	int err = 0;
+	if((t->cr.req = wsubus_access_check_new()))
+		err = wsubus_access_check__event(t->cr.req, sub->wsi, sub->sid, t->type, NULL /* XXX */, t, wsubus_ev_check_cb);
 
-	if (!t->cr.req) {
+	if (!t->cr.req || err) {
 		list_del(&t->cr.acq);
+		wsubus_access_check_free(t->cr.req);
 		wsubus_ev_destroy_ctx(t);
 		return;
 	}

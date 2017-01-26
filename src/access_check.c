@@ -94,18 +94,36 @@ static enum wsu_ext_result wsu_ext_check_tls(struct lws *wsi)
 #endif
 
 struct wsubus_access_check_req {
-	struct ubus_request req;
 	bool result;
 	wsubus_access_cb cb;
+
+	void *ctx;
+
+	enum {
+		REQ_TAG_UBUS,
+		REQ_TAG_DEFER,
+	} tag;
+	union {
+		struct ubus_request ubus_req;
+		struct uloop_timeout defer_timer;
+	};
 };
 
-static struct wsubus_access_check_req fake_request;
+struct wsubus_access_check_req *wsubus_access_check_new(void)
+{
+	return calloc(1, sizeof(struct wsubus_access_check_req));
+}
+
+void wsubus_access_check_free(struct wsubus_access_check_req *req)
+{
+	free(req);
+}
 
 static void wsubus_access_check__on_ret(struct ubus_request *ureq, int type, struct blob_attr *msg)
 {
 	(void)type;
 
-	struct wsubus_access_check_req *req = container_of(ureq, struct wsubus_access_check_req, req);
+	struct wsubus_access_check_req *req = container_of(ureq, struct wsubus_access_check_req, ubus_req);
 
 	unsigned int rem;
 	struct blob_attr *pos;
@@ -121,14 +139,14 @@ static void wsubus_access_check__on_ret(struct ubus_request *ureq, int type, str
 
 static void wsubus_access_check__cb(struct ubus_request *ureq, int status)
 {
-	struct wsubus_access_check_req *req = container_of(ureq, struct wsubus_access_check_req, req);
+	struct wsubus_access_check_req *req = container_of(ureq, struct wsubus_access_check_req, ubus_req);
 
 	// is ureq->status_code or status (the arg) what we want?
-	req->cb(req, req->req.priv, req->result && status == UBUS_STATUS_OK);
-	free(req);
+	req->cb(req, req->ctx, req->result && status == UBUS_STATUS_OK);
 }
 
-static struct wsubus_access_check_req * wsubus_access_check_via_session(
+static int wsubus_access_check_via_session(
+		struct wsubus_access_check_req *r,
 		struct ubus_context *ubus_ctx,
 		const char *sid,
 		const char *scope,
@@ -138,18 +156,13 @@ static struct wsubus_access_check_req * wsubus_access_check_via_session(
 		void *ctx,
 		wsubus_access_cb cb)
 {
-	struct wsubus_access_check_req *r = malloc(sizeof *r);
-	if (!r) {
-		goto fail;
-	}
-
 	unsigned rem;
 	struct blob_attr *cur;
 	// does not allow ubus_rpc_session arg in params, as we will add it
 	if (args) {
 		blob_for_each_attr(cur, args->head, rem) {
 			if (!strcmp("ubus_rpc_session", blobmsg_name(cur)))
-				goto fail_mem;
+				goto fail;
 		}
 	}
 
@@ -157,7 +170,7 @@ static struct wsubus_access_check_req * wsubus_access_check_via_session(
 	uint32_t access_id;
 
 	if (ubus_lookup_id(ubus_ctx, "session", &access_id) != UBUS_STATUS_OK) {
-		goto fail_mem;
+		goto fail;
 	}
 
 	struct blob_buf blob_for_access = {};
@@ -174,32 +187,46 @@ static struct wsubus_access_check_req * wsubus_access_check_via_session(
 		blobmsg_add_field(&blob_for_access, BLOBMSG_TYPE_TABLE, "params", blobmsg_data(args->head), blobmsg_len(args->head));
 	}
 
-	ret = ubus_invoke_async(ubus_ctx, access_id, "access", blob_for_access.head, &r->req);
+	ret = ubus_invoke_async(ubus_ctx, access_id, "access", blob_for_access.head, &r->ubus_req);
 
 	if (ret != UBUS_STATUS_OK) {
 		goto fail_mem_blob;
 	}
 
-	r->cb = cb;
-	r->req.data_cb = wsubus_access_check__on_ret;
-	r->req.complete_cb = wsubus_access_check__cb;
-	r->req.priv = ctx;
+	r->tag = REQ_TAG_UBUS;
+	r->ubus_req.data_cb = wsubus_access_check__on_ret;
+	r->ubus_req.complete_cb = wsubus_access_check__cb;
 
-	ubus_complete_request_async(ubus_ctx, &r->req);
+	ubus_complete_request_async(ubus_ctx, &r->ubus_req);
 
 	blob_buf_free(&blob_for_access);
 
-	return r;
+	return 0;
 
 fail_mem_blob:
 	blob_buf_free(&blob_for_access);
-fail_mem:
-	free(r);
 fail:
-	return NULL;
+	return -1;
 }
 
-struct wsubus_access_check_req* wsubus_access_check_(
+static void deferral_cb(struct uloop_timeout *t) {
+	struct wsubus_access_check_req *req = container_of(t, struct wsubus_access_check_req, defer_timer);
+	assert(req->tag == REQ_TAG_DEFER);
+	req->cb(req, req->ctx, req->result);
+}
+
+static int defer_callback(
+		struct wsubus_access_check_req *req,
+		void *ctx, bool result)
+{
+	req->tag = REQ_TAG_DEFER;
+	req->result = result;
+	req->defer_timer.cb = deferral_cb;
+	return uloop_timeout_set(&req->defer_timer, 0);
+}
+
+int wsubus_access_check_(
+		struct wsubus_access_check_req *req,
 		struct lws *wsi,
 		const char *sid,
 		const char *scope,
@@ -210,6 +237,9 @@ struct wsubus_access_check_req* wsubus_access_check_(
 		wsubus_access_cb cb)
 {
 	const char *esid = wsu_sid_extended(sid);
+
+	req->cb = cb;
+	req->ctx = ctx;
 
 	// for now ext_allow isnt async, so do everyhing here instead of cb,ctx,req wrapper
 	enum wsu_ext_result res = EXT_CHECK_NEXT;
@@ -225,26 +255,29 @@ struct wsubus_access_check_req* wsubus_access_check_(
 	}
 
 	if (res != EXT_CHECK_NEXT) {
-		// fire the cb here, since we won't be doing async access check
-		cb(&fake_request, ctx, res == EXT_CHECK_ALLOW);
-		return &fake_request;
+		// schedule firing of callback
+		return defer_callback(req, ctx, res == EXT_CHECK_ALLOW);
 	}
 
 	res = wsu_ext_restrict_interface(wsi, sid, scope, object, method, args);
 
 	if (res != EXT_CHECK_NEXT) {
-		// fire the cb here, since we won't be doing async access check
-		cb(&fake_request, ctx, res == EXT_CHECK_ALLOW);
-		return &fake_request;
+		// schedule firing of callback
+		return defer_callback(req, ctx, res == EXT_CHECK_ALLOW);
 	}
 
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
-	return wsubus_access_check_via_session(prog->ubus_ctx, sid, scope, object, method, args, ctx, cb);
+	return wsubus_access_check_via_session(req, prog->ubus_ctx, sid, scope, object, method, args, ctx, cb);
 }
 
 void wsubus_access_check__cancel(struct ubus_context *ubus_ctx, struct wsubus_access_check_req *req)
 {
-	assert(req != &fake_request);
-	ubus_abort_request(ubus_ctx, &req->req);
-	free(req);
+	switch (req->tag) {
+	case REQ_TAG_DEFER:
+		uloop_timeout_cancel(&req->defer_timer);
+		break;
+	case REQ_TAG_UBUS:
+		ubus_abort_request(ubus_ctx, &req->ubus_req);
+		break;
+	}
 }

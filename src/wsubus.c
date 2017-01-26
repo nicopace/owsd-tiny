@@ -158,6 +158,7 @@ static void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
 				lwsl_info("free check in progress %p\n", p);
 				list_del(&p->acq);
 				wsubus_access_check__cancel(prog->ubus_ctx, p->req);
+				wsubus_access_check_free(p->req);
 				if (p->destructor)
 					p->destructor(p);
 			}

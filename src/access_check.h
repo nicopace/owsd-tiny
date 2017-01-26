@@ -23,9 +23,13 @@
 
 struct wsubus_access_check_req;
 
+struct wsubus_access_check_req *wsubus_access_check_new(void);
+void wsubus_access_check_free(struct wsubus_access_check_req *req);
+
 typedef void (*wsubus_access_cb) (struct wsubus_access_check_req *req, void *ctx, bool allow);
 
-struct wsubus_access_check_req* wsubus_access_check_(
+int wsubus_access_check_(
+		struct wsubus_access_check_req *req,
 		struct lws *wsi,
 		const char *sid,
 		const char *scope,
@@ -37,7 +41,8 @@ struct wsubus_access_check_req* wsubus_access_check_(
 
 void wsubus_access_check__cancel(struct ubus_context *ubus_ctx, struct wsubus_access_check_req *req);
 
-static inline struct wsubus_access_check_req * wsubus_access_check__call(
+static inline int wsubus_access_check__call(
+		struct wsubus_access_check_req *req,
 		struct lws *wsi,
 		const char *sid,
 		const char *object,
@@ -46,10 +51,11 @@ static inline struct wsubus_access_check_req * wsubus_access_check__call(
 		void *ctx,
 		wsubus_access_cb cb)
 {
-	return wsubus_access_check_(wsi, sid, NULL, object, method, args, ctx, cb);
+	return wsubus_access_check_(req, wsi, sid, NULL, object, method, args, ctx, cb);
 }
 
-static inline struct wsubus_access_check_req * wsubus_access_check__event(
+static inline int wsubus_access_check__event(
+		struct wsubus_access_check_req *req,
 		struct lws *wsi,
 		const char *sid,
 		const char *event,
@@ -57,5 +63,5 @@ static inline struct wsubus_access_check_req * wsubus_access_check__event(
 		void *ctx,
 		wsubus_access_cb cb)
 {
-	return wsubus_access_check_(wsi, sid, "owsd", event, "read", data, ctx, cb);
+	return wsubus_access_check_(req, wsi, sid, "owsd", event, "read", data, ctx, cb);
 }

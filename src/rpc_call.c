@@ -215,21 +215,25 @@ static int wsubus_call_do_check_then_do_call(struct wsubus_percall_ctx *curr_cal
 
 	assert(curr_call->state == WSUBUS_CALL_STATE_PREP);
 
-	int ret = UBUS_STATUS_OK;
+	int ret = 0;
 	curr_call->access_check.destructor = NULL; // XXX
 
 	list_add_tail(&curr_call->access_check.acq, &client->access_check_q);
 	curr_call->state = WSUBUS_CALL_STATE_CHECK;
 
-	curr_call->access_check.req = wsubus_access_check__call(curr_call->wsi, curr_call->call_args->sid, curr_call->call_args->object, curr_call->call_args->method, curr_call->call_args->params_buf, curr_call, wsubus_access_on_completed);
+	if ((curr_call->access_check.req = wsubus_access_check_new()))
+		ret = wsubus_access_check__call(curr_call->access_check.req, curr_call->wsi, curr_call->call_args->sid, curr_call->call_args->object, curr_call->call_args->method, curr_call->call_args->params_buf, curr_call, wsubus_access_on_completed);
 
-	if (!curr_call->access_check.req) {
+	if (!curr_call->access_check.req || ret) {
 		lwsl_warn("access check error\n");
 		ret = UBUS_STATUS_UNKNOWN_ERROR;
 
 		list_del(&curr_call->access_check.acq);
 		if (curr_call->access_check.destructor)
 			curr_call->access_check.destructor(&curr_call->access_check);
+
+		wsubus_access_check_free(curr_call->access_check.req);
+
 		goto out;
 	}
 
@@ -243,8 +247,9 @@ static void wsubus_access_on_completed(struct wsubus_access_check_req *req, void
 	lwsl_debug("ubus access check %p completed: allow = %d\n", req, allow);
 
 	assert(curr_call->state == WSUBUS_CALL_STATE_CHECK);
-	assert(!curr_call->access_check.req || curr_call->access_check.req == req);
+	assert(curr_call->access_check.req == req);
 
+	wsubus_access_check_free(curr_call->access_check.req);
 	curr_call->access_check.req = NULL;
 	list_del(&curr_call->access_check.acq);
 
