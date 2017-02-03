@@ -17,6 +17,24 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA
  */
+
+/*
+ * ubus over websocket - ubus list
+ */
 #pragma once
 
-extern struct lws_protocols wsubus_proto;
+#include <stdint.h>
+
+struct ubusrpc_blob_list {
+	struct blob_attr *src_blob;
+	const char *sid;
+
+	const char *pattern;
+};
+
+struct ubusrpc_blob;
+struct lws;
+
+int ubusrpc_blob_list_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob);
+
+int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);

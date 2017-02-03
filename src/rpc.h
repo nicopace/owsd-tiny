@@ -17,6 +17,42 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA
  */
+
+/*
+ * ubus over websocket - rpc parsing responses
+ */
 #pragma once
 
-extern struct lws_protocols wsubus_proto;
+#include "rpc_call.h"
+#include "rpc_list.h"
+#include "rpc_sub.h"
+#include "util_jsonrpc.h"
+
+struct jsonrpc_blob_req {
+	struct blob_attr *id;
+	const char *version;
+	const char *method;
+	struct blob_attr *params;
+};
+
+struct lws;
+
+struct ubusrpc_blob {
+	union {
+		struct {
+			struct blob_attr *src_blob;
+			const char *sid;
+		};
+
+		struct ubusrpc_blob_call call;
+
+		struct ubusrpc_blob_list list;
+
+		struct ubusrpc_blob_sub sub;
+	};
+	int (*handler)(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);
+};
+
+int jsonrpc_blob_req_parse(struct jsonrpc_blob_req *req, const struct blob_attr *blob);
+
+enum jsonrpc_error_code ubusrpc_blob_parse(struct ubusrpc_blob *ubusrpc, const char *method, struct blob_attr *params_blob);

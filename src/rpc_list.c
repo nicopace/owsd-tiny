@@ -1,24 +1,32 @@
 /*
- * Copyright (C) 2016 Inteno Broadband Technology AB
- *
- * This software is the confidential and proprietary information of the
- * Inteno Broadband Technology AB. You shall not disclose such Confidential
- * Information and shall use it only in accordance with the terms of the
- * license agreement you entered into with the Inteno Broadband Technology AB
- *
- * All rights reserved.
+ * Copyright (C) 2016 Inteno Broadband Technology AB. All rights reserved.
  *
  * Author: Denis Osvald <denis.osvald@sartura.hr>
  *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
  */
+
 /*
  * ubus over websocket - ubus list
  */
-#include "wsubus_rpc_list.h"
+#include "rpc_list.h"
 
 #include "common.h"
 #include "wsubus.impl.h"
-#include "wsubus_rpc.h"
+#include "rpc.h"
+#include "util_ubus_blob.h"
 
 #include <libubox/blobmsg_json.h>
 #include <libubox/blobmsg.h>
@@ -57,6 +65,7 @@ int ubusrpc_blob_list_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob
 		return -2;
 
 	ubusrpc->list.src_blob = dup_blob;
+	ubusrpc->call.sid = tb[0] ? blobmsg_get_string(tb[0]) : UBUS_DEFAULT_SID;
 	ubusrpc->list.pattern = blobmsg_get_string(tb[1]);
 
 	return 0;
@@ -69,15 +78,6 @@ struct list_cb_data {
 
 static void ubus_lookup_cb(struct ubus_context *ctx, struct ubus_object_data *obj, void *user)
 {
-	static const char *const blobmsg_type_to_str[] = {
-		[BLOBMSG_TYPE_ARRAY] = "array",
-		[BLOBMSG_TYPE_TABLE] = "object",
-		[BLOBMSG_TYPE_STRING] = "string",
-		[BLOBMSG_TYPE_INT32] = "number",
-		[BLOBMSG_TYPE_INT16] = "number",
-		[BLOBMSG_TYPE_BOOL] = "boolean",
-	};
-
 	(void)ctx;
 
 	lwsl_info("looked up %s\n", obj->path);
@@ -100,7 +100,7 @@ static void ubus_lookup_cb(struct ubus_context *ctx, struct ubus_object_data *ob
 		__blob_for_each_attr(cur_arg, blobmsg_data(cur_method), r_args) {
 			if (blobmsg_type(cur_arg) != BLOBMSG_TYPE_INT32)
 				continue;
-			const char *typestr = blobmsg_type_to_str[blobmsg_get_u32(cur_arg)];
+			const char *typestr = blobmsg_type_to_str(blobmsg_get_u32(cur_arg));
 			typestr = typestr ? typestr : "unknown";
 			blobmsg_add_string(&data->buf, blobmsg_name(cur_arg), typestr);
 		}
@@ -128,15 +128,15 @@ int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct bl
 	blobmsg_close_table(&list_data.buf, results_ticket);
 
 	if (ret) {
-		response_str = jsonrpc_response_from_blob(id, ret ? ret : -1, NULL);
+		response_str = jsonrpc__resp_ubus(id, ret ? ret : -1, NULL);
 	} else {
 		// using blobmsg_data here to pass only array part of blobmsg
-		response_str = jsonrpc_response_from_blob(id, 0, blobmsg_data(list_data.buf.head));
+		response_str = jsonrpc__resp_ubus(id, 0, blobmsg_data(list_data.buf.head));
 	}
 
 	blob_buf_free(&list_data.buf);
 
-	wsubus_write_response_str(wsi, response_str);
+	wsu_queue_write_str(wsi, response_str);
 
 	// free memory
 	free(response_str);

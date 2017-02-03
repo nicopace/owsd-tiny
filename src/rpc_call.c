@@ -1,33 +1,35 @@
 /*
- * Copyright (C) 2016 Inteno Broadband Technology AB
- *
- * This software is the confidential and proprietary information of the
- * Inteno Broadband Technology AB. You shall not disclose such Confidential
- * Information and shall use it only in accordance with the terms of the
- * license agreement you entered into with the Inteno Broadband Technology AB
- *
- * All rights reserved.
+ * Copyright (C) 2016 Inteno Broadband Technology AB. All rights reserved.
  *
  * Author: Denis Osvald <denis.osvald@sartura.hr>
  *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
  */
+
 /*
  * ubus over websocket - ubus call
  */
-#include "wsubus_rpc_call.h"
+#include "rpc_call.h"
 
 #include "common.h"
 #include "wsubus.impl.h"
-#include "wsubus_rpc.h"
-#include "wsubus_access_check.h"
+#include "rpc.h"
+#include "access_check.h"
 
 #include <libubox/blobmsg.h>
 #include <libubus.h>
-
-// TODO<deps> refactor should maybe drop this big include if all lws-specific
-// is put in wsubus.impl.h, and when client context is refactored (so we have
-// it passed around, not wsi). We would have to add own debug logging then.
-#include <libwebsockets.h>
 
 #include <assert.h>
 
@@ -66,20 +68,16 @@ int ubusrpc_blob_call_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob
 		if (!tb[i])
 			ret = -i-1;
 
-	// does not allow ubus_rpc_session arg in params, as we will add it
+	if (ret)
+		goto out;
+
 	unsigned int rem;
 	struct blob_attr *cur;
 	blobmsg_for_each_attr(cur, tb[3], rem) {
-		if (!strcmp("ubus_rpc_session", blobmsg_name(cur)))
-			ret = -5;
-		if (!strcmp("_owsd_listen", blobmsg_name(cur)))
-			ret = -5;
-	}
-
-	if (ret) {
-		free(dup_blob);
-		free(params_buf);
-		return ret;
+		if (!strcmp("_owsd_listen", blobmsg_name(cur))) {
+			ret = -1;
+			goto out;
+		}
 	}
 
 	blob_buf_init(params_buf, 0);
@@ -98,6 +96,11 @@ int ubusrpc_blob_call_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob
 	ubusrpc->call.params_buf = params_buf;
 
 	return 0;
+
+out:
+	free(dup_blob);
+	free(params_buf);
+	return ret;
 }
 
 struct wsubus_percall_ctx {
@@ -130,7 +133,7 @@ static struct wsubus_percall_ctx *wsubus_percall_ctx_create(
 
 	ret->wsi = wsi;
 
-	ret->id = blob_memdup(id);
+	ret->id = id ? blob_memdup(id): NULL;
 	ret->call_args = call_args;
 	ret->retdata = NULL;
 
@@ -177,7 +180,7 @@ static void wsubus_call_on_retdata(struct ubus_request *req, int type, struct bl
 int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, struct blob_attr *id)
 {
 	struct ubusrpc_blob_call *ubusrpc_req = &ubusrpc_blob->call;
-	struct wsubus_client_session *client = lws_wsi_user(wsi);
+	struct wsu_client_session *client = wsi_to_client(wsi);
 
 	int ret;
 
@@ -191,9 +194,9 @@ int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, stru
 	}
 
 	curr_call = wsubus_percall_ctx_create(wsi, id, ubusrpc_req);
-	curr_call->state = WSUBUS_CALL_STATE_PREP;
 
 	list_add_tail(&curr_call->cq, &client->rpc_call_q);
+	curr_call->state = WSUBUS_CALL_STATE_PREP;
 	ret = wsubus_call_do_check_then_do_call(curr_call);
 
 	if (ret != UBUS_STATUS_OK) {
@@ -202,15 +205,11 @@ int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, stru
 
 		list_del(&curr_call->cq);
 		wsubus_percall_ctx_destroy(curr_call);
-		goto respond_with_ubus_error;
-	}
 
-respond_with_ubus_error:
-	if (ret != UBUS_STATUS_OK) {
 		// invoke never happened, we need to send ubus error status
 		// (jsonrpc success, but ubus code != 0)
-		char *response = jsonrpc_response_from_blob(id, ret, NULL);
-		wsubus_write_response_str(wsi, response);
+		char *response = jsonrpc__resp_ubus(id, ret, NULL);
+		wsu_queue_write_str(wsi, response);
 		free(response);
 	}
 
@@ -219,35 +218,31 @@ respond_with_ubus_error:
 
 static int wsubus_call_do_check_then_do_call(struct wsubus_percall_ctx *curr_call)
 {
-	struct prog_context *prog = lws_context_user(lws_get_context(curr_call->wsi));
-	struct wsubus_client_session *client = lws_wsi_user(curr_call->wsi);
+	struct wsu_client_session *client = wsi_to_client(curr_call->wsi);
 
 	assert(curr_call->state == WSUBUS_CALL_STATE_PREP);
 
-	int ret = UBUS_STATUS_OK;
-
-	if (wsubus_check_and_update_sid(lws_wsi_user(curr_call->wsi), curr_call->call_args->sid) != 0) {
-		ret = UBUS_STATUS_NOT_SUPPORTED;
-		goto out;
-	}
-
+	int ret = 0;
 	curr_call->access_check.destructor = NULL; // XXX
 
 	list_add_tail(&curr_call->access_check.acq, &client->access_check_q);
+	curr_call->state = WSUBUS_CALL_STATE_CHECK;
 
-	curr_call->access_check.req = wsubus_access_check__call(prog->ubus_ctx, curr_call->call_args->object, curr_call->call_args->method, curr_call->call_args->sid, curr_call, wsubus_access_on_completed);
+	if ((curr_call->access_check.req = wsubus_access_check_new()))
+		ret = wsubus_access_check__call(curr_call->access_check.req, curr_call->wsi, curr_call->call_args->sid, curr_call->call_args->object, curr_call->call_args->method, curr_call->call_args->params_buf, curr_call, wsubus_access_on_completed);
 
-	if (!curr_call->access_check.req) {
+	if (!curr_call->access_check.req || ret) {
 		lwsl_warn("access check error\n");
 		ret = UBUS_STATUS_UNKNOWN_ERROR;
 
 		list_del(&curr_call->access_check.acq);
 		if (curr_call->access_check.destructor)
 			curr_call->access_check.destructor(&curr_call->access_check);
+
+		wsubus_access_check_free(curr_call->access_check.req);
+
 		goto out;
 	}
-
-	curr_call->state = WSUBUS_CALL_STATE_CHECK;
 
 out:
 	return ret;
@@ -261,6 +256,7 @@ static void wsubus_access_on_completed(struct wsubus_access_check_req *req, void
 	assert(curr_call->state == WSUBUS_CALL_STATE_CHECK);
 	assert(curr_call->access_check.req == req);
 
+	wsubus_access_check_free(curr_call->access_check.req);
 	curr_call->access_check.req = NULL;
 	list_del(&curr_call->access_check.acq);
 
@@ -279,8 +275,8 @@ out:
 	if (ret != UBUS_STATUS_OK) {
 		// hide all error codes in access behind permission denied
 		ret = UBUS_STATUS_PERMISSION_DENIED;
-		char *json_str = jsonrpc_response_from_blob(curr_call->id, ret, NULL);
-		wsubus_write_response_str(curr_call->wsi, json_str);
+		char *json_str = jsonrpc__resp_ubus(curr_call->id, ret, NULL);
+		wsu_queue_write_str(curr_call->wsi, json_str);
 		free(json_str);
 
 		list_del(&curr_call->cq);
@@ -308,8 +304,6 @@ static int wsubus_call_do(struct wsubus_percall_ctx *curr_call)
 		ret = UBUS_STATUS_UNKNOWN_ERROR;
 		goto out;
 	}
-
-	blobmsg_add_string(curr_call->call_args->params_buf, "ubus_rpc_session", curr_call->call_args->sid);
 
 	if (!strcmp(curr_call->call_args->sid, UBUS_DEFAULT_SID)) {
 		struct vh_context *vc = lws_protocol_vh_priv_get(lws_get_vhost(curr_call->wsi), lws_get_protocol(curr_call->wsi));
@@ -351,9 +345,9 @@ static void wsubus_call_on_completed(struct ubus_request *req, int status)
 		lwsl_warn("status != req->status_code (%d != %d)\n", status, req->status_code);
 
 	// retdata is deep copied pointer from retdata handler 
-	char *json_str = jsonrpc_response_from_blob(curr_call->id, status, curr_call->retdata);
+	char *json_str = jsonrpc__resp_ubus(curr_call->id, status, curr_call->retdata);
 
-	wsubus_write_response_str(curr_call->wsi, json_str);
+	wsu_queue_write_str(curr_call->wsi, json_str);
 	free(json_str);
 	free(req);
 	curr_call->invoke_req = NULL;

@@ -1,15 +1,21 @@
 /*
- * Copyright (C) 2016 Inteno Broadband Technology AB
- *
- * This software is the confidential and proprietary information of the
- * Inteno Broadband Technology AB. You shall not disclose such Confidential
- * Information and shall use it only in accordance with the terms of the
- * license agreement you entered into with the Inteno Broadband Technology AB
- *
- * All rights reserved.
+ * Copyright (C) 2016 Inteno Broadband Technology AB. All rights reserved.
  *
  * Author: Denis Osvald <denis.osvald@sartura.hr>
  *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
  */
 #include "ws_http.h"
 #include "ws_http_serve.h"
@@ -26,7 +32,7 @@ static lws_callback_function ws_http_cb;
 
 struct lws_protocols ws_http_proto = {
 	/*  we don't want any subprotocol name to match this, and it won't */
-	NULL,
+	",,,,,,,,",
 	ws_http_cb,
 	// following other fields we don't use:
 	0,    // - per-session data size
@@ -77,6 +83,13 @@ static void ufd_service_cb(struct uloop_fd *ufd, unsigned int revents)
 		lwsl_notice("re-service pipelined data\n");
 		lws_plat_service_tsi(global.lws_ctx, -1, 0);
 	}
+}
+
+static void utimer_reconnect_cb(struct uloop_timeout *timer)
+{
+	struct reconnect_info *c = container_of(timer, struct reconnect_info, timer);
+	lwsl_warn("connecting as client too to %s %d\n", c->cl_info.address, c->cl_info.port);
+	lws_client_connect_via_info(&c->cl_info);
 }
 
 static int ws_http_cb(struct lws *wsi,
@@ -150,7 +163,6 @@ static int ws_http_cb(struct lws *wsi,
 
 		assert(ufd->fd == in_pollargs->fd);
 		assert(ufd->cb == ufd_service_cb);
-		assert(ufd->registered == true);
 
 		if (eventmask_pollfd_to_ufd(in_pollargs->events) != ufd->flags) {
 			if (uloop_fd_add(ufd, eventmask_pollfd_to_ufd(in_pollargs->events))) {
@@ -161,10 +173,38 @@ static int ws_http_cb(struct lws *wsi,
 		return 0;
 	}
 
+	case LWS_CALLBACK_PROTOCOL_INIT: {
+		struct clvh_context *client_infos = lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
+		struct reconnect_info *c;
+		if (client_infos) list_for_each_entry(c, &client_infos->clients, list) {
+			c->timer.cb = utimer_reconnect_cb;
+			uloop_timeout_set(&c->timer, 0);
+		}
+		return 0;
+	}
+
+	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR: {
+		struct clvh_context *client_infos = lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
+		struct reconnect_info *c;
+		if (client_infos) list_for_each_entry(c, &client_infos->clients, list) {
+			if (c->wsi == wsi) {
+				uloop_timeout_set(&c->timer, (++c->reconnect_count)*2000);
+			}
+		}
+
+		lwsl_err("CCE ERROR, reason %s\n", in ? in : "");
+		break;
+	}
+
 		// deny websocket clients with default (no) subprotocol
 	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
 		lwsl_notice("client handshaking without subproto - denying\n");
 		return 1;
+
+
+	case LWS_CALLBACK_OPENSSL_PERFORM_CLIENT_CERT_VERIFICATION:
+		// we don't deny any clients here, we check later if authed and allow extra access
+		return 0;
 
 		// temporary - libwebsockets 1.7+ calls this always... TODO lwsbug
 	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS:

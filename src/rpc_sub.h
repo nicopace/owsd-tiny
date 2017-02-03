@@ -17,6 +17,30 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA
  */
+
+/*
+ * ubus over websocket - ubus event subscription
+ */
 #pragma once
 
-extern struct lws_protocols wsubus_proto;
+#include <stdint.h>
+
+struct ubusrpc_blob_sub {
+	struct blob_attr *src_blob;
+	const char *sid;
+
+	const char *pattern;
+};
+
+struct ubusrpc_blob;
+struct lws;
+
+int wsubus_unsubscribe_by_pattern(struct lws *wsi, const char *pattern);
+int wsubus_unsubscribe_all(struct lws *wsi);
+
+int ubusrpc_blob_sub_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob);
+int ubusrpc_blob_sub_list_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob);
+
+int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);
+int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);
+int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);
