@@ -163,7 +163,6 @@ static int ws_http_cb(struct lws *wsi,
 
 		assert(ufd->fd == in_pollargs->fd);
 		assert(ufd->cb == ufd_service_cb);
-		assert(ufd->registered == true);
 
 		if (eventmask_pollfd_to_ufd(in_pollargs->events) != ufd->flags) {
 			if (uloop_fd_add(ufd, eventmask_pollfd_to_ufd(in_pollargs->events))) {
