@@ -40,6 +40,10 @@
 #define WSD_DEF_WWW_PATH "/www"
 #endif
 
+#ifndef WSD_DEF_WWW_MAXAGE
+#define WSD_DEF_WWW_MAXAGE 0
+#endif
+
 struct prog_context global;
 
 static void usage(char *name)
@@ -49,6 +53,7 @@ static void usage(char *name)
 			" global options:\n"
 			"  -s <socket>      path to ubus socket [" WSD_DEF_UBUS_PATH "]\n"
 			"  -w <www_path>    HTTP resources path [" WSD_DEF_WWW_PATH "]\n"
+			"  -t <www_maxage>  enable HTTP caching with specified max_age in seconds\n"
 			"  -r <from>:<to>   HTTP path redirect pair\n"
 			"  -P <url> ...     URL of remote WS ubus to proxy as client\n"
 #ifdef LWS_OPENSSL_SUPPORT
@@ -89,6 +94,7 @@ int main(int argc, char *argv[])
 
 	const char *ubus_sock_path = WSD_DEF_UBUS_PATH;
 	const char *www_dirpath = WSD_DEF_WWW_PATH;
+	int www_maxage = WSD_DEF_WWW_MAXAGE;
 	char *redir_from = NULL;
 	char *redir_to = NULL;
 	bool any_ssl = false;
@@ -109,7 +115,7 @@ int main(int argc, char *argv[])
 	int c;
 	while ((c = getopt(argc, argv,
 					/* global */
-					"s:w:r:h"
+					"s:w:t:r:h"
 
 					/* per-client */
 					"P:"
@@ -132,6 +138,15 @@ int main(int argc, char *argv[])
 		case 'w':
 			www_dirpath = optarg;
 			break;
+		case 't': {
+			char *error;
+			int secs = strtol(optarg, &error, 10);
+			if (*error) {
+				lwsl_err("Invalid port '%s' specified\n", optarg);
+				goto error;
+			}
+			www_maxage = secs;
+		}
 		case 'r':
 			redir_to = strchr(optarg, ':');
 			if (!redir_to) {
@@ -334,9 +349,9 @@ ssl:
 		"/dev/null/",   // anything not-a-dir is ok, so our HTTP code runs and not lws
 		"index.html"
 	};
-	wwwmount.cache_reusable = 1;
-	wwwmount.cache_revalidate = 1;
-	wwwmount.cache_max_age = 3600;
+	wwwmount.cache_reusable = !!www_maxage;
+	wwwmount.cache_revalidate = !!www_maxage;
+	wwwmount.cache_max_age = www_maxage;
 	wwwmount.mountpoint_len = strlen(wwwmount.mountpoint);
 	wwwmount.origin_protocol = LWSMPRO_FILE;
 
