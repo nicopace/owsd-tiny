@@ -109,10 +109,14 @@ int ubusrpc_blob_sub_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob)
 	// comes from another blob's table... here and so do we)
 	blobmsg_parse_array(rpc_ubus_param_policy, __RPC_U_MAX, tb, blobmsg_data(dup_blob), (unsigned)blobmsg_len(dup_blob));
 
-	if (!tb[0])
+	if (!tb[0]) {
+		free(dup_blob);
 		return -1;
-	if (!tb[1])
+	}
+	if (!tb[1]) {
+		free(dup_blob);
 		return -2;
+	}
 
 	ubusrpc->sub.src_blob = dup_blob;
 	ubusrpc->sub.sid = tb[0] ? blobmsg_get_string(tb[0]) : UBUS_DEFAULT_SID;
