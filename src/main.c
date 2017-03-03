@@ -23,9 +23,15 @@
 #include "wsubus.h"
 #include "rpc.h"
 
-#include <libubox/uloop.h>
+#if WSD_HAVE_DBUS
+#include "dbus-io.h"
+#include <dbus/dbus.h>
+#endif
+#if WSD_HAVE_UBUS
 #include <libubus.h>
+#endif
 
+#include <libubox/uloop.h>
 #include <libwebsockets.h>
 
 #include <getopt.h>
@@ -290,21 +296,40 @@ ssl:
 
 	uloop_init();
 
+#if WSD_HAVE_UBUS
 	struct ubus_context *ubus_ctx = ubus_connect(ubus_sock_path);
 	if (!ubus_ctx) {
 		lwsl_err("ubus_connect error\n");
 		rc = 2;
 		goto error;
 	}
-
 	global.ubus_ctx = ubus_ctx;
+	ubus_add_uloop(ubus_ctx);
+#endif
+
+	struct DBusConnection *dbus_ctx;
+#if WSD_HAVE_DBUS
+	{
+		struct DBusError error;
+		dbus_error_init(&error);
+		dbus_ctx = dbus_bus_get_private(DBUS_BUS_SYSTEM, &error);
+		if (!ubus_ctx || dbus_error_is_set(&error)) {
+			lwsl_err("ubus_connect error\n");
+			lwsl_err("DBUS erro %s : %s\n", error.name, error.message);
+			rc = 2;
+			goto error;
+		}
+		global.dbus_ctx = dbus_ctx;
+		wsd_dbus_add_to_uloop(dbus_ctx);
+	}
+#endif
+
 	global.www_path = www_dirpath;
 	global.redir_from = redir_from;
 	global.redir_to = redir_to;
 
 	lwsl_info("Will serve dir '%s' for HTTP\n", www_dirpath);
 
-	ubus_add_uloop(ubus_ctx);
 	// typically 1024, so a couple of KiBs just for pointers...
 	{
 		struct rlimit lim = {0, 0};
@@ -427,7 +452,14 @@ error_ubus_ufds_ctx:
 error_ubus_ufds:
 	free(global.ufds);
 
+#if WSD_HAVE_UBUS
 	ubus_free(ubus_ctx);
+#endif
+#if WSD_HAVE_DBUS
+	dbus_connection_close(dbus_ctx);
+	dbus_connection_unref(dbus_ctx);
+	dbus_shutdown();
+#endif
 
 error:
 
