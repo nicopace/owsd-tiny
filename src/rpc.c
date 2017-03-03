@@ -24,6 +24,9 @@
 #include "rpc.h"
 #include "util_jsonrpc.h"
 
+// FIXME
+#include "dbus_rpc_list.h"
+
 #include <libubox/blobmsg.h>
 #include <libubox/blobmsg_json.h>
 
@@ -79,6 +82,8 @@ enum jsonrpc_error_code ubusrpc_blob_parse(struct ubusrpc_blob *ubusrpc, const c
 		{ "subscribe", ubusrpc_blob_sub_parse, ubusrpc_handle_sub },
 		{ "subscribe-list", ubusrpc_blob_sub_list_parse, ubusrpc_handle_sub_list },
 		{ "unsubscribe", ubusrpc_blob_sub_parse, ubusrpc_handle_unsub }, // parse is same as sub since args same
+
+		{ "dlist", ubusrpc_blob_list_parse, ubusrpc_handle_dlist },
 	};
 
 	for (unsigned long i = 0; i < ARRAY_SIZE(supported_methods); ++i)

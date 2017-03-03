@@ -21,6 +21,9 @@
 #include <stddef.h>
 #include <libwebsockets.h>
 #include <libubus.h>
+#include <dbus/dbus.h>
+
+#include "owsd-config.h"
 
 struct prog_context {
 	struct uloop_fd **ufds;
@@ -30,7 +33,12 @@ struct prog_context {
 
 	struct lws_context *lws_ctx;
 
+#if WSD_HAVE_UBUS
 	struct ubus_context *ubus_ctx;
+#endif
+#if WSD_HAVE_DBUS
+	struct DBusConnection *dbus_ctx;
+#endif
 
 	const char *www_path;
 	const char *redir_from;
