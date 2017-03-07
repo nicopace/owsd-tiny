@@ -123,17 +123,15 @@ int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct bl
 
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 
-	void *results_ticket = blobmsg_open_table(&list_data.buf, "");
 	lwsl_info("about to lookup %s\n", ubusrpc->list.pattern);
 	ret = ubus_lookup(prog->ubus_ctx, ubusrpc->list.pattern, ubus_lookup_cb, &list_data);
 	lwsl_info("after loookup rc %d, error %d\n", ret, list_data.error);
-	blobmsg_close_table(&list_data.buf, results_ticket);
 
 	if (ret) {
 		response_str = jsonrpc__resp_ubus(id, ret ? ret : -1, NULL);
 	} else {
 		// using blobmsg_data here to pass only array part of blobmsg
-		response_str = jsonrpc__resp_ubus(id, 0, blobmsg_data(list_data.buf.head));
+		response_str = jsonrpc__resp_ubus(id, 0, list_data.buf.head);
 	}
 
 	blob_buf_free(&list_data.buf);
