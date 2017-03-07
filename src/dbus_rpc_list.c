@@ -35,6 +35,9 @@
 #include <libwebsockets.h>
 
 #include <assert.h>
+#include <sys/types.h>
+#include <regex.h>
+#include <alloca.h>
 
 struct wsd_call_ctx {
 	struct lws *wsi;
@@ -77,24 +80,47 @@ static void introspect_list_finish(struct wsd_call_ctx *ctx)
 	dbus_message_unref(ctx->reply);
 }
 
+static regex_t method_regex;
+static regex_t interface_regex;
+
+__attribute__((constructor)) static void _init(void)
+{
+	regcomp(&method_regex, "\\(<method name=\"\\)\\([^\"]\\+\\)\"", 0);
+	regcomp(&interface_regex, "\\(<interface name=\"\\)\\([^\"]\\+\\)\"", 0);
+}
+
+__attribute__((destructor)) static void _dtor(void)
+{
+	regfree(&method_regex);
+	regfree(&interface_regex);
+}
+
 static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 {
-	lwsl_err("INTROSPECTED ###### %p\n", call);
 	struct wsd_call_ctx *ctx = data;
 
 	DBusMessage *reply = dbus_pending_call_steal_reply(call);
 
-	const char *str;
-	dbus_message_iter_get_basic(&ctx->arr_iter, &str);
-	lwsl_err("(%s)\n", str);
+	const char *obj;
+	dbus_message_iter_get_basic(&ctx->arr_iter, &obj);
+	void *p = blobmsg_open_table(&ctx->retbuf, obj);
 
-	void *p = blobmsg_open_table(&ctx->retbuf, str);
-	blobmsg_add_u32(&ctx->retbuf, "serial", dbus_message_get_serial(reply));
-	blobmsg_add_u32(&ctx->retbuf, "type", dbus_message_get_type(reply));
-	blobmsg_add_string(&ctx->retbuf, "signature", dbus_message_get_signature(reply));
-
-	dbus_message_get_args(reply, NULL, DBUS_TYPE_STRING, &str);
-	blobmsg_add_string(&ctx->retbuf, "value", str);
+	if (dbus_message_get_type(reply) == DBUS_MESSAGE_TYPE_METHOD_RETURN && !strcmp(dbus_message_get_signature(reply), "s")) {
+		const char *xml;
+		regmatch_t m[4];
+		dbus_message_get_args(reply, NULL, DBUS_TYPE_STRING, &xml);
+		void *pp = blobmsg_open_table(&ctx->retbuf, "interfaces");
+		size_t l = strlen(xml);
+		for (size_t cur = 0; cur < l && regexec(&interface_regex, xml + cur, ARRAY_SIZE(m), m, 0) == 0 && m[2].rm_so >= 0; cur += m[0].rm_eo) {
+			size_t len = m[2].rm_eo - m[2].rm_so;
+			char *iface = alloca(len+1);
+			strncpy(iface, xml + cur + m[2].rm_so, len);
+			iface[len] = '\0';
+			blobmsg_add_string(&ctx->retbuf, iface, "{}");
+			lwsl_info("--------- regexec match is %s\n", iface);
+		}
+		blobmsg_close_table(&ctx->retbuf, pp);
+	}
 
 	blobmsg_close_table(&ctx->retbuf, p);
 
@@ -107,22 +133,20 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 	dbus_message_unref(reply);
 }
 
-
 static void wsd_call_ctx_free(void *f)
 {
-	lwsl_err("FREEING LIST MSG\n");
 	struct wsd_call_ctx *ctx = f;
 	blob_buf_free(&ctx->retbuf);
 	free(ctx->list_args->src_blob);
 	free(ctx->list_args);
 	free(ctx->id);
-	dbus_message_free_data_slot(&ctx->reply_slot);
+	if (ctx->reply_slot >= 0)
+		dbus_message_free_data_slot(&ctx->reply_slot);
 	free(ctx);
 }
 
 static void wsd_list_cb(DBusPendingCall *call, void *data)
 {
-	lwsl_err("DBUS LIST REPLY %p\n", call);
 	struct wsd_call_ctx *ctx = data;
 
 	blob_buf_init(&ctx->retbuf, 0);
@@ -144,7 +168,6 @@ static void wsd_list_cb(DBusPendingCall *call, void *data)
 	}
 
 	if (strcmp(dbus_message_get_signature(reply), "as")) {
-		lwsl_err("DBUS LIST NAME ERR ARR :%s", dbus_message_get_signature(reply));
 		void *data_tkt = blobmsg_open_table(&ctx->retbuf, "data");
 		blobmsg_add_string(&ctx->retbuf, "DBus", DBUS_ERROR_INVALID_SIGNATURE);
 		blobmsg_close_table(&ctx->retbuf, data_tkt);
@@ -154,7 +177,6 @@ static void wsd_list_cb(DBusPendingCall *call, void *data)
 
 	ctx->reply = reply;
 	//dbus_message_ref(ctx->reply);
-	ctx->reply_slot = -1;
 	dbus_message_allocate_data_slot(&ctx->reply_slot);
 	dbus_message_set_data(ctx->reply, ctx->reply_slot, ctx, wsd_call_ctx_free);
 	DBusMessageIter resp_iter;
@@ -176,37 +198,37 @@ out:
 
 int ubusrpc_handle_dlist(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
 {
-	struct wsd_call_ctx *ctx = calloc(1, sizeof *ctx);
-	ctx->wsi = wsi;
-	ctx->list_args = &ubusrpc->list;
-	ctx->id = id ? blob_memdup(id) : NULL;
-
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 
-	lwsl_info("about to DBUS lookup %s\n", ubusrpc->list.pattern);
 	DBusMessage *msg = dbus_message_new_method_call(DBUS_SERVICE_DBUS, DBUS_PATH_DBUS, DBUS_INTERFACE_DBUS, "ListNames");
 	if (!msg) {
-		goto out;
+		return -1;
 	}
 
 	DBusPendingCall *call;
 	if (!dbus_connection_send_with_reply(prog->dbus_ctx, msg, &call, 2000) || !call) {
 		dbus_message_unref(msg);
-		goto out;
+		free(ubusrpc->list.src_blob);
+		return -1;
 	}
+
+	struct wsd_call_ctx *ctx = calloc(1, sizeof *ctx);
+	ctx->wsi = wsi;
+	ctx->list_args = &ubusrpc->list;
+	ctx->id = id ? blob_memdup(id) : NULL;
+	ctx->reply_slot = -1;
+
 	if (!dbus_pending_call_set_notify(call, wsd_list_cb, ctx, NULL)) {
 		dbus_message_unref(msg);
-		goto out;
+		dbus_pending_call_unref(call);
+		free(ubusrpc->list.src_blob);
+		free(ctx->id);
+		free(ctx);
+		return -1;
 	}
 
 	dbus_message_unref(msg);
 	dbus_pending_call_unref(call);
-
 	return 0;
-
-out:
-	// free ctx since it we werent able to pass it to notify handler
-	wsd_call_ctx_free(ctx);
-	return -1;
 }
 
