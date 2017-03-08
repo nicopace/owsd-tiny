@@ -63,6 +63,7 @@ static void introspect_list_next(struct wsd_call_ctx *ctx)
 	struct prog_context *prog = lws_context_user(lws_get_context(ctx->wsi));
 	const char *str;
 	dbus_message_iter_get_basic(&ctx->arr_iter, &str);
+	// TODO select a reasonable object path we will support
 	DBusMessage *introspect = dbus_message_new_method_call(str, "/org/freedesktop", DBUS_INTERFACE_INTROSPECTABLE, "Introspect");
 	DBusPendingCall *introspect_call;
 	dbus_connection_send_with_reply(prog->dbus_ctx, introspect, &introspect_call, -1);
@@ -80,19 +81,29 @@ static void introspect_list_finish(struct wsd_call_ctx *ctx)
 	dbus_message_unref(ctx->reply);
 }
 
-static regex_t method_regex;
+/* FIXME
+don't invoke wrath of Zalgo by using regex on XML
+http://stackoverflow.com/questions/1732348/regex-match-open-tags-except-xhtml-self-contained-tags/1732454#1732454
+*/
 static regex_t interface_regex;
+static regex_t method_regex;
+static regex_t arg_regex;
+static regex_t attr_regex;
 
 __attribute__((constructor)) static void _init(void)
 {
-	regcomp(&method_regex, "\\(<method name=\"\\)\\([^\"]\\+\\)\"", 0);
-	regcomp(&interface_regex, "\\(<interface name=\"\\)\\([^\"]\\+\\)\"", 0);
+	regcomp(&interface_regex, "\\(<interface name=\"\\)\\([^\"]*\\)\"", 0);
+	regcomp(&method_regex, "\\(<method name=\"\\)\\([^\"]*\\)\"", 0);
+	regcomp(&arg_regex, "\\(<arg \\)\\([^>]*\\)/>", 0);
+	regcomp(&attr_regex, "\\([^ \t]*\\)=\"\\([^\"]*\\)\"", 0);
 }
 
 __attribute__((destructor)) static void _dtor(void)
 {
-	regfree(&method_regex);
 	regfree(&interface_regex);
+	regfree(&method_regex);
+	regfree(&arg_regex);
+	regfree(&attr_regex);
 }
 
 static void wsd_introspect_cb(DBusPendingCall *call, void *data)
@@ -104,22 +115,94 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 	const char *obj;
 	dbus_message_iter_get_basic(&ctx->arr_iter, &obj);
 	void *p = blobmsg_open_table(&ctx->retbuf, obj);
+	lwsl_debug(">>>>>>>>>> Introspected %s\n", obj);
 
 	if (dbus_message_get_type(reply) == DBUS_MESSAGE_TYPE_METHOD_RETURN && !strcmp(dbus_message_get_signature(reply), "s")) {
 		const char *xml;
-		regmatch_t m[4];
+		regmatch_t imatch[3];
 		dbus_message_get_args(reply, NULL, DBUS_TYPE_STRING, &xml);
-		void *pp = blobmsg_open_table(&ctx->retbuf, "interfaces");
-		size_t l = strlen(xml);
-		for (size_t cur = 0; cur < l && regexec(&interface_regex, xml + cur, ARRAY_SIZE(m), m, 0) == 0 && m[2].rm_so >= 0; cur += m[0].rm_eo) {
-			size_t len = m[2].rm_eo - m[2].rm_so;
-			char *iface = alloca(len+1);
-			strncpy(iface, xml + cur + m[2].rm_so, len);
-			iface[len] = '\0';
-			blobmsg_add_string(&ctx->retbuf, iface, "{}");
-			lwsl_info("--------- regexec match is %s\n", iface);
+		size_t xml_len = strlen(xml);
+		for (const char *icur = xml; icur < xml + xml_len
+				&& regexec(&interface_regex, icur, ARRAY_SIZE(imatch), imatch, 0) == 0
+				&& imatch[2].rm_so >= 0; icur += imatch[0].rm_eo) {
+			size_t iface_len = imatch[2].rm_eo - imatch[2].rm_so;
+			char iface[iface_len+1];
+			strncpy(iface, icur + imatch[2].rm_so, iface_len);
+			iface[iface_len] = '\0';
+
+			char *iendcur = strstr(icur + imatch[2].rm_eo, "</interface>");
+			if (!iendcur) {
+				continue;
+			}
+
+			regmatch_t mmatch[3];
+			for (const char *mcur = icur + imatch[0].rm_so; mcur < xml + xml_len && mcur < iendcur
+					&& regexec(&method_regex, mcur, ARRAY_SIZE(mmatch), mmatch, 0) == 0
+					&& mmatch[2].rm_so >= 0 && mcur + mmatch[2].rm_so < iendcur; mcur += mmatch[0].rm_eo) {
+				size_t method_len = mmatch[2].rm_eo - mmatch[2].rm_so;
+				char method[iface_len+1+method_len+1];
+				strcpy(method, iface);
+				strcpy(method+iface_len, ".");
+				strncpy(method+iface_len+1, mcur + mmatch[2].rm_so, method_len);
+				method[iface_len+1+method_len] = '\0';
+
+				void *pp = blobmsg_open_array(&ctx->retbuf, method);
+				char *mendcur = strstr(mcur + mmatch[2].rm_eo, "</method>");
+				if (!iendcur) {
+					blobmsg_close_table(&ctx->retbuf, pp);
+					continue;
+				}
+
+				regmatch_t amatch[3];
+				for (const char *acur = mcur + mmatch[0].rm_so; acur < xml + xml_len && acur < mendcur
+						&& regexec(&arg_regex, acur, ARRAY_SIZE(amatch), amatch, 0) == 0
+						&& amatch[2].rm_so >= 0 && acur + amatch[2].rm_so < mendcur; acur += amatch[0].rm_eo) {
+					size_t arg_len = amatch[2].rm_eo - amatch[2].rm_so;
+					char arg[arg_len+1];
+					strncpy(arg, acur + amatch[2].rm_so, arg_len);
+					arg[arg_len] = '\0';
+
+					regmatch_t atmatch[3];
+
+					bool skip = false;
+					char *arg_name = NULL, *arg_type = NULL;
+					for (const char *atcur = acur + amatch[2].rm_so; atcur < acur + amatch[2].rm_eo
+							&& regexec(&attr_regex, atcur, ARRAY_SIZE(atmatch), atmatch, 0) == 0
+							&& atmatch[0].rm_eo >= 0 && atmatch[0].rm_eo < amatch[0].rm_eo; atcur += atmatch[0].rm_eo) {
+						size_t atn_len = atmatch[1].rm_eo - atmatch[1].rm_so;
+						size_t atv_len = atmatch[2].rm_eo - atmatch[2].rm_so;
+						char atn[atn_len+1];
+						char atv[atv_len+1];
+						strncpy(atn, atcur + atmatch[1].rm_so, atn_len);
+						strncpy(atv, atcur + atmatch[2].rm_so, atv_len);
+						atn[atn_len] = '\0';
+						atv[atv_len] = '\0';
+						if (!strcmp("direction", atn) && !strcmp("out", atv)) {
+							skip = true;
+							break;
+						}
+						if (!strcmp("type", atn)) {
+							arg_type = strdup(atv);
+						} else if (!strcmp("name", atn)) {
+							arg_name = strdup(atv);
+						}
+					}
+
+					if (skip)
+						continue;
+
+					void *ppp = blobmsg_open_table(&ctx->retbuf, "");
+
+					if (arg_name)
+						blobmsg_add_string(&ctx->retbuf, "name", arg_name);
+					if (arg_type)
+						blobmsg_add_string(&ctx->retbuf, "type", arg_type);
+
+					blobmsg_close_table(&ctx->retbuf, ppp);
+				}
+				blobmsg_close_array(&ctx->retbuf, pp);
+			}
 		}
-		blobmsg_close_table(&ctx->retbuf, pp);
 	}
 
 	blobmsg_close_table(&ctx->retbuf, p);
