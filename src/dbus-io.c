@@ -23,7 +23,6 @@ struct wsd_udispatch {
 
 static void wsd_trigger_timer(struct uloop_timeout *utimer)
 {
-	lwsl_debug("DBUS TIMER TRIGGERED\n");
 	struct wsd_utimer *wsd = container_of(utimer, struct wsd_utimer, utimer);
 	dbus_timeout_handle(wsd->dtimer);
 	uloop_timeout_set(&wsd->utimer, dbus_timeout_get_interval(wsd->dtimer));
@@ -48,7 +47,6 @@ static dbus_bool_t wsd_add_timeout(DBusTimeout *timeout, void *data)
 	wsd->utimer.cb = wsd_trigger_timer;
 	wsd->dtimer = timeout;
 	if (dbus_timeout_get_enabled(timeout)) {
-		lwsl_debug("DBUS WANTS TIMEOUT of %d ms\n", dbus_timeout_get_interval(timeout));
 		uloop_timeout_set(&wsd->utimer, dbus_timeout_get_interval(timeout));
 	}
 	return TRUE;
@@ -58,7 +56,6 @@ static void wsd_mod_timeout(DBusTimeout *timeout, void *data)
 {
 	struct wsd_utimer *wsd = dbus_timeout_get_data(timeout);
 	assert(wsd);
-	lwsl_debug("DBUS modify timeout to %d\n", dbus_timeout_get_interval(timeout));
 
 	if (dbus_timeout_get_enabled(timeout)) {
 		if (wsd->utimer.pending)
@@ -74,7 +71,6 @@ static void wsd_del_timeout(DBusTimeout *timeout, void *data)
 	struct wsd_utimer *wsd = dbus_timeout_get_data(timeout);
 	assert(wsd);
 
-	lwsl_debug("DBUS DEL TIMEOUT\n");
 
 	if (wsd->utimer.pending)
 		uloop_timeout_cancel(&wsd->utimer);
@@ -102,11 +98,6 @@ eventmask_ufd_to_dbus(unsigned u, bool hup, bool err)
 static void wsd_trigger_io(struct uloop_fd *ufd, unsigned flags)
 {
 	struct wsd_ufd *wsd = container_of(ufd, struct wsd_ufd, ufd);
-
-	lwsl_debug("DBUS FD %d CB %s%s\n",
-			ufd->fd,
-			flags & ULOOP_READ  ? "READ" : "",
-			flags & ULOOP_WRITE ? "WRITE" : "");
 
 	dbus_watch_handle(wsd->dfd, eventmask_ufd_to_dbus(flags, ufd->eof, ufd->error));
 }
@@ -160,7 +151,7 @@ static void wsd_del_fd(DBusWatch *timeout, void *data)
 static void wsd_trigger_dispatch(struct uloop_timeout *udefer)
 {
 	do {
-		lwsl_debug("DISPATCH DBUS\n");
+		//
 	} while (dbus_connection_dispatch(dispatch.dbus) == DBUS_DISPATCH_DATA_REMAINS);
 }
 
@@ -169,11 +160,9 @@ static void wsd_dispatch_cb(DBusConnection *dbus_ctx, DBusDispatchStatus status,
 	assert(!dispatch.dbus || dispatch.dbus == dbus_ctx);
 	dispatch.dbus = dbus_ctx;
 	if (status == DBUS_DISPATCH_DATA_REMAINS) {
-		lwsl_err("DBUS WANTS DISPATCH\n");
 		dispatch.udefer.cb = wsd_trigger_dispatch;
 		uloop_timeout_set(&dispatch.udefer, 0);
 	} else {
-		lwsl_debug("DISPATCH OFF\n");
 	}
 }
 
