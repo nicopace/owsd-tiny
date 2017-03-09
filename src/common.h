@@ -18,12 +18,20 @@
  * 02110-1301 USA
  */
 #pragma once
-#include <stddef.h>
-#include <libwebsockets.h>
-#include <libubus.h>
-#include <dbus/dbus.h>
 
 #include "owsd-config.h"
+
+#if WSD_HAVE_DBUS
+#include <dbus/dbus.h>
+#endif
+
+#if WSD_HAVE_UBUS
+#include <libubus.h>
+#endif
+
+#include <libwebsockets.h>
+#include <libubox/uloop.h>
+#include <stddef.h>
 
 struct prog_context {
 	struct uloop_fd **ufds;
