@@ -37,7 +37,6 @@
 #include <assert.h>
 #include <sys/types.h>
 #include <regex.h>
-#include <alloca.h>
 
 struct wsd_call_ctx {
 	struct lws *wsi;
@@ -105,25 +104,29 @@ __attribute__((destructor)) static void _dtor(void)
 	regfree(&attr_regex);
 }
 
-static char *check_error_make_reply(DBusMessage *reply, const char *expected_signature, struct wsd_call_ctx *ctx)
+bool check_reply_and_make_error(DBusMessage *reply, const char *expected_signature, struct blob_buf *errordata)
 {
 	int type = dbus_message_get_type(reply);
 	if (type == DBUS_MESSAGE_TYPE_ERROR) {
-		void *data_tkt = blobmsg_open_table(&ctx->retbuf, "data");
-		blobmsg_add_string(&ctx->retbuf, "DBus", dbus_message_get_error_name(reply));
-		blobmsg_close_table(&ctx->retbuf, data_tkt);
-		return jsonrpc__resp_error(ctx->id, JSONRPC_ERRORCODE__INTERNAL_ERROR, blobmsg_data(ctx->retbuf.head));
+		if (errordata) {
+			void *data_tkt = blobmsg_open_table(errordata, "data");
+			blobmsg_add_string(errordata, "DBus", dbus_message_get_error_name(reply));
+			blobmsg_close_table(errordata, data_tkt);
+		}
+		return false;
 	}
 	if (type != DBUS_MESSAGE_TYPE_METHOD_RETURN) {
-		return jsonrpc__resp_error(ctx->id, JSONRPC_ERRORCODE__INTERNAL_ERROR, NULL);
+		return false;
 	}
-	if (strcmp(dbus_message_get_signature(reply), "s")) {
-		void *data_tkt = blobmsg_open_table(&ctx->retbuf, "data");
-		blobmsg_add_string(&ctx->retbuf, "DBus", DBUS_ERROR_INVALID_SIGNATURE);
-		blobmsg_close_table(&ctx->retbuf, data_tkt);
-		return jsonrpc__resp_error(ctx->id, JSONRPC_ERRORCODE__INTERNAL_ERROR, blobmsg_data(ctx->retbuf.head));
+	if (strcmp(dbus_message_get_signature(reply), expected_signature)) {
+		if (errordata) {
+			void *data_tkt = blobmsg_open_table(errordata, "data");
+			blobmsg_add_string(errordata, "DBus", DBUS_ERROR_INVALID_SIGNATURE);
+			blobmsg_close_table(errordata, data_tkt);
+		}
+		return false;
 	}
-	return NULL;
+	return true;
 }
 
 static void wsd_introspect_cb(DBusPendingCall *call, void *data)
@@ -135,15 +138,13 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 	const char *obj;
 	dbus_message_iter_get_basic(&ctx->arr_iter, &obj);
 	void *p = blobmsg_open_table(&ctx->retbuf, obj);
-	lwsl_debug(">>>>>>>>>> Introspected %s\n", obj);
-
-	char *response_str = check_error_make_reply(reply, "s", ctx);
-	if (response_str) {
-		wsu_queue_write_str(ctx->wsi, response_str);
-		free(response_str);
-		dbus_message_unref(reply);
-		return;
+	if (!check_reply_and_make_error(reply, "s", NULL)) {
+		lwsl_warn("DBus Introspected %s with error, skipping\n", obj);
+		// we ignore the error and skip this service
+		goto next_service;
 	}
+
+	lwsl_debug("DBus Introspected %s\n", obj);
 
 	const char *xml;
 	dbus_message_get_args(reply, NULL, DBUS_TYPE_STRING, &xml);
@@ -173,13 +174,12 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 			strncpy(method+iface_len+1, mcur + mmatch[2].rm_so, method_len);
 			method[iface_len+1+method_len] = '\0';
 
-			void *pp = blobmsg_open_array(&ctx->retbuf, method);
 			char *mendcur = strstr(mcur + mmatch[2].rm_eo, "</method>");
-			if (!iendcur) {
-				blobmsg_close_table(&ctx->retbuf, pp);
+			if (!mendcur) {
 				continue;
 			}
 
+			void *pp = blobmsg_open_array(&ctx->retbuf, method);
 			regmatch_t amatch[3];
 			for (const char *acur = mcur + mmatch[0].rm_so; acur < xml + xml_len && acur < mendcur
 					&& regexec(&arg_regex, acur, ARRAY_SIZE(amatch), amatch, 0) == 0
@@ -216,7 +216,7 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 				}
 
 				if (skip)
-					continue;
+					goto next_arg;
 
 				void *ppp = blobmsg_open_table(&ctx->retbuf, "");
 
@@ -226,10 +226,16 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 					blobmsg_add_string(&ctx->retbuf, "type", arg_type);
 
 				blobmsg_close_table(&ctx->retbuf, ppp);
+
+			next_arg:
+				free(arg_name);
+				free(arg_type);
 			}
 			blobmsg_close_array(&ctx->retbuf, pp);
 		}
 	}
+
+next_service:
 	blobmsg_close_table(&ctx->retbuf, p);
 
 	if (dbus_message_iter_next(&ctx->arr_iter)) {
@@ -261,22 +267,21 @@ static void wsd_list_cb(DBusPendingCall *call, void *data)
 	DBusMessage *reply = dbus_pending_call_steal_reply(call);
 	assert(reply);
 
-	char *response_str = check_error_make_reply(reply, "as", ctx);
-	if (response_str) {
+	ctx->list_reply = reply;
+	dbus_message_allocate_data_slot(&ctx->reply_slot);
+	dbus_message_set_data(ctx->list_reply, ctx->reply_slot, ctx, wsd_call_ctx_free);
+
+	if (!check_reply_and_make_error(reply, "as", &ctx->retbuf)) {
+		char *response_str = jsonrpc__resp_error(ctx->id, JSONRPC_ERRORCODE__OTHER, ctx->retbuf.head);
 		wsu_queue_write_str(ctx->wsi, response_str);
 		free(response_str);
 		dbus_message_unref(reply);
 		return;
 	}
 
-	ctx->list_reply = reply;
-	dbus_message_allocate_data_slot(&ctx->reply_slot);
-	dbus_message_set_data(ctx->list_reply, ctx->reply_slot, ctx, wsd_call_ctx_free);
 	DBusMessageIter resp_iter;
 	dbus_message_iter_init(reply, &resp_iter);
-
 	dbus_message_iter_recurse(&resp_iter, &ctx->arr_iter);
-
 	if (dbus_message_iter_get_arg_type(&ctx->arr_iter) != DBUS_TYPE_INVALID) {
 		introspect_list_next(ctx);
 	} else {
