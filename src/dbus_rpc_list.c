@@ -54,7 +54,31 @@ struct wsd_call_ctx {
 	struct DBusPendingCall *call_req;
 
 	struct list_head cq;
+	void (*destroy)(struct wsd_call_ctx *ctx);
 };
+
+static void wsd_call_ctx_free(void *f)
+{
+	struct wsd_call_ctx *ctx = f;
+	blob_buf_free(&ctx->retbuf);
+	free(ctx->list_args->src_blob);
+	free(ctx->list_args);
+	free(ctx->id);
+	if (ctx->reply_slot >= 0)
+		dbus_message_free_data_slot(&ctx->reply_slot);
+	free(ctx);
+}
+
+void wsd_call_ctx_cancel(struct wsd_call_ctx *ctx)
+{
+	dbus_pending_call_cancel(ctx->call_req);
+	dbus_pending_call_unref(ctx->call_req);
+	if (ctx->list_reply) {
+		dbus_message_unref(ctx->list_reply);
+	} else {
+		wsd_call_ctx_free(ctx);
+	}
+}
 
 static void wsd_introspect_cb(DBusPendingCall *call, void *data);
 
@@ -68,8 +92,10 @@ static void introspect_list_next(struct wsd_call_ctx *ctx)
 	DBusPendingCall *introspect_call;
 	dbus_connection_send_with_reply(prog->dbus_ctx, introspect, &introspect_call, -1);
 	dbus_pending_call_set_notify(introspect_call, wsd_introspect_cb, ctx, NULL);
+
+	assert(!ctx->call_req);
+	ctx->call_req = introspect_call;
 	dbus_message_unref(introspect);
-	dbus_pending_call_unref(introspect_call);
 }
 
 static void introspect_list_finish(struct wsd_call_ctx *ctx)
@@ -134,7 +160,12 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 {
 	struct wsd_call_ctx *ctx = data;
 
+	assert(ctx->call_req == call);
+	dbus_pending_call_unref(ctx->call_req);
+	ctx->call_req = NULL;
+
 	DBusMessage *reply = dbus_pending_call_steal_reply(call);
+	assert(reply);
 
 	const char *obj;
 	dbus_message_iter_get_basic(&ctx->arr_iter, &obj);
@@ -248,21 +279,13 @@ next_service:
 	dbus_message_unref(reply);
 }
 
-static void wsd_call_ctx_free(void *f)
-{
-	struct wsd_call_ctx *ctx = f;
-	blob_buf_free(&ctx->retbuf);
-	free(ctx->list_args->src_blob);
-	free(ctx->list_args);
-	free(ctx->id);
-	if (ctx->reply_slot >= 0)
-		dbus_message_free_data_slot(&ctx->reply_slot);
-	free(ctx);
-}
-
 static void wsd_list_cb(DBusPendingCall *call, void *data)
 {
 	struct wsd_call_ctx *ctx = data;
+
+	assert(ctx->call_req == call);
+	dbus_pending_call_unref(ctx->call_req);
+	ctx->call_req = NULL;
 
 	blob_buf_init(&ctx->retbuf, 0);
 	DBusMessage *reply = dbus_pending_call_steal_reply(call);
@@ -298,33 +321,45 @@ int ubusrpc_handle_dlist(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct b
 
 	DBusMessage *msg = dbus_message_new_method_call(DBUS_SERVICE_DBUS, DBUS_PATH_DBUS, DBUS_INTERFACE_DBUS, "ListNames");
 	if (!msg) {
-		return -1;
+		goto out;
 	}
 
 	DBusPendingCall *call;
-	if (!dbus_connection_send_with_reply(prog->dbus_ctx, msg, &call, 2000) || !call) {
-		dbus_message_unref(msg);
-		free(ubusrpc->list.src_blob);
-		return -1;
+	if (!dbus_connection_send_with_reply(prog->dbus_ctx, msg, &call, 10) || !call) {
+		goto out2;
 	}
 
 	struct wsd_call_ctx *ctx = calloc(1, sizeof *ctx);
+	if (!ctx) {
+		goto out3;
+	}
+	ctx->call_req = call;
 	ctx->wsi = wsi;
 	ctx->list_args = &ubusrpc->list;
 	ctx->id = id ? blob_memdup(id) : NULL;
+	if (id && !ctx->id) {
+		goto out4;
+	}
 	ctx->reply_slot = -1;
 
 	if (!dbus_pending_call_set_notify(call, wsd_list_cb, ctx, NULL)) {
-		dbus_message_unref(msg);
-		dbus_pending_call_unref(call);
-		free(ubusrpc->list.src_blob);
-		free(ctx->id);
-		free(ctx);
-		return -1;
+		goto out5;
 	}
 
 	dbus_message_unref(msg);
-	dbus_pending_call_unref(call);
+
 	return 0;
+
+out5:
+	free(ctx->id);
+out4:
+	free(ctx);
+out3:
+	dbus_pending_call_unref(call);
+out2:
+	dbus_message_unref(msg);
+out:
+	free(ubusrpc->list.src_blob);
+	return -1;
 }
 

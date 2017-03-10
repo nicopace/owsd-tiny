@@ -173,6 +173,16 @@ static void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
 			}
 		}
 
+#if WSD_HAVE_DBUS && 0
+		{
+			struct list_head *p, *n;
+			list_for_each_safe(p, n, &peer->u.client.dbus_call_q) {
+				list_del(p);
+				// TODO
+			}
+		}
+#endif
+
 		wsubus_unsubscribe_all(wsi);
 
 	} else if (peer->role == WSUBUS_ROLE_REMOTE) {
