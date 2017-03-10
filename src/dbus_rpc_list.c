@@ -21,6 +21,7 @@
 /*
  * dbus over websocket - dbus list
  */
+#include "owsd-config.h"
 #include "dbus_rpc_list.h"
 
 #include "common.h"
@@ -63,7 +64,7 @@ static void introspect_list_next(struct wsd_call_ctx *ctx)
 	const char *str;
 	dbus_message_iter_get_basic(&ctx->arr_iter, &str);
 	// TODO select a reasonable object path we will support
-	DBusMessage *introspect = dbus_message_new_method_call(str, "/org/freedesktop", DBUS_INTERFACE_INTROSPECTABLE, "Introspect");
+	DBusMessage *introspect = dbus_message_new_method_call(str, WSD_DBUS_OBJECTS_PATH, DBUS_INTERFACE_INTROSPECTABLE, "Introspect");
 	DBusPendingCall *introspect_call;
 	dbus_connection_send_with_reply(prog->dbus_ctx, introspect, &introspect_call, -1);
 	dbus_pending_call_set_notify(introspect_call, wsd_introspect_cb, ctx, NULL);
