@@ -1,12 +1,18 @@
 cmake_minimum_required(VERSION 2.6)
-PROJECT(owsd)
-ADD_DEFINITIONS(-Os -Wall --std=gnu99 -D_XOPEN_SOURCE=700 )
+project(owsd C)
+add_definitions(-Os -Wall --std=gnu99 -D_XOPEN_SOURCE=700 )
 
-INCLUDE_DIRECTORIES(include)
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules")
 
-SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules")
+set(WSD_NEED_SSL OFF CACHE BOOL "Fail if SSL is not available")
+set(WSD_HAVE_UBUS ON CACHE BOOL "ubus RPC support" MARK_AS_ADVANCED)
+set(WSD_HAVE_DBUS ON CACHE BOOL "DBus RPC support")
+if (WSD_HAVE_DBUS)
+	set(WSD_DBUS_OBJECTS_PATH "/se/inteno/iopsys" CACHE STRING
+		"Path under which to (non-recursively) look for DBus objects")
+endif()
 
-SET(SOURCES
+set(SOURCES
 	src/main.c
 	src/ws_http.c
 	src/ws_http_serve.c
@@ -18,41 +24,51 @@ SET(SOURCES
 	src/access_check.c
 	src/local_stub.c
 	src/util_jsonrpc.c
-	src/dbus_rpc_list.c
-	src/dbus-io.c
 	)
 
-ADD_EXECUTABLE(owsd ${SOURCES})
+find_library(JSON_LIBRARIES NAMES json-c)
+find_package(libwebsockets REQUIRED)
+set(WSD_LINK ubox blobmsg_json ${JSON_LIBRARIES} ${LIBWEBSOCKETS_LIBRARIES})
+set(WSD_INCLUDE ${LIBWEBSOCKETS_INCLUDE_DIRS})
 
-FIND_LIBRARY(ubus NAMES ubus)
-FIND_LIBRARY(ubox NAMES ubox)
-FIND_LIBRARY(json NAMES json-c)
-FIND_LIBRARY(blobmsg_json NAMES blobmsg_json)
-TARGET_LINK_LIBRARIES(owsd ${ubox} ${ubus} ${json} ${blobmsg_json})
+if (WSD_HAVE_UBUS)
+	find_library(UBUS_LIBRARIES NAMES ubus)
+	find_path(UBUS_INCLUDE_DIRS libubus.h)
+	list(APPEND WSD_LINK ${UBUS_LIBRARIES})
+	list(APPEND WSD_INCLUDE ${UBUS_INCLUDE_DIRS})
+	# list(APPEND SOURCES ...)
+endif()
 
-FIND_PACKAGE(libwebsockets REQUIRED)
-INCLUDE_DIRECTORIES(${LIBWEBSOCKETS_INCLUDE_DIRS})
-TARGET_LINK_LIBRARIES(owsd ${LIBWEBSOCKETS_LIBRARIES})
+if (WSD_HAVE_DBUS)
+	find_package(DBus REQUIRED)
+	list(APPEND WSD_LINK ${DBUS_LIBRARIES})
+	list(APPEND WSD_INCLUDE ${DBUS_INCLUDE_DIRS})
+	list(APPEND SOURCES
+		src/dbus-io.c
+		src/dbus_rpc_list.c
+	)
+endif()
 
-FIND_PACKAGE(DBus)
-IF (DBUS_FOUND)
-	SET(WSD_HAVE_DBUS 1)
-	TARGET_LINK_LIBRARIES(owsd ${DBUS_LIBRARIES})
-	INCLUDE_DIRECTORIES(${DBUS_INCLUDE_DIRS})
-	# LIST(APPEND SOURCES)
-ENDIF()
+include(CheckSymbolExists)
+check_symbol_exists(LWS_OPENSSL_SUPPORT "lws_config.h" LWS_HAS_SSL)
+if (LWS_HAS_SSL)
+	set(WSD_HAVE_SSL BOOL ON)
+	find_package(OpenSSL REQUIRED)
+	list(APPEND WSD_LINK ${OPENSSL_LIBRARIES})
+	list(APPEND WSD_INCLUDE ${OPENSSL_INCLUDE_DIRS})
+else()
+	if (WSD_NEED_SSL)
+		message (FATAL_ERROR "Didn't find SSL support in lws!")
+	endif()
+	set(WSD_HAVE_SSL BOOL OFF)
+endif()
+
+configure_file(src/owsd-config.in.h owsd-config.h ESCAPE_QUOTES)
+list(APPEND WSD_INCLUDE ${CMAKE_BINARY_DIR})
 
 
-INCLUDE(CheckSymbolExists)
-CHECK_SYMBOL_EXISTS(LWS_OPENSSL_SUPPORT "lws_config.h" LWS_HAS_SSL)
-IF (DEFINED LWS_HAS_SSL)
-	SET(WSD_HAVE_SSL 1)
-	FIND_LIBRARY(ssl NAMES ssl)
-	FIND_LIBRARY(crypto NAMES crypto)
-	TARGET_LINK_LIBRARIES(owsd ${ssl} ${crypto})
-ENDIF()
+add_executable(owsd ${SOURCES})
+target_link_libraries(owsd ${WSD_LINK})
+include_directories(${WSD_INCLUDE})
 
-CONFIGURE_FILE(src/owsd-config.in.h ${CMAKE_BINARY_DIR}/owsd-config.h)
-INCLUDE_DIRECTORIES(${CMAKE_BINARY_DIR})
-
-INSTALL(TARGETS owsd RUNTIME DESTINATION bin)
+install(TARGETS owsd RUNTIME DESTINATION bin)

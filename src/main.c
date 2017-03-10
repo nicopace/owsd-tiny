@@ -307,8 +307,8 @@ ssl:
 	ubus_add_uloop(ubus_ctx);
 #endif
 
-	struct DBusConnection *dbus_ctx;
 #if WSD_HAVE_DBUS
+	struct DBusConnection *dbus_ctx;
 	{
 		struct DBusError error;
 		dbus_error_init(&error);
