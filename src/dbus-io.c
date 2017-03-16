@@ -24,8 +24,10 @@ struct wsd_udispatch {
 static void wsd_trigger_timer(struct uloop_timeout *utimer)
 {
 	struct wsd_utimer *wsd = container_of(utimer, struct wsd_utimer, utimer);
-	dbus_timeout_handle(wsd->dtimer);
-	uloop_timeout_set(&wsd->utimer, dbus_timeout_get_interval(wsd->dtimer));
+	// save timeout since timeout_handle will clear wsd->dtimer
+	DBusTimeout *timeout = wsd->dtimer;
+	dbus_timeout_handle(timeout);
+	uloop_timeout_set(&wsd->utimer, dbus_timeout_get_interval(timeout));
 }
 
 static dbus_bool_t wsd_add_timeout(DBusTimeout *timeout, void *data)
@@ -70,7 +72,6 @@ static void wsd_del_timeout(DBusTimeout *timeout, void *data)
 {
 	struct wsd_utimer *wsd = dbus_timeout_get_data(timeout);
 	assert(wsd);
-
 
 	if (wsd->utimer.pending)
 		uloop_timeout_cancel(&wsd->utimer);
