@@ -28,6 +28,7 @@
 #include "wsubus.impl.h"
 #include "rpc.h"
 #include "util_ubus_blob.h"
+#include "dubus_conversions.h"
 
 #include <libubox/blobmsg_json.h>
 #include <libubox/blobmsg.h>
@@ -331,13 +332,28 @@ void wsd_call_cb(struct DBusPendingCall *call, void *data)
 	DBusMessage *reply = dbus_pending_call_steal_reply(call);
 	assert(reply);
 
-	lwsl_debug("REPLY TO CALL, SIGNATURE %s\n", dbus_message_get_signature(reply));
-	if (!check_reply_and_make_error(reply, "s", &ctx->retbuf)) {
+	if (!check_reply_and_make_error(reply, NULL, &ctx->retbuf)) {
 		char *response_str = jsonrpc__resp_error(ctx->id, JSONRPC_ERRORCODE__OTHER, blobmsg_data(ctx->retbuf.head));
 		wsu_queue_write_str(ctx->wsi, response_str);
 		free(response_str);
 		goto out;
 	}
+
+	void *tkt = blobmsg_open_array(&ctx->retbuf, dbus_message_get_signature(reply));
+
+	DBusMessageIter iter;
+	dbus_message_iter_init(reply, &iter);
+
+	while (dbus_message_iter_get_arg_type(&iter)) {
+		duconv_msg_dbus_to_ubus(&ctx->retbuf, &iter, "...");
+		dbus_message_iter_next(&iter);
+	}
+
+	blobmsg_close_array(&ctx->retbuf, tkt);
+
+	char *response_str = jsonrpc__resp_ubus(ctx->id, 0, ctx->retbuf.head);
+	wsu_queue_write_str(ctx->wsi, response_str);
+	free(response_str);
 
 out:
 	dbus_message_unref(reply);
