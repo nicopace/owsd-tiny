@@ -93,7 +93,7 @@ static void introspect_list_next(struct wsd_call_ctx *ctx)
 	// TODO select a reasonable object path we will support
 	DBusMessage *introspect = dbus_message_new_method_call(str, WSD_DBUS_OBJECTS_PATH, DBUS_INTERFACE_INTROSPECTABLE, "Introspect");
 	DBusPendingCall *introspect_call;
-	dbus_connection_send_with_reply(prog->dbus_ctx, introspect, &introspect_call, -1);
+	dbus_connection_send_with_reply(prog->dbus_ctx, introspect, &introspect_call, 1000);
 	dbus_pending_call_set_notify(introspect_call, wsd_introspect_cb, ctx, NULL);
 
 	assert(!ctx->call_req);
@@ -449,7 +449,7 @@ int ubusrpc_handle_dlist(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct b
 	}
 
 	DBusPendingCall *call;
-	if (!dbus_connection_send_with_reply(prog->dbus_ctx, msg, &call, 10) || !call) {
+	if (!dbus_connection_send_with_reply(prog->dbus_ctx, msg, &call, DBUS_TIMEOUT_USE_DEFAULT) || !call) {
 		goto out2;
 	}
 
