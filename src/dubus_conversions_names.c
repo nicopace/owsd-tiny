@@ -20,7 +20,7 @@ char *duconv_name_dbus_path_to_name(const char *dbus_path)
 
 char *duconv_name_ubus_to_dbus_path(const char *ubus_objname)
 {
-	char *dbus_path = malloc(strlen(ubus_objname) + sizeof(WSD_DBUS_OBJECTS_PATH));
+	char *dbus_path = malloc(strlen(ubus_objname) + 1 + sizeof(WSD_DBUS_OBJECTS_PATH));
 	dbus_path[0] = '\0';
 	strcat(dbus_path, WSD_DBUS_OBJECTS_PATH);
 	if (ubus_objname[0] != '/')
@@ -39,3 +39,15 @@ char *duconv_name_ubus_to_dbus_name(const char *ubus_objname)
 	return ret;
 }
 
+char *duconv_name_dbus_name_to_ubus(const char *dbus_name)
+{
+	char *tmp = duconv_name_dbus_path_to_name(WSD_DBUS_OBJECTS_PATH);
+	size_t tmp_len = strlen(tmp);
+	lwsl_debug("TEMP is %s, converting %s\n", tmp, dbus_name);
+	char *ret = NULL;
+	if (strstr(dbus_name, tmp) == dbus_name && dbus_name[tmp_len] && dbus_name[tmp_len] == '.' && dbus_name[tmp_len+1]) {
+		ret = strdup(dbus_name + tmp_len + 1);
+	}
+	free(tmp);
+	return ret;
+}

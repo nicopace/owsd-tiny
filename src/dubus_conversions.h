@@ -55,3 +55,5 @@ char *duconv_name_ubus_to_dbus_path(const char *ubus_objname);
 /** convert ubus object name to its expected DBus service and interface name */
 char *duconv_name_ubus_to_dbus_name(const char *ubus_objname);
 
+/** convert dbus service/interface name to expected ubus object name */
+char *duconv_name_dbus_name_to_ubus(const char *dbus_name);
