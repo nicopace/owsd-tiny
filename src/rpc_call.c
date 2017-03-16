@@ -39,7 +39,7 @@ int ubusrpc_blob_call_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob
 		[0] = { .type = BLOBMSG_TYPE_STRING }, // ubus-session id
 		[1] = { .type = BLOBMSG_TYPE_STRING }, // ubus-object
 		[2] = { .type = BLOBMSG_TYPE_STRING }, // ubus-method
-		[3] = { .type = BLOBMSG_TYPE_TABLE }   // ubus-params (named)
+		[3] = { .type = BLOBMSG_TYPE_UNSPEC }   // ubus-params (named)
 	};
 	enum { __RPC_U_MAX = (sizeof rpc_ubus_param_policy / sizeof rpc_ubus_param_policy[0]) };
 	struct blob_attr *tb[__RPC_U_MAX];
@@ -73,12 +73,15 @@ int ubusrpc_blob_call_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob
 
 	unsigned int rem;
 	struct blob_attr *cur;
+
+#if WSD_USER_BLACKLIST_OLD
 	blobmsg_for_each_attr(cur, tb[3], rem) {
 		if (!strcmp("_owsd_listen", blobmsg_name(cur))) {
 			ret = -1;
 			goto out;
 		}
 	}
+#endif
 
 	blob_buf_init(params_buf, 0);
 
@@ -305,10 +308,12 @@ static int wsubus_call_do(struct wsubus_percall_ctx *curr_call)
 		goto out;
 	}
 
+#if WSD_USER_BLACKLIST_OLD
 	if (!strcmp(curr_call->call_args->sid, UBUS_DEFAULT_SID)) {
 		struct vh_context *vc = lws_protocol_vh_priv_get(lws_get_vhost(curr_call->wsi), lws_get_protocol(curr_call->wsi));
 		blobmsg_add_string(curr_call->call_args->params_buf, "_owsd_listen", vc->name);
 	}
+#endif
 
 	lwsl_info("ubus call request %p...\n", call_req);
 	ret = ubus_invoke_async(prog->ubus_ctx, object_id, curr_call->call_args->method, curr_call->call_args->params_buf->head, call_req);

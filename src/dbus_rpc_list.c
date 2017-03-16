@@ -43,7 +43,7 @@ struct wsd_call_ctx {
 	struct lws *wsi;
 
 	struct blob_attr *id;
-	struct ubusrpc_blob_list *list_args;
+	struct ubusrpc_blob *args;
 
 	struct blob_buf retbuf;
 	struct DBusMessageIter arr_iter;
@@ -61,8 +61,10 @@ static void wsd_call_ctx_free(void *f)
 {
 	struct wsd_call_ctx *ctx = f;
 	blob_buf_free(&ctx->retbuf);
-	free(ctx->list_args->src_blob);
-	free(ctx->list_args);
+	if (ctx->args) {
+		free(ctx->args->src_blob);
+		free(ctx->args);
+	}
 	free(ctx->id);
 	if (ctx->reply_slot >= 0)
 		dbus_message_free_data_slot(&ctx->reply_slot);
@@ -296,7 +298,7 @@ static void wsd_list_cb(DBusPendingCall *call, void *data)
 	dbus_message_set_data(ctx->list_reply, ctx->reply_slot, ctx, wsd_call_ctx_free);
 
 	if (!check_reply_and_make_error(reply, "as", &ctx->retbuf)) {
-		char *response_str = jsonrpc__resp_error(ctx->id, JSONRPC_ERRORCODE__OTHER, ctx->retbuf.head);
+		char *response_str = jsonrpc__resp_error(ctx->id, JSONRPC_ERRORCODE__OTHER, blobmsg_data(ctx->retbuf.head));
 		wsu_queue_write_str(ctx->wsi, response_str);
 		free(response_str);
 		dbus_message_unref(reply);
@@ -335,7 +337,7 @@ int ubusrpc_handle_dlist(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct b
 	}
 	ctx->call_req = call;
 	ctx->wsi = wsi;
-	ctx->list_args = &ubusrpc->list;
+	ctx->args = ubusrpc;
 	ctx->id = id ? blob_memdup(id) : NULL;
 	if (id && !ctx->id) {
 		goto out4;

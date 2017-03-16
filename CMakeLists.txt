@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.6)
 project(owsd C)
-add_definitions(-Os -Wall --std=gnu99 -D_XOPEN_SOURCE=700 )
+add_definitions(-Os -Wall -std=gnu11 -D_XOPEN_SOURCE=700 )
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules")
 
@@ -11,6 +11,7 @@ if (WSD_HAVE_DBUS)
 	set(WSD_DBUS_OBJECTS_PATH "/se/inteno/iopsys" CACHE STRING
 		"Path under which to (non-recursively) look for DBus objects")
 endif()
+set(WSD_USER_BLACKLIST_OLD ON CACHE BOOL "Support old way of limiting user to specific listen interface")
 
 set(SOURCES
 	src/main.c
