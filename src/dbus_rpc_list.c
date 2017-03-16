@@ -345,7 +345,7 @@ void wsd_call_cb(struct DBusPendingCall *call, void *data)
 	dbus_message_iter_init(reply, &iter);
 
 	while (dbus_message_iter_get_arg_type(&iter)) {
-		duconv_msg_dbus_to_ubus(&ctx->retbuf, &iter, "...");
+		duconv_msg_dbus_to_ubus(&ctx->retbuf, &iter, "");
 		dbus_message_iter_next(&iter);
 	}
 
