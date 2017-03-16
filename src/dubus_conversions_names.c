@@ -11,9 +11,9 @@ char *duconv_name_dbus_name_to_path(const char *dbus_name)
 }
 char *duconv_name_dbus_path_to_name(const char *dbus_path)
 {
-	char *dbus_name = strdup(dbus_path);
+	char *dbus_name = strdup(dbus_path+1);
 	for (char *p = dbus_name; (p = strchr(p, '/')); ++p)
-		*p = '*';
+		*p = '.';
 
 	return dbus_name;
 }
@@ -34,7 +34,7 @@ char *duconv_name_ubus_to_dbus_path(const char *ubus_objname)
 char *duconv_name_ubus_to_dbus_name(const char *ubus_objname)
 {
 	char *tmp = duconv_name_ubus_to_dbus_path(ubus_objname);
-	char *ret = duconv_name_dbus_path_to_name(ubus_objname);
+	char *ret = duconv_name_dbus_path_to_name(tmp);
 	free(tmp);
 	return ret;
 }
