@@ -317,6 +317,109 @@ static void wsd_list_cb(DBusPendingCall *call, void *data)
 	return;
 }
 
+void wsd_call_cb(struct DBusPendingCall *call, void *data)
+{
+	struct wsd_call_ctx *ctx = data;
+	assert(ctx->call_req == call);
+	dbus_pending_call_unref(ctx->call_req);
+	ctx->call_req = NULL;
+
+	blob_buf_init(&ctx->retbuf, 0);
+	DBusMessage *reply = dbus_pending_call_steal_reply(call);
+	assert(reply);
+
+	lwsl_debug("REPLY TO CALL, SIGNATURE %s\n", dbus_message_get_signature(reply));
+	if (!check_reply_and_make_error(reply, "s", &ctx->retbuf)) {
+		char *response_str = jsonrpc__resp_error(ctx->id, JSONRPC_ERRORCODE__OTHER, blobmsg_data(ctx->retbuf.head));
+		wsu_queue_write_str(ctx->wsi, response_str);
+		free(response_str);
+		goto out;
+	}
+
+out:
+	dbus_message_unref(reply);
+	blob_buf_free(ctx->args->call.params_buf);
+	free(ctx->args->call.params_buf);
+	wsd_call_ctx_free(ctx);
+}
+
+int ubusrpc_handle_dcall(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, struct blob_attr *id)
+{
+	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
+
+	// blob_buf_free(ubusrpc_blob->call.params_buf);
+	// blob_buf_init(ubusrpc_blob->call.params_buf, 0);
+
+	char *dbus_service_name = malloc(strlen(ubusrpc_blob->call.object) + 30);
+	if (!dbus_service_name) {
+		lwsl_err("OOM\n");
+		goto out;
+	}
+
+	dbus_service_name[0] = '\0';
+	strcat(dbus_service_name, "se.iopsys.");
+	strcat(dbus_service_name, ubusrpc_blob->call.object);
+
+	if (!dbus_validate_bus_name(dbus_service_name, NULL)) {
+		lwsl_warn("skip invalid name \n");
+		free(dbus_service_name);
+		goto out;
+	}
+
+	DBusMessage *msg = dbus_message_new_method_call(dbus_service_name, WSD_DBUS_OBJECTS_PATH, dbus_service_name, ubusrpc_blob->call.method);
+	free(dbus_service_name);
+
+	if (!msg) {
+		lwsl_warn("Failed to create message\n");
+		goto out;
+	}
+
+	DBusPendingCall *call;
+	if (!dbus_connection_send_with_reply(prog->dbus_ctx, msg, &call, DBUS_TIMEOUT_USE_DEFAULT)) {
+		goto out2;
+	}
+
+	struct wsd_call_ctx *ctx = calloc(1, sizeof *ctx);
+	if (!ctx) {
+		lwsl_err("OOM ctx\n");
+		goto out3;
+	}
+
+	ctx->call_req = call;
+	ctx->wsi = wsi;
+	ctx->args = ubusrpc_blob;
+	ctx->id = id ? blob_memdup(id) : NULL;
+	if (id && !ctx->id) {
+		lwsl_err("OOM ctx id\n");
+		goto out4;
+	}
+	ctx->reply_slot = -1;
+
+	if (!dbus_pending_call_set_notify(call, wsd_call_cb, ctx, NULL) || !call) {
+		lwsl_err("failed to set notify callback\n");
+		goto out5;
+	}
+	lwsl_debug("dbus-calling %p %p\n", call, ctx);
+
+	dbus_message_unref(msg);
+
+	return 0;
+
+out5:
+	free(ctx->id);
+out4:
+	free(ctx);
+out3:
+	dbus_pending_call_unref(call);
+out2:
+	dbus_message_unref(msg);
+out:
+	free(ubusrpc_blob->list.src_blob);
+	blob_buf_free(ubusrpc_blob->call.params_buf);
+	free(ubusrpc_blob->call.params_buf);
+	return -1;
+}
+
 int ubusrpc_handle_dlist(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
 {
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
