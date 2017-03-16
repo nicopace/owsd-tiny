@@ -140,6 +140,9 @@ bool check_reply_and_make_error(DBusMessage *reply, const char *expected_signatu
 		if (errordata) {
 			void *data_tkt = blobmsg_open_table(errordata, "data");
 			blobmsg_add_string(errordata, "DBus", dbus_message_get_error_name(reply));
+			char *datastr;
+			if (dbus_message_get_args(reply, NULL, DBUS_TYPE_STRING, &datastr))
+				blobmsg_add_string(errordata, "text", datastr);
 			blobmsg_close_table(errordata, data_tkt);
 		}
 		return false;
@@ -147,7 +150,7 @@ bool check_reply_and_make_error(DBusMessage *reply, const char *expected_signatu
 	if (type != DBUS_MESSAGE_TYPE_METHOD_RETURN) {
 		return false;
 	}
-	if (strcmp(dbus_message_get_signature(reply), expected_signature)) {
+	if (expected_signature && strcmp(dbus_message_get_signature(reply), expected_signature)) {
 		if (errordata) {
 			void *data_tkt = blobmsg_open_table(errordata, "data");
 			blobmsg_add_string(errordata, "DBus", DBUS_ERROR_INVALID_SIGNATURE);
