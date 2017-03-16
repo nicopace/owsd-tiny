@@ -369,15 +369,11 @@ int ubusrpc_handle_dcall(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, str
 	// blob_buf_free(ubusrpc_blob->call.params_buf);
 	// blob_buf_init(ubusrpc_blob->call.params_buf, 0);
 
-	char *dbus_service_name = malloc(strlen(ubusrpc_blob->call.object) + 30);
+	char *dbus_service_name = duconv_name_ubus_to_dbus_name(ubusrpc_blob->call.object);
 	if (!dbus_service_name) {
 		lwsl_err("OOM\n");
 		goto out;
 	}
-
-	dbus_service_name[0] = '\0';
-	strcat(dbus_service_name, "se.iopsys.");
-	strcat(dbus_service_name, ubusrpc_blob->call.object);
 
 	if (!dbus_validate_bus_name(dbus_service_name, NULL)) {
 		lwsl_warn("skip invalid name \n");
@@ -385,7 +381,13 @@ int ubusrpc_handle_dcall(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, str
 		goto out;
 	}
 
-	DBusMessage *msg = dbus_message_new_method_call(dbus_service_name, WSD_DBUS_OBJECTS_PATH, dbus_service_name, ubusrpc_blob->call.method);
+	// XXX when we support listing recursively, change to use
+#if 0
+	char *dbus_object_path = duconv_name_ubus_to_dbus_path(ubuspc_blob->call.object)
+#endif
+
+	const char *dbus_object_path = WSD_DBUS_OBJECTS_PATH;
+	DBusMessage *msg = dbus_message_new_method_call(dbus_service_name, dbus_object_path, dbus_service_name, ubusrpc_blob->call.method);
 	free(dbus_service_name);
 
 	if (!msg) {
