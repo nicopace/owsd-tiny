@@ -90,6 +90,13 @@ static void introspect_list_next(struct wsd_call_ctx *ctx)
 	struct prog_context *prog = lws_context_user(lws_get_context(ctx->wsi));
 	const char *str;
 	dbus_message_iter_get_basic(&ctx->arr_iter, &str);
+
+	char *name = duconv_name_dbus_name_to_ubus(str);
+	if (!name) {
+		///
+	}
+	// TODO use logical (ubus) name in listing
+	free(name)
 	// TODO select a reasonable object path we will support
 	DBusMessage *introspect = dbus_message_new_method_call(str, WSD_DBUS_OBJECTS_PATH, DBUS_INTERFACE_INTROSPECTABLE, "Introspect");
 	DBusPendingCall *introspect_call;
