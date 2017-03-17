@@ -40,8 +40,11 @@ int duconv_msg_dbus_to_ubus(
 		DBusMessageIter *msg_iter,
 		const char *arg_name);
 
-bool duconv_msg_blob_to_dbus(struct blob_attr *blob, DBusMessage *msg);
-
+/** convert one argument from ubus blob to dbus type */
+int duconv_msg_ubus_to_dbus(
+		DBusMessageIter *out_iter,
+		struct blob_attr *cur_arg,
+		DBusSignatureIter *wanted_sig_iter);
 
 /** convert DBus name to its expected object path, replacing '.' with '/' */
 char *duconv_name_dbus_name_to_path(const char *dbus_name);

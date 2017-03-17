@@ -141,7 +141,8 @@ static char *_duconv_convert_get_next_arg(struct duconv_convert *c)
 }
 
 bool duconv_msig_dbus_to_ubus_add_arg(
-		struct duconv_convert *c, const char *arg_type,
+		struct duconv_convert *c,
+		const char *arg_type,
 		const char *arg_name)
 {
 	DBusSignatureIter sig_iter;
@@ -176,5 +177,9 @@ bool duconv_msgiter_dbus_to_ubus_add_arg(
 	return ubus_type != BLOBMSG_TYPE_UNSPEC;
 }
 
-bool duconv_msg_blob_to_dbus(struct blob_attr *blob, DBusMessage *msg);
-
+int _duconv_ubus_to_dbus(
+		DBusMessageIter *iter,
+		struct blob_attr *cur_arg,
+		DBusSignatureIter *wanted_dbus_signature)
+{
+}
