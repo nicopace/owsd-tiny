@@ -136,7 +136,6 @@ static char *_duconv_convert_get_next_arg(struct duconv_convert *c)
 	if (!ret)
 		return false;
 	sprintf(ret, c->arg_fmt, c->arg_num);
-	++c->arg_num;
 	return ret;
 }
 
@@ -156,6 +155,7 @@ bool duconv_msig_dbus_to_ubus_add_arg(
 	if (!arg_name) {
 		arg_name = _duconv_convert_get_next_arg(c);
 	}
+	++c->arg_num;
 
 	blobmsg_add_u32(&c->b, arg_name, ubus_type);
 	free(my_arg_name);
@@ -171,6 +171,7 @@ bool duconv_msgiter_dbus_to_ubus_add_arg(
 	if (!arg_name) {
 		arg_name = _duconv_convert_get_next_arg(c);
 	}
+	++c->arg_num;
 
 	int ubus_type = duconv_msg_dbus_to_ubus(&c->b, msg_iter, arg_name);
 	free(my_arg_name);
