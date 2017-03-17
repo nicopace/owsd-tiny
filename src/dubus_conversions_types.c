@@ -260,33 +260,47 @@ int duconv_msg_ubus_to_dbus(
 		if (dbus_type == DBUS_TYPE_ARRAY) {
 			struct blob_attr *it; unsigned int rem;
 			struct blob_attr *first = NULL;
-			blob_for_each_attr(it, blobmsg_data(cur_arg), rem) {
-				first = it; break;
-			}
-			if (!first)
-				break;
 
 			// check that elements have same signature
-			blob_for_each_attr(it, blobmsg_data(cur_arg), rem)
+			blobmsg_for_each_attr(it, cur_arg, rem) {
+				if (!first) {
+					first = it;
+					continue;
+				}
 				if (blobmsg_type(first) != blobmsg_type(it))
 					return DBUS_TYPE_INVALID;
+			}
 
-			int dbus_elem_type;
 			DBusSignatureIter wanted_elem_sig_iter;
 			if (wanted_sig_iter)
 				dbus_signature_iter_recurse(wanted_sig_iter, &wanted_elem_sig_iter);
 
-			dbus_elem_type = _duconv_msg_ubus_to_dbus_basic(NULL, first, wanted_sig_iter ? &wanted_elem_sig_iter : NULL);
+			int dbus_elem_type = DBUS_TYPE_INVALID;
+
+			// set elem type from either the elems themselves or from hint if empty
+			if (first) {
+				dbus_elem_type = _duconv_msg_ubus_to_dbus_basic(NULL, first, wanted_sig_iter ? &wanted_elem_sig_iter : NULL);
+			} else if(wanted_sig_iter) {
+				dbus_elem_type = dbus_signature_iter_get_current_type(&wanted_elem_sig_iter);
+			}
 
 			if (dbus_elem_type == DBUS_TYPE_INVALID)
 				return DBUS_TYPE_INVALID;
 
-			if (out_iter)
+			// type has been determined, append the data
+			if (out_iter) {
+				// FIXME these sort of hacks go out the window for recursion
+				char dbus_elem_sig[2] = { dbus_elem_type, DBUS_TYPE_INVALID };
+				DBusMessageIter out_elem_iter;
+				dbus_message_iter_open_container(out_iter, dbus_type, dbus_elem_sig, &out_elem_iter);
+
 				blob_for_each_attr(it, blobmsg_data(cur_arg), rem) {
 					_duconv_msg_ubus_to_dbus_basic(out_iter, it, wanted_sig_iter ? &wanted_elem_sig_iter : NULL);
 					if (wanted_sig_iter)
 						dbus_signature_iter_next(&wanted_elem_sig_iter);
 				}
+				dbus_message_iter_close_container(out_iter, &out_elem_iter);
+			}
 
 			return dbus_type;
 		}
