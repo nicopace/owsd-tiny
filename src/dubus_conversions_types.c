@@ -153,7 +153,7 @@ bool duconv_msig_dbus_to_ubus_add_arg(
 
 	char *my_arg_name = NULL;
 	if (!arg_name) {
-		arg_name = _duconv_convert_get_next_arg(c);
+		arg_name = my_arg_name = _duconv_convert_get_next_arg(c);
 	}
 	++c->arg_num;
 
@@ -169,7 +169,7 @@ bool duconv_msgiter_dbus_to_ubus_add_arg(
 {
 	char *my_arg_name = NULL;
 	if (!arg_name) {
-		arg_name = _duconv_convert_get_next_arg(c);
+		arg_name = my_arg_name = _duconv_convert_get_next_arg(c);
 	}
 	++c->arg_num;
 
