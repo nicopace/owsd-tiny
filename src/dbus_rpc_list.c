@@ -96,7 +96,7 @@ static void introspect_list_next(struct wsd_call_ctx *ctx)
 		///
 	}
 	// TODO use logical (ubus) name in listing
-	free(name)
+	free(name);
 	// TODO select a reasonable object path we will support
 	DBusMessage *introspect = dbus_message_new_method_call(str, WSD_DBUS_OBJECTS_PATH, DBUS_INTERFACE_INTROSPECTABLE, "Introspect");
 	DBusPendingCall *introspect_call;

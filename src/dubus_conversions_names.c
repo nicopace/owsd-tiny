@@ -43,7 +43,6 @@ char *duconv_name_dbus_name_to_ubus(const char *dbus_name)
 {
 	char *tmp = duconv_name_dbus_path_to_name(WSD_DBUS_OBJECTS_PATH);
 	size_t tmp_len = strlen(tmp);
-	lwsl_debug("TEMP is %s, converting %s\n", tmp, dbus_name);
 	char *ret = NULL;
 	if (strstr(dbus_name, tmp) == dbus_name && dbus_name[tmp_len] && dbus_name[tmp_len] == '.' && dbus_name[tmp_len+1]) {
 		ret = strdup(dbus_name + tmp_len + 1);
