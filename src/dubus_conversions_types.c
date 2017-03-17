@@ -177,9 +177,123 @@ bool duconv_msgiter_dbus_to_ubus_add_arg(
 	return ubus_type != BLOBMSG_TYPE_UNSPEC;
 }
 
-int _duconv_ubus_to_dbus(
-		DBusMessageIter *iter,
+int _duconv_msg_ubus_to_dbus_basic(
+		DBusMessageIter *out_iter,
 		struct blob_attr *cur_arg,
-		DBusSignatureIter *wanted_dbus_signature)
+		DBusSignatureIter *wanted_sig_iter)
 {
+	int dbus_type = DBUS_TYPE_INVALID;
+	if (wanted_sig_iter)
+		dbus_type = dbus_signature_iter_get_current_type(wanted_sig_iter);
+
+	switch (blobmsg_type(cur_arg)) {
+	case BLOBMSG_TYPE_INT32:
+		if (!wanted_sig_iter)
+			dbus_type = DBUS_TYPE_INT32;
+		if (dbus_type != DBUS_TYPE_INT32 && dbus_type != DBUS_TYPE_UINT32)
+			return DBUS_TYPE_INVALID;
+
+		if (out_iter) {
+			const uint32_t res = blobmsg_get_u32(cur_arg);
+			dbus_message_iter_append_basic(out_iter, dbus_type, &res);
+		}
+
+		return dbus_type;
+
+	case BLOBMSG_TYPE_INT16:
+		if (!wanted_sig_iter)
+			dbus_type = DBUS_TYPE_INT16;
+		if (dbus_type != DBUS_TYPE_INT16 && dbus_type != DBUS_TYPE_UINT16)
+			return DBUS_TYPE_INVALID;
+
+		if (out_iter) {
+			const uint16_t res = blobmsg_get_u16(cur_arg);
+			dbus_message_iter_append_basic(out_iter, dbus_type, &res);
+		}
+
+		return dbus_type;
+
+	case BLOBMSG_TYPE_BOOL:
+		if (!wanted_sig_iter)
+			dbus_type = DBUS_TYPE_BOOLEAN;
+		if (dbus_type != DBUS_TYPE_BOOLEAN)
+			return DBUS_TYPE_INVALID;
+
+		if (out_iter) {
+			const uint8_t res = blobmsg_get_u8(cur_arg);
+			const int32_t res_bool32 = (int32_t)!!res;
+			dbus_message_iter_append_basic(out_iter, dbus_type, &res_bool32);
+		}
+
+		return dbus_type;
+
+	case BLOBMSG_TYPE_STRING:
+		if (!wanted_sig_iter)
+			dbus_type = DBUS_TYPE_STRING;
+		if (dbus_type != DBUS_TYPE_STRING && dbus_type != DBUS_TYPE_SIGNATURE && dbus_type != DBUS_TYPE_OBJECT_PATH)
+			return DBUS_TYPE_INVALID;
+
+		if (out_iter) {
+			const char * const str = blobmsg_get_string(cur_arg);
+			dbus_message_iter_append_basic(out_iter, dbus_type, &str);
+		}
+
+		return dbus_type;
+	}
+
+	return DBUS_TYPE_INVALID;
+}
+
+int duconv_msg_ubus_to_dbus(
+		DBusMessageIter *out_iter,
+		struct blob_attr *cur_arg,
+		DBusSignatureIter *wanted_sig_iter)
+{
+	int dbus_type = DBUS_TYPE_INVALID;
+	if (wanted_sig_iter)
+		dbus_type = dbus_signature_iter_get_current_type(wanted_sig_iter);
+	switch (blobmsg_type(cur_arg)) {
+	case BLOBMSG_TYPE_ARRAY: {
+		if (!wanted_sig_iter)
+			dbus_type = DBUS_TYPE_ARRAY;
+		if (dbus_type == DBUS_TYPE_ARRAY) {
+			struct blob_attr *it; unsigned int rem;
+			struct blob_attr *first = NULL;
+			blob_for_each_attr(it, blobmsg_data(cur_arg), rem) {
+				first = it; break;
+			}
+			if (!first)
+				break;
+
+			// check that elements have same signature
+			blob_for_each_attr(it, blobmsg_data(cur_arg), rem)
+				if (blobmsg_type(first) != blobmsg_type(it))
+					return DBUS_TYPE_INVALID;
+
+			int dbus_elem_type;
+			DBusSignatureIter wanted_elem_sig_iter;
+			if (wanted_sig_iter)
+				dbus_signature_iter_recurse(wanted_sig_iter, &wanted_elem_sig_iter);
+
+			dbus_elem_type = _duconv_msg_ubus_to_dbus_basic(NULL, first, wanted_sig_iter ? &wanted_elem_sig_iter : NULL);
+
+			if (dbus_elem_type == DBUS_TYPE_INVALID)
+				return DBUS_TYPE_INVALID;
+
+			if (out_iter)
+				blob_for_each_attr(it, blobmsg_data(cur_arg), rem) {
+					_duconv_msg_ubus_to_dbus_basic(out_iter, it, wanted_sig_iter ? &wanted_elem_sig_iter : NULL);
+					if (wanted_sig_iter)
+						dbus_signature_iter_next(&wanted_elem_sig_iter);
+				}
+
+			return dbus_type;
+		}
+		return DBUS_TYPE_INVALID;
+	}
+	case BLOBMSG_TYPE_TABLE: {
+		return DBUS_TYPE_INVALID;
+	}
+	}
+	return _duconv_msg_ubus_to_dbus_basic(out_iter,  cur_arg, wanted_sig_iter);
 }
