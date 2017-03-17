@@ -402,6 +402,18 @@ int ubusrpc_handle_dcall(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, str
 		goto out;
 	}
 
+	DBusMessageIter arg_iter;
+	dbus_message_iter_init_append(msg, &arg_iter);
+	struct blob_attr *cur_arg;
+	unsigned int rem = 0;
+	blob_for_each_attr(cur_arg, ubusrpc_blob->call.params_buf->head, rem) {
+		lwsl_debug("--------- adding arg %s type %s, to dbus call\n", blobmsg_name(cur_arg), blobmsg_type_to_str(blobmsg_type(cur_arg)));
+		int dbus_type = duconv_msg_ubus_to_dbus(&arg_iter, cur_arg, NULL);
+		const char *_dbus_type_to_string(int);
+		lwsl_debug("-- converted to %s DBus type\n", _dbus_type_to_string(dbus_type));
+	}
+skip:;
+
 	DBusPendingCall *call;
 	if (!dbus_connection_send_with_reply(prog->dbus_ctx, msg, &call, DBUS_TIMEOUT_USE_DEFAULT)) {
 		goto out2;
