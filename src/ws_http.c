@@ -192,7 +192,7 @@ static int ws_http_cb(struct lws *wsi,
 			}
 		}
 
-		lwsl_err("CCE ERROR, reason %s\n", in ? in : "");
+		lwsl_err("CCE ERROR, reason %s\n", in ? (char *)in : "");
 		break;
 	}
 
@@ -215,7 +215,7 @@ static int ws_http_cb(struct lws *wsi,
 	}
 
 	case LWS_CALLBACK_HTTP_WRITEABLE:
-		lwsl_info("http request writable again %s\n", in);
+		lwsl_info("http request writable again %s\n", (char *)in);
 		rc = lws_serve_http_file_fragment(wsi);
 		return ws_http_serve_interpret_retcode(wsi, rc);
 

@@ -95,7 +95,7 @@ static int wsubus_filter(struct lws *wsi)
 	} else if (!(vc = lws_protocol_vh_priv_get(
 				lws_get_vhost(wsi),
 				lws_get_protocol(wsi)))) {
-		lwsl_err("no list of origins%d\n");
+		lwsl_err("no list of origins\n");
 		rc = -4;
 	} else if (!origin_allowed(&vc->origins, origin)) {
 		lwsl_err("origin %s not allowed\n", origin);
@@ -388,7 +388,7 @@ static int wsubus_cb(struct lws *wsi,
 
 		// read/write
 	case LWS_CALLBACK_RECEIVE:
-		lwsl_notice(WSUBUS_PROTO_NAME ": protocol data received, len %lu\n", len);
+		lwsl_notice(WSUBUS_PROTO_NAME ": protocol data received, len %zu\n", len);
 		wsubus_rx(wsi, (char*)in, len);
 		break;
 
@@ -475,7 +475,7 @@ static int wsubus_cb(struct lws *wsi,
 
 		struct prog_context *prog = lws_context_user(lws_get_context(remote->wsi));
 
-		lwsl_notice("received, len %d < %.*s > \n", len, len > 200 ? 200 : len, in);
+		lwsl_notice("received, len %d < %.*s > \n", len, len > 200 ? 200 : len, (char *)in);
 
 		if (!jobj)
 			goto out;
@@ -654,7 +654,7 @@ static int wsubus_cb(struct lws *wsi,
 					// object removed, lookup and remove
 					struct wsu_local_stub *cur = avl_find_element(&remote->stubs, json_object_get_string(tmp), cur, avl);
 					if (cur) {
-						lwsl_notice("removing stub object for %s\n", cur->avl.key);
+						lwsl_notice("removing stub object for %s\n", (const char *)cur->avl.key);
 						wsu_local_stub_destroy(cur);
 					}
 				} else {

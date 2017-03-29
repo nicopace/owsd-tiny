@@ -197,7 +197,7 @@ static inline int wsu_queue_write_str(struct lws *wsi, const char *response_str)
 	int r = lws_callback_on_writable(wsi);
 
 	if (r < 0) {
-		lwsl_warn("error %d scheduling write callback\n");
+		lwsl_warn("error %d scheduling write callback\n", r);
 		return -3;
 	}
 
