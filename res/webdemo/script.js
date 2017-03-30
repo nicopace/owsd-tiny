@@ -30,6 +30,8 @@ btn_go.onclick = function() {
 		return;
 	}
 
+	st.textContent = "Connecting";
+
 	w.onopen = function(ev) {
 		st.textContent = "Connected " + w.readyState;
 	};
