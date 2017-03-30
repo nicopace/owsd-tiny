@@ -44,6 +44,11 @@ if (WSD_HAVE_DBUS)
 	find_package(DBus REQUIRED)
 	list(APPEND WSD_LINK ${DBUS_LIBRARIES})
 	list(APPEND WSD_INCLUDE ${DBUS_INCLUDE_DIRS})
+
+	find_package(LibXml2 REQUIRED)
+	list(APPEND WSD_LINK ${LIBXML2_LIBRARIES})
+	list(APPEND WSD_INCLUDE ${LIBXML2_INCLUDE_DIR})
+
 	list(APPEND SOURCES
 		src/dbus-io.c
 		src/dbus_rpc_list.c

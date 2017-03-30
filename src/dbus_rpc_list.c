@@ -33,7 +33,7 @@
 #include <libubox/blobmsg_json.h>
 #include <libubox/blobmsg.h>
 #include <dbus/dbus.h>
-
+#include <libxml/parser.h>
 #include <libwebsockets.h>
 
 #include <assert.h>
@@ -116,29 +116,13 @@ static void introspect_list_finish(struct wsd_call_ctx *ctx)
 	dbus_message_unref(ctx->list_reply);
 }
 
-/* FIXME
-don't invoke wrath of Zalgo by using regex on XML
-http://stackoverflow.com/questions/1732348/regex-match-open-tags-except-xhtml-self-contained-tags/1732454#1732454
-*/
-static regex_t interface_regex;
-static regex_t method_regex;
-static regex_t arg_regex;
-static regex_t attr_regex;
-
 __attribute__((constructor)) static void _init(void)
 {
-	regcomp(&interface_regex, "\\(<interface name=\"\\)\\([^\"]*\\)\"", 0);
-	regcomp(&method_regex, "\\(<method name=\"\\)\\([^\"]*\\)\"", 0);
-	regcomp(&arg_regex, "\\(<arg \\)\\([^>]*\\)/>", 0);
-	regcomp(&attr_regex, "\\([^ \t]*\\)=\"\\([^\"]*\\)\"", 0);
 }
 
 __attribute__((destructor)) static void _dtor(void)
 {
-	regfree(&interface_regex);
-	regfree(&method_regex);
-	regfree(&arg_regex);
-	regfree(&attr_regex);
+	xmlCleanupParser();
 }
 
 bool check_reply_and_make_error(DBusMessage *reply, const char *expected_signature, struct blob_buf *errordata)
@@ -194,91 +178,95 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 	const char *xml;
 	dbus_message_get_args(reply, NULL, DBUS_TYPE_STRING, &xml);
 	size_t xml_len = strlen(xml);
-	regmatch_t imatch[3];
-	for (const char *icur = xml; icur < xml + xml_len
-			&& regexec(&interface_regex, icur, ARRAY_SIZE(imatch), imatch, 0) == 0
-			&& imatch[2].rm_so >= 0; icur += imatch[0].rm_eo) {
-		size_t iface_len = imatch[2].rm_eo - imatch[2].rm_so;
-		char iface[iface_len+1];
-		strncpy(iface, icur + imatch[2].rm_so, iface_len);
-		iface[iface_len] = '\0';
+	xmlDoc *xml_doc = xmlParseMemory(xml, xml_len);
 
-		char *iendcur = strstr(icur + imatch[2].rm_eo, "</interface>");
-		if (!iendcur) {
+	xmlNode *xml_root = xmlDocGetRootElement(xml_doc);
+
+	if (xml_root->type != XML_ELEMENT_NODE || xmlStrcmp(xml_root->name, (xmlChar*)"node")) {
+		goto next_service_xml;
+	}
+
+	for (xmlNode *subnode = xml_root->children; subnode; subnode = subnode->next) {
+		if (subnode->type != XML_ELEMENT_NODE)
+			continue;
+
+		if (!xmlStrcmp(subnode->name, (xmlChar*)"node")) {
+			continue; // TODO put this subnode in queue for later introspection
+		} else if (xmlStrcmp(subnode->name, (xmlChar*)"interface")) {
+			// skip unknown node type
 			continue;
 		}
 
-		regmatch_t mmatch[3];
-		for (const char *mcur = icur + imatch[0].rm_so; mcur < xml + xml_len && mcur < iendcur
-				&& regexec(&method_regex, mcur, ARRAY_SIZE(mmatch), mmatch, 0) == 0
-				&& mmatch[2].rm_so >= 0 && mcur + mmatch[2].rm_so < iendcur; mcur += mmatch[0].rm_eo) {
-			size_t method_len = mmatch[2].rm_eo - mmatch[2].rm_so;
-			char method[iface_len+1+method_len+1];
-			strcpy(method, iface);
-			strcpy(method+iface_len, ".");
-			strncpy(method+iface_len+1, mcur + mmatch[2].rm_so, method_len);
-			method[iface_len+1+method_len] = '\0';
+		char *iface_name = (char*)xmlGetProp(subnode, (xmlChar*)"name");
+		if (!iface_name)
+			continue;
 
-			char *mendcur = strstr(mcur + mmatch[2].rm_eo, "</method>");
-			if (!mendcur) {
+		for (xmlNode *member = subnode->children; member; member = member->next) {
+			if (member->type != XML_ELEMENT_NODE)
 				continue;
-			}
 
-			void *pp = blobmsg_open_array(&ctx->retbuf, method);
-			regmatch_t amatch[3];
-			for (const char *acur = mcur + mmatch[0].rm_so; acur < xml + xml_len && acur < mendcur
-					&& regexec(&arg_regex, acur, ARRAY_SIZE(amatch), amatch, 0) == 0
-					&& amatch[2].rm_so >= 0 && acur + amatch[2].rm_so < mendcur; acur += amatch[0].rm_eo) {
-				size_t arg_len = amatch[2].rm_eo - amatch[2].rm_so;
-				char arg[arg_len+1];
-				strncpy(arg, acur + amatch[2].rm_so, arg_len);
-				arg[arg_len] = '\0';
+			bool is_method = !xmlStrcmp(member->name, (xmlChar*)"method");
+			bool is_signal = !xmlStrcmp(member->name, (xmlChar*)"signal");
+			bool is_property = !xmlStrcmp(member->name, (xmlChar*)"property");
 
-				regmatch_t atmatch[3];
+			if (!is_method && !is_signal && !is_property)
+				continue;
 
-				bool skip = false;
-				char *arg_name = NULL, *arg_type = NULL;
-				for (const char *atcur = acur + amatch[2].rm_so; atcur < acur + amatch[2].rm_eo
-						&& regexec(&attr_regex, atcur, ARRAY_SIZE(atmatch), atmatch, 0) == 0
-						&& atmatch[0].rm_eo >= 0 && atmatch[0].rm_eo < amatch[0].rm_eo; atcur += atmatch[0].rm_eo) {
-					size_t atn_len = atmatch[1].rm_eo - atmatch[1].rm_so;
-					size_t atv_len = atmatch[2].rm_eo - atmatch[2].rm_so;
-					char atn[atn_len+1];
-					char atv[atv_len+1];
-					strncpy(atn, atcur + atmatch[1].rm_so, atn_len);
-					strncpy(atv, atcur + atmatch[2].rm_so, atv_len);
-					atn[atn_len] = '\0';
-					atv[atv_len] = '\0';
-					if (!strcmp("direction", atn) && !strcmp("out", atv)) {
-						skip = true;
-						break;
+			char *m_name = (char*)xmlGetProp(member, (xmlChar*)"name");
+			if (!m_name)
+				continue;
+
+			if (is_method || is_signal) {
+				for (xmlNode *arg = member->children; arg; arg = arg->next) {
+					if (member->type != XML_ELEMENT_NODE || xmlStrcmp(arg->name, (xmlChar*)"arg"))
+						continue;
+
+					char *arg_type = (char*)xmlGetProp(arg, (xmlChar*)"type");
+					if (!arg_type)
+						continue;
+
+					char *arg_name = (char*)xmlGetProp(arg, (xmlChar*)"name");
+					bool arg_is_out = false;
+
+					xmlChar *arg_dir = xmlGetProp(arg, (xmlChar*)"direction");
+					if (is_method && arg_dir) {
+						arg_is_out = !xmlStrcmp(arg_dir, (xmlChar*)"out");
+						xmlFree(arg_dir);
 					}
-					if (!strcmp("type", atn)) {
-						arg_type = strdup(atv);
-					} else if (!strcmp("name", atn)) {
-						arg_name = strdup(atv);
-					}
+
+					xmlFree(arg_type);
+					xmlFree(arg_name);
+				}
+			} else if (is_property) {
+				char *m_type = (char*)xmlGetProp(member, (xmlChar*)"type");
+				if (!m_type) {
+					goto next_member;
 				}
 
-				if (skip)
-					goto next_arg;
+				xmlChar *m_access = (char*)xmlGetProp(member, (xmlChar*)"access");
+				if (!m_access) {
+					xmlFree(m_type);
+					goto next_member;
+				} else if (!xmlStrcmp(m_access, (xmlChar*)"read")) {
+				} else if (!xmlStrcmp(m_access, (xmlChar*)"readwrite")) {
+				} else if (!xmlStrcmp(m_access, (xmlChar*)"write")) {
+				} else {
+				}
 
-				void *ppp = blobmsg_open_table(&ctx->retbuf, "");
-
-				if (arg_name)
-					blobmsg_add_string(&ctx->retbuf, "name", arg_name);
-				if (arg_type)
-					blobmsg_add_string(&ctx->retbuf, "type", arg_type);
-
-				blobmsg_close_table(&ctx->retbuf, ppp);
-
-			next_arg:
-				free(arg_name);
-				free(arg_type);
+				xmlFree(m_access);
+				xmlFree(m_type);
 			}
-			blobmsg_close_array(&ctx->retbuf, pp);
+
+		next_member:
+			xmlFree(m_name);
 		}
+
+	next_iface:
+		xmlFree(iface_name);
 	}
+
+next_service_xml:
+	xmlFreeDoc(xml_doc);
 
 next_service:
 	blobmsg_close_table(&ctx->retbuf, p);
