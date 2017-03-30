@@ -27,6 +27,7 @@ btn_go.onclick = function() {
 		w = new WebSocket(url_in.value, "ubus-json");
 	} catch (exc) {
 		st.textContent = "Exception " + exc.message;
+		return;
 	}
 
 	w.onopen = function(ev) {
