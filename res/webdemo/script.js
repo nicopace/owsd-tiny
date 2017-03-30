@@ -34,6 +34,7 @@ btn_go.onclick = function() {
 
 	w.onopen = function(ev) {
 		st.textContent = "Connected " + w.readyState;
+		btn_send.disabled = "";
 	};
 	w.onmessage = function(ev) {
 		var jp = JSON.parse(ev.data);
@@ -56,8 +57,6 @@ btn_go.onclick = function() {
 	w.onclose = function(e) {
 		st.textContent = "Close(" + e.reason + ")";
 	};
-
-	btn_send.disabled = "";
 };
 
 btn_send.onclick = function() {
