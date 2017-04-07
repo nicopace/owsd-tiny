@@ -107,13 +107,6 @@ out:
 }
 
 struct wsubus_percall_ctx {
-	enum {
-		WSUBUS_CALL_STATE_PREP,
-		WSUBUS_CALL_STATE_CHECK,
-		WSUBUS_CALL_STATE_CALL_PRE,
-		WSUBUS_CALL_STATE_CALL,
-	} state;
-
 	struct lws *wsi;
 
 	struct blob_attr *id;
@@ -161,7 +154,6 @@ static void wsubus_percall_ctx_destroy(struct wsubus_percall_ctx *call_ctx)
 
 	if (call_ctx->invoke_req) {
 		struct prog_context *prog = lws_context_user(lws_get_context(call_ctx->wsi));
-		assert(call_ctx->state == WSUBUS_CALL_STATE_CALL);
 		ubus_abort_request(prog->ubus_ctx, call_ctx->invoke_req);
 		free(call_ctx->invoke_req);
 	}
@@ -199,7 +191,6 @@ int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, stru
 	curr_call = wsubus_percall_ctx_create(wsi, id, ubusrpc_req);
 
 	list_add_tail(&curr_call->cq, &client->rpc_call_q);
-	curr_call->state = WSUBUS_CALL_STATE_PREP;
 	ret = wsubus_call_do_check_then_do_call(curr_call);
 
 	if (ret != UBUS_STATUS_OK) {
@@ -223,13 +214,10 @@ static int wsubus_call_do_check_then_do_call(struct wsubus_percall_ctx *curr_cal
 {
 	struct wsu_client_session *client = wsi_to_client(curr_call->wsi);
 
-	assert(curr_call->state == WSUBUS_CALL_STATE_PREP);
-
 	int ret = 0;
 	curr_call->access_check.destructor = NULL; // XXX
 
 	list_add_tail(&curr_call->access_check.acq, &client->access_check_q);
-	curr_call->state = WSUBUS_CALL_STATE_CHECK;
 
 	if ((curr_call->access_check.req = wsubus_access_check_new()))
 		ret = wsubus_access_check__call(curr_call->access_check.req, curr_call->wsi, curr_call->call_args->sid, curr_call->call_args->object, curr_call->call_args->method, curr_call->call_args->params_buf, curr_call, wsubus_access_on_completed);
@@ -256,7 +244,6 @@ static void wsubus_access_on_completed(struct wsubus_access_check_req *req, void
 	struct wsubus_percall_ctx *curr_call = ctx;
 	lwsl_debug("ubus access check %p completed: allow = %d\n", req, allow);
 
-	assert(curr_call->state == WSUBUS_CALL_STATE_CHECK);
 	assert(curr_call->access_check.req == req);
 
 	wsubus_access_check_free(curr_call->access_check.req);
@@ -269,8 +256,6 @@ static void wsubus_access_on_completed(struct wsubus_access_check_req *req, void
 		ret = UBUS_STATUS_PERMISSION_DENIED;
 		goto out;
 	}
-
-	curr_call->state = WSUBUS_CALL_STATE_CALL_PRE;
 
 	ret = wsubus_call_do(curr_call);
 
@@ -291,8 +276,6 @@ static int wsubus_call_do(struct wsubus_percall_ctx *curr_call)
 {
 	struct prog_context *prog = lws_context_user(lws_get_context(curr_call->wsi));
 	int ret;
-
-	assert(curr_call->state == WSUBUS_CALL_STATE_CALL_PRE);
 
 	uint32_t object_id;
 	ret = ubus_lookup_id(prog->ubus_ctx, curr_call->call_args->object, &object_id);
@@ -328,7 +311,6 @@ static int wsubus_call_do(struct wsubus_percall_ctx *curr_call)
 	call_req->data_cb = wsubus_call_on_retdata;
 	call_req->complete_cb = wsubus_call_on_completed;
 	curr_call->invoke_req = call_req;
-	curr_call->state = WSUBUS_CALL_STATE_CALL;
 
 	ubus_complete_request_async(prog->ubus_ctx, curr_call->invoke_req);
 
@@ -342,7 +324,6 @@ static void wsubus_call_on_completed(struct ubus_request *req, int status)
 
 	struct wsubus_percall_ctx *curr_call = req->priv;
 
-	assert(curr_call->state == WSUBUS_CALL_STATE_CALL);
 	assert(curr_call->invoke_req == req);
 
 	// is req->status_code or status (the arg) what we want?
@@ -378,7 +359,6 @@ static void wsubus_call_on_retdata(struct ubus_request *req, int type, struct bl
 
 	struct wsubus_percall_ctx *curr_call = req->priv;
 
-	assert(curr_call->state == WSUBUS_CALL_STATE_CALL);
 	assert(!curr_call->retdata);
 
 	curr_call->retdata = blob_memdup(msg);
