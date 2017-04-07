@@ -40,22 +40,33 @@
 #include <sys/types.h>
 #include <regex.h>
 
-struct wsd_call_ctx {
+struct ws_call_ctx_base {
 	struct lws *wsi;
 
 	struct blob_attr *id;
 	struct ubusrpc_blob *args;
-
 	struct blob_buf retbuf;
-	struct DBusMessageIter arr_iter;
+
+	struct list_head cq;
+
+	void (*destroy)(struct ws_call_ctx_base *ctx);
+};
+
+struct wsd_call_ctx {
+	struct ws_call_ctx_base;
 
 	struct DBusMessage *list_reply;
 	int reply_slot;
 
 	struct DBusPendingCall *call_req;
 
-	struct list_head cq;
-	void (*destroy)(struct wsd_call_ctx *ctx);
+	struct list_head introspectables;
+};
+
+struct introspection_target {
+	char *service;
+	char *path;
+	struct list_head introspectables;
 };
 
 static void wsd_call_ctx_free(void *f)
@@ -67,6 +78,7 @@ static void wsd_call_ctx_free(void *f)
 		free(ctx->args);
 	}
 	free(ctx->id);
+
 	if (ctx->reply_slot >= 0)
 		dbus_message_free_data_slot(&ctx->reply_slot);
 	free(ctx);
@@ -88,17 +100,9 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data);
 static void introspect_list_next(struct wsd_call_ctx *ctx)
 {
 	struct prog_context *prog = lws_context_user(lws_get_context(ctx->wsi));
-	const char *str;
-	dbus_message_iter_get_basic(&ctx->arr_iter, &str);
+	struct introspection_target *cur = list_first_entry(&ctx->introspectables, struct introspection_target, introspectables);
 
-	char *name = duconv_name_dbus_name_to_ubus(str);
-	if (!name) {
-		///
-	}
-	// TODO use logical (ubus) name in listing
-	free(name);
-	// TODO select a reasonable object path we will support
-	DBusMessage *introspect = dbus_message_new_method_call(str, WSD_DBUS_OBJECTS_PATH, DBUS_INTERFACE_INTROSPECTABLE, "Introspect");
+	DBusMessage *introspect = dbus_message_new_method_call(cur->service, cur->path, DBUS_INTERFACE_INTROSPECTABLE, "Introspect");
 	DBusPendingCall *introspect_call;
 	dbus_connection_send_with_reply(prog->dbus_ctx, introspect, &introspect_call, 1000);
 	dbus_pending_call_set_notify(introspect_call, wsd_introspect_cb, ctx, NULL);
@@ -164,16 +168,21 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 	DBusMessage *reply = dbus_pending_call_steal_reply(call);
 	assert(reply);
 
-	const char *obj;
-	dbus_message_iter_get_basic(&ctx->arr_iter, &obj);
-	void *p = blobmsg_open_table(&ctx->retbuf, obj);
+	struct introspection_target *cur = list_first_entry(&ctx->introspectables, struct introspection_target, introspectables);
+	char *name = duconv_name_dbus_path_to_ubus(cur->path);
+
+	bool sub_only = false;
+	if (!name) {
+		sub_only = true;
+		// TODO
+	}
 	if (!check_reply_and_make_error(reply, "s", NULL)) {
-		lwsl_warn("DBus Introspected %s with error, skipping\n", obj);
+		lwsl_warn("DBus Introspected svc %s obj %s with error, skipping\n", cur->service, cur->path);
 		// we ignore the error and skip this service
 		goto next_service;
 	}
 
-	lwsl_debug("DBus Introspected %s\n", obj);
+	lwsl_debug("DBus Introspected svc %s obj %s\n", cur->service, cur->path);
 
 	const char *xml;
 	dbus_message_get_args(reply, NULL, DBUS_TYPE_STRING, &xml);
@@ -182,21 +191,42 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 
 	xmlNode *xml_root = xmlDocGetRootElement(xml_doc);
 
-	if (xml_root->type != XML_ELEMENT_NODE || xmlStrcmp(xml_root->name, (xmlChar*)"node")) {
+	if (xml_root->type != XML_ELEMENT_NODE || xmlStrcmp(xml_root->name, (xmlChar*)"node") || !xml_root->children) {
 		goto next_service_xml;
 	}
+
+	void *p = NULL;
 
 	for (xmlNode *subnode = xml_root->children; subnode; subnode = subnode->next) {
 		if (subnode->type != XML_ELEMENT_NODE)
 			continue;
 
 		if (!xmlStrcmp(subnode->name, (xmlChar*)"node")) {
+			char *node_name = (char*)xmlGetProp(subnode, (xmlChar*)"name");
+			if (!node_name)
+				continue;
+
+			struct introspection_target *new = malloc(sizeof *new);
+			new->service = strdup(cur->service);
+			size_t new_path_len = strlen(cur->path) + 2 + strlen(node_name);
+			new->path = malloc(new_path_len);
+			new->path[0] = '\0';
+			strcat(new->path, cur->path);
+			if (new->path[strlen(new->path)-1] != '/')
+				strcat(new->path, "/");
+			strcat(new->path, node_name);
+			list_add_tail(&new->introspectables, &ctx->introspectables);
+			lwsl_debug("DBus Introspecting later svc %s obj %s\n", new->service, new->path);
+
+			xmlFree(node_name);
 			continue; // TODO put this subnode in queue for later introspection
-		} else if (xmlStrcmp(subnode->name, (xmlChar*)"interface")) {
+		} else if (xmlStrcmp(subnode->name, (xmlChar*)"interface") || sub_only) {
 			// skip unknown node type
 			continue;
 		}
 
+		if (!p)
+			p = blobmsg_open_table(&ctx->retbuf, name);
 		char *iface_name = (char*)xmlGetProp(subnode, (xmlChar*)"name");
 		if (!iface_name)
 			continue;
@@ -234,6 +264,8 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 						xmlFree(arg_dir);
 					}
 
+					//lwsl_warn("### %s   %-20s %s type=%s name=%s\n", is_signal ? "signal" : "method", m_name, arg_is_out ? "ret" : "arg", arg_type, arg_name ? arg_name : "?");
+
 					xmlFree(arg_type);
 					xmlFree(arg_name);
 				}
@@ -243,7 +275,7 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 					goto next_member;
 				}
 
-				xmlChar *m_access = (char*)xmlGetProp(member, (xmlChar*)"access");
+				xmlChar *m_access = xmlGetProp(member, (xmlChar*)"access");
 				if (!m_access) {
 					xmlFree(m_type);
 					goto next_member;
@@ -252,6 +284,8 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 				} else if (!xmlStrcmp(m_access, (xmlChar*)"write")) {
 				} else {
 				}
+
+				//lwsl_warn("### property %-20s type=%s\n", m_name, m_type);
 
 				xmlFree(m_access);
 				xmlFree(m_type);
@@ -264,19 +298,24 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 	next_iface:
 		xmlFree(iface_name);
 	}
+	if (p)
+		blobmsg_close_table(&ctx->retbuf, p);
 
 next_service_xml:
 	xmlFreeDoc(xml_doc);
 
 next_service:
-	blobmsg_close_table(&ctx->retbuf, p);
-
-	if (dbus_message_iter_next(&ctx->arr_iter)) {
+	list_del(&cur->introspectables);
+	free(cur->service);
+	free(cur->path);
+	free(cur);
+	if (!list_empty(&ctx->introspectables)) {
 		introspect_list_next(ctx);
 	} else {
 		introspect_list_finish(ctx);
 	}
 
+	free(name);
 	dbus_message_unref(reply);
 }
 
@@ -304,10 +343,20 @@ static void wsd_list_cb(DBusPendingCall *call, void *data)
 		return;
 	}
 
-	DBusMessageIter resp_iter;
+	DBusMessageIter resp_iter, arr_iter;
 	dbus_message_iter_init(reply, &resp_iter);
-	dbus_message_iter_recurse(&resp_iter, &ctx->arr_iter);
-	if (dbus_message_iter_get_arg_type(&ctx->arr_iter) != DBUS_TYPE_INVALID) {
+	dbus_message_iter_recurse(&resp_iter, &arr_iter);
+	INIT_LIST_HEAD(&ctx->introspectables);
+	while (dbus_message_iter_get_arg_type(&arr_iter) != DBUS_TYPE_INVALID) {
+		struct introspection_target *new = malloc(sizeof *new);
+		dbus_message_iter_get_basic(&arr_iter, &new->service);
+		new->service = strdup(new->service);
+		new->path = strdup(WSD_DBUS_OBJECTS_PATH);
+		list_add_tail(&new->introspectables, &ctx->introspectables);
+		dbus_message_iter_next(&arr_iter);
+	}
+
+	if (!list_empty(&ctx->introspectables)) {
 		introspect_list_next(ctx);
 	} else {
 		introspect_list_finish(ctx);

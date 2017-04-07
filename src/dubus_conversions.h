@@ -60,3 +60,6 @@ char *duconv_name_ubus_to_dbus_name(const char *ubus_objname);
 
 /** convert dbus service/interface name to expected ubus object name */
 char *duconv_name_dbus_name_to_ubus(const char *dbus_name);
+
+/** convert dbus object path to expected ubus object name */
+char *duconv_name_dbus_path_to_ubus(const char *dbus_path);

@@ -50,3 +50,13 @@ char *duconv_name_dbus_name_to_ubus(const char *dbus_name)
 	free(tmp);
 	return ret;
 }
+
+char *duconv_name_dbus_path_to_ubus(const char *dbus_path)
+{
+	size_t tmp_len = strlen(WSD_DBUS_OBJECTS_PATH);
+	char *ret = NULL;
+	if (strstr(dbus_path, WSD_DBUS_OBJECTS_PATH) == dbus_path && dbus_path[tmp_len] && dbus_path[tmp_len] == '/' && dbus_path[tmp_len+1]) {
+		ret = strdup(dbus_path + tmp_len + 1);
+	}
+	return ret;
+}
