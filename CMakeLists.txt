@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.6)
 project(owsd C)
-add_definitions(-Os -Wall -std=gnu11 -D_XOPEN_SOURCE=700 )
+add_definitions(-Os -Wall -std=gnu11 -fms-extensions -fplan9-extensions -D_XOPEN_SOURCE=700 )
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules")
 
