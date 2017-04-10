@@ -40,20 +40,13 @@
 #include <sys/types.h>
 #include <regex.h>
 
-struct ws_call_ctx_base {
-	struct lws *wsi;
-
-	struct blob_attr *id;
-	struct ubusrpc_blob *args;
-	struct blob_buf retbuf;
-
-	struct list_head cq;
-
-	void (*destroy)(struct ws_call_ctx_base *ctx);
-};
-
 struct wsd_call_ctx {
-	struct ws_call_ctx_base;
+	union {
+		struct ws_request_base;
+		struct ws_request_base _base;
+	};
+
+	struct ubusrpc_blob *args;
 
 	struct DBusMessage *list_reply;
 	int reply_slot;
@@ -84,8 +77,9 @@ static void wsd_call_ctx_free(void *f)
 	free(ctx);
 }
 
-void wsd_call_ctx_cancel(struct wsd_call_ctx *ctx)
+void wsd_call_ctx_cancel_and_destroy(struct ws_request_base *base)
 {
+	struct wsd_call_ctx *ctx = container_of(base, struct wsd_call_ctx, _base);
 	dbus_pending_call_cancel(ctx->call_req);
 	dbus_pending_call_unref(ctx->call_req);
 	if (ctx->list_reply) {
@@ -372,6 +366,8 @@ void wsd_call_cb(struct DBusPendingCall *call, void *data)
 	dbus_pending_call_unref(ctx->call_req);
 	ctx->call_req = NULL;
 
+	list_del(&ctx->cq);
+
 	blob_buf_init(&ctx->retbuf, 0);
 	DBusMessage *reply = dbus_pending_call_steal_reply(call);
 	assert(reply);
@@ -398,11 +394,8 @@ void wsd_call_cb(struct DBusPendingCall *call, void *data)
 	char *response_str = jsonrpc__resp_ubus(ctx->id, 0, ctx->retbuf.head);
 	wsu_queue_write_str(ctx->wsi, response_str);
 	free(response_str);
-
 out:
 	dbus_message_unref(reply);
-	blob_buf_free(ctx->args->call.params_buf);
-	free(ctx->args->call.params_buf);
 	wsd_call_ctx_free(ctx);
 }
 
@@ -425,13 +418,10 @@ int ubusrpc_handle_dcall(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, str
 		goto out;
 	}
 
-	// XXX when we support listing recursively, change to use
-#if 0
-	char *dbus_object_path = duconv_name_ubus_to_dbus_path(ubuspc_blob->call.object)
-#endif
-
-	const char *dbus_object_path = WSD_DBUS_OBJECTS_PATH;
+	char *dbus_object_path = duconv_name_ubus_to_dbus_path(ubusrpc_blob->call.object);
+	lwsl_info("making DBus call s=%s o=%s m=%s\n", dbus_service_name, dbus_object_path, ubusrpc_blob->call.method);
 	DBusMessage *msg = dbus_message_new_method_call(dbus_service_name, dbus_object_path, dbus_service_name, ubusrpc_blob->call.method);
+	free(dbus_object_path);
 	free(dbus_service_name);
 
 	if (!msg) {
@@ -462,15 +452,22 @@ int ubusrpc_handle_dcall(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, str
 		goto out3;
 	}
 
-	ctx->call_req = call;
 	ctx->wsi = wsi;
-	ctx->args = ubusrpc_blob;
 	ctx->id = id ? blob_memdup(id) : NULL;
+	ctx->cancel_and_destroy = wsd_call_ctx_cancel_and_destroy;
+	ctx->call_req = call;
+	ctx->args = ubusrpc_blob;
 	if (id && !ctx->id) {
 		lwsl_err("OOM ctx id\n");
 		goto out4;
 	}
 	ctx->reply_slot = -1;
+
+	dbus_message_unref(msg);
+
+	blob_buf_free(ubusrpc_blob->call.params_buf);
+	free(ubusrpc_blob->call.params_buf);
+	ubusrpc_blob->call.params_buf = NULL;
 
 	if (!dbus_pending_call_set_notify(call, wsd_call_cb, ctx, NULL) || !call) {
 		lwsl_err("failed to set notify callback\n");
@@ -478,7 +475,8 @@ int ubusrpc_handle_dcall(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, str
 	}
 	lwsl_debug("dbus-calling %p %p\n", call, ctx);
 
-	dbus_message_unref(msg);
+	struct wsu_client_session *client = wsi_to_client(wsi);
+	list_add_tail(&ctx->cq, &client->rpc_call_q);
 
 	return 0;
 
@@ -492,8 +490,13 @@ out2:
 	dbus_message_unref(msg);
 out:
 	free(ubusrpc_blob->list.src_blob);
-	blob_buf_free(ubusrpc_blob->call.params_buf);
-	free(ubusrpc_blob->call.params_buf);
+
+	if (ubusrpc_blob->call.params_buf) {
+		blob_buf_free(ubusrpc_blob->call.params_buf);
+		free(ubusrpc_blob->call.params_buf);
+		ubusrpc_blob->call.params_buf = NULL;
+	}
+
 	return -1;
 }
 
@@ -515,10 +518,11 @@ int ubusrpc_handle_dlist(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct b
 	if (!ctx) {
 		goto out3;
 	}
-	ctx->call_req = call;
 	ctx->wsi = wsi;
-	ctx->args = ubusrpc;
 	ctx->id = id ? blob_memdup(id) : NULL;
+	ctx->cancel_and_destroy = wsd_call_ctx_cancel_and_destroy;
+	ctx->call_req = call;
+	ctx->args = ubusrpc;
 	if (id && !ctx->id) {
 		goto out4;
 	}

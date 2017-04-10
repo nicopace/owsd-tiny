@@ -168,8 +168,11 @@ static void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
 			struct list_head *p, *n;
 			list_for_each_safe(p, n, &peer->u.client.rpc_call_q) {
 				list_del(p);
-				wsubus_percall_ctx_destroy_h(p);
-				lwsl_info("free call in progress %p\n", p);
+				struct ws_request_base *base = container_of(p, struct ws_request_base, cq);
+				if (base->cancel_and_destroy) {
+					lwsl_debug("free req in progress %p\n", base);
+					base->cancel_and_destroy(base);
+				}
 			}
 		}
 

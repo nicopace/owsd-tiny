@@ -27,6 +27,7 @@
 #include "rpc_list.h"
 #include "rpc_sub.h"
 #include "util_jsonrpc.h"
+#include <libubox/list.h>
 
 struct jsonrpc_blob_req {
 	struct blob_attr *id;
@@ -36,6 +37,17 @@ struct jsonrpc_blob_req {
 };
 
 struct lws;
+
+struct ws_request_base {
+	struct lws *wsi;
+
+	struct blob_attr *id;
+	struct blob_buf retbuf;
+
+	struct list_head cq;
+
+	void (*cancel_and_destroy)(struct ws_request_base *ctx);
+};
 
 struct ubusrpc_blob {
 	union {

@@ -107,41 +107,19 @@ out:
 }
 
 struct wsubus_percall_ctx {
-	struct lws *wsi;
+	union {
+		struct ws_request_base;
+		struct ws_request_base _base;
+	};
 
-	struct blob_attr *id;
 	struct ubusrpc_blob_call *call_args;
-	struct blob_attr *retdata;
-
 	struct ubus_request *invoke_req;
-
 	struct wsubus_client_access_check_ctx access_check;
-
-	struct list_head cq;
 };
 
-static struct wsubus_percall_ctx *wsubus_percall_ctx_create(
-		struct lws *wsi,
-		struct blob_attr *id,
-		struct ubusrpc_blob_call *call_args)
+static void wsubus_percall_ctx_destroy(struct ws_request_base *base)
 {
-	struct wsubus_percall_ctx *ret = malloc(sizeof *ret);
-
-	ret->wsi = wsi;
-
-	ret->id = id ? blob_memdup(id): NULL;
-	ret->call_args = call_args;
-	ret->retdata = NULL;
-
-	ret->invoke_req = NULL;
-
-	ret->access_check.req = NULL;
-
-	return ret;
-}
-
-static void wsubus_percall_ctx_destroy(struct wsubus_percall_ctx *call_ctx)
-{
+	struct wsubus_percall_ctx *call_ctx = container_of(base, struct wsubus_percall_ctx, _base);
 	free(call_ctx->id);
 
 	free(call_ctx->call_args->src_blob);
@@ -150,7 +128,7 @@ static void wsubus_percall_ctx_destroy(struct wsubus_percall_ctx *call_ctx)
 
 	free(call_ctx->call_args);
 
-	free(call_ctx->retdata);
+	blob_buf_free(&call_ctx->retbuf);
 
 	if (call_ctx->invoke_req) {
 		struct prog_context *prog = lws_context_user(lws_get_context(call_ctx->wsi));
@@ -161,10 +139,26 @@ static void wsubus_percall_ctx_destroy(struct wsubus_percall_ctx *call_ctx)
 	free(call_ctx);
 }
 
-void wsubus_percall_ctx_destroy_h(struct list_head *lh)
+static struct wsubus_percall_ctx *wsubus_percall_ctx_create(
+		struct lws *wsi,
+		struct blob_attr *id,
+		struct ubusrpc_blob_call *call_args)
 {
-	wsubus_percall_ctx_destroy(list_entry(lh, struct wsubus_percall_ctx, cq));
+	struct wsubus_percall_ctx *ret = malloc(sizeof *ret);
+
+	ret->wsi = wsi;
+	ret->id = id ? blob_memdup(id): NULL;
+	memset(&ret->retbuf, 0, sizeof ret->retbuf);
+	blobmsg_buf_init(&ret->retbuf);
+	ret->cancel_and_destroy = wsubus_percall_ctx_destroy;
+
+	ret->call_args = call_args;
+	ret->invoke_req = NULL;
+	ret->access_check.req = NULL;
+
+	return ret;
 }
+
 
 static int wsubus_call_do_check_then_do_call(struct wsubus_percall_ctx *curr_call);
 static void wsubus_access_on_completed(struct wsubus_access_check_req *req, void *ctx, bool allow);
@@ -198,7 +192,7 @@ int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, stru
 		ret = UBUS_STATUS_PERMISSION_DENIED;
 
 		list_del(&curr_call->cq);
-		wsubus_percall_ctx_destroy(curr_call);
+		wsubus_percall_ctx_destroy(&curr_call->_base);
 
 		// invoke never happened, we need to send ubus error status
 		// (jsonrpc success, but ubus code != 0)
@@ -268,7 +262,7 @@ out:
 		free(json_str);
 
 		list_del(&curr_call->cq);
-		wsubus_percall_ctx_destroy(curr_call);
+		wsubus_percall_ctx_destroy(&curr_call->_base);
 	}
 }
 
@@ -331,7 +325,7 @@ static void wsubus_call_on_completed(struct ubus_request *req, int status)
 		lwsl_warn("status != req->status_code (%d != %d)\n", status, req->status_code);
 
 	// retdata is deep copied pointer from retdata handler 
-	char *json_str = jsonrpc__resp_ubus(curr_call->id, status, curr_call->retdata);
+	char *json_str = jsonrpc__resp_ubus(curr_call->id, status, blobmsg_data(curr_call->retbuf.head));
 
 	wsu_queue_write_str(curr_call->wsi, json_str);
 	free(json_str);
@@ -339,7 +333,7 @@ static void wsubus_call_on_completed(struct ubus_request *req, int status)
 	curr_call->invoke_req = NULL;
 
 	list_del(&curr_call->cq);
-	wsubus_percall_ctx_destroy(curr_call);
+	wsubus_percall_ctx_destroy(&curr_call->_base);
 }
 
 static void wsubus_call_on_retdata(struct ubus_request *req, int type, struct blob_attr *msg)
@@ -359,7 +353,5 @@ static void wsubus_call_on_retdata(struct ubus_request *req, int type, struct bl
 
 	struct wsubus_percall_ctx *curr_call = req->priv;
 
-	assert(!curr_call->retdata);
-
-	curr_call->retdata = blob_memdup(msg);
+	blobmsg_add_field(&curr_call->retbuf, blobmsg_type(msg), "", blobmsg_data(msg), blobmsg_data_len(msg));
 }
