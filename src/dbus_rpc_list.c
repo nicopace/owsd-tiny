@@ -189,8 +189,6 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 		goto next_service_xml;
 	}
 
-	void *p = NULL;
-
 	for (xmlNode *subnode = xml_root->children; subnode; subnode = subnode->next) {
 		if (subnode->type != XML_ELEMENT_NODE)
 			continue;
@@ -213,17 +211,25 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 			lwsl_debug("DBus Introspecting later svc %s obj %s\n", new->service, new->path);
 
 			xmlFree(node_name);
-			continue; // TODO put this subnode in queue for later introspection
+			continue;
 		} else if (xmlStrcmp(subnode->name, (xmlChar*)"interface") || sub_only) {
 			// skip unknown node type
 			continue;
 		}
 
-		if (!p)
-			p = blobmsg_open_table(&ctx->retbuf, name);
 		char *iface_name = (char*)xmlGetProp(subnode, (xmlChar*)"name");
 		if (!iface_name)
 			continue;
+
+		void *p = NULL;
+		char *_name = duconv_name_dbus_name_to_ubus(iface_name);
+		if (_name && !strcmp(_name, name))
+			p = blobmsg_open_table(&ctx->retbuf, name);
+		if (_name)
+			free(_name);
+
+		if (!p)
+			goto next_iface;
 
 		for (xmlNode *member = subnode->children; member; member = member->next) {
 			if (member->type != XML_ELEMENT_NODE)
@@ -241,6 +247,7 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 				continue;
 
 			if (is_method || is_signal) {
+				void *q = NULL;
 				for (xmlNode *arg = member->children; arg; arg = arg->next) {
 					if (member->type != XML_ELEMENT_NODE || xmlStrcmp(arg->name, (xmlChar*)"arg"))
 						continue;
@@ -258,11 +265,20 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 						xmlFree(arg_dir);
 					}
 
+					if (is_method && !q) {
+						q = blobmsg_open_table(&ctx->retbuf, m_name);
+					}
+					if (q && !arg_is_out) {
+						blobmsg_add_string(&ctx->retbuf, arg_name, arg_type);
+					}
+
 					//lwsl_warn("### %s   %-20s %s type=%s name=%s\n", is_signal ? "signal" : "method", m_name, arg_is_out ? "ret" : "arg", arg_type, arg_name ? arg_name : "?");
 
 					xmlFree(arg_type);
 					xmlFree(arg_name);
 				}
+				if (q)
+					blobmsg_close_table(&ctx->retbuf, q);
 			} else if (is_property) {
 				char *m_type = (char*)xmlGetProp(member, (xmlChar*)"type");
 				if (!m_type) {
@@ -290,10 +306,11 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 		}
 
 	next_iface:
+		if (p)
+			blobmsg_close_table(&ctx->retbuf, p);
+
 		xmlFree(iface_name);
 	}
-	if (p)
-		blobmsg_close_table(&ctx->retbuf, p);
 
 next_service_xml:
 	xmlFreeDoc(xml_doc);
