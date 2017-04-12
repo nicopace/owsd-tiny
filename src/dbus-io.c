@@ -27,7 +27,10 @@ static void wsd_trigger_timer(struct uloop_timeout *utimer)
 	// save timeout since timeout_handle will clear wsd->dtimer
 	DBusTimeout *timeout = wsd->dtimer;
 	dbus_timeout_handle(timeout);
-	uloop_timeout_set(&wsd->utimer, dbus_timeout_get_interval(timeout));
+	if (wsd->dtimer) {
+		// only set timer if we werent deleted inside timeout_handle -> del_timeout
+		uloop_timeout_set(&wsd->utimer, dbus_timeout_get_interval(timeout));
+	}
 }
 
 static dbus_bool_t wsd_add_timeout(DBusTimeout *timeout, void *data)
