@@ -24,10 +24,13 @@
 #pragma once
 
 #include <stdint.h>
+#include "rpc.h"
 
 struct ubusrpc_blob_list {
-	struct blob_attr *src_blob;
-	const char *sid;
+	union {
+		struct ubusrpc_blob;
+		struct ubusrpc_blob _base;
+	};
 
 	const char *pattern;
 };
@@ -35,6 +38,6 @@ struct ubusrpc_blob_list {
 struct ubusrpc_blob;
 struct lws;
 
-int ubusrpc_blob_list_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob);
+struct ubusrpc_blob* ubusrpc_blob_list_parse(struct blob_attr *blob);
 
 int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);

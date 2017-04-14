@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 Inteno Broadband Technology AB. All rights reserved.
+ * Copyright (C) 2017 Inteno Broadband Technology AB. All rights reserved.
  *
  * Author: Denis Osvald <denis.osvald@sartura.hr>
  *
@@ -17,29 +17,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA
  */
-
-/*
- * ubus over websocket - ubus call
- */
 #pragma once
 
-#include "rpc.h"
-
-struct ubusrpc_blob_call {
-	union {
-		struct ubusrpc_blob;
-		struct ubusrpc_blob _base;
-	};
-
-	const char *object;
-	const char *method;
-	struct blob_buf *params_buf;
-};
-
-struct lws;
 struct ubusrpc_blob;
-struct list_head;
+struct blob_attr;
+struct lws;
 
-struct ubusrpc_blob *ubusrpc_blob_call_parse(struct blob_attr *blob);
-
-int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, struct blob_attr *id);
+int ubusrpc_handle_dcall(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);

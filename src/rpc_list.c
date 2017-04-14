@@ -36,11 +36,11 @@
 
 #include <assert.h>
 
-int ubusrpc_blob_list_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob)
+static int ubusrpc_blob_list_parse_(struct ubusrpc_blob_list *ubusrpc, struct blob_attr *blob)
 {
 	if (blob_id(blob) != BLOBMSG_TYPE_ARRAY) {
-		ubusrpc->list.src_blob = NULL;
-		ubusrpc->list.pattern = NULL;
+		ubusrpc->src_blob = NULL;
+		ubusrpc->pattern = NULL;
 		return 0;
 	}
 
@@ -66,11 +66,25 @@ int ubusrpc_blob_list_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob
 		return -2;
 	}
 
-	ubusrpc->list.src_blob = dup_blob;
-	ubusrpc->call.sid = tb[0] ? blobmsg_get_string(tb[0]) : UBUS_DEFAULT_SID;
-	ubusrpc->list.pattern = blobmsg_get_string(tb[1]);
+	ubusrpc->src_blob = dup_blob;
+	ubusrpc->sid = tb[0] ? blobmsg_get_string(tb[0]) : UBUS_DEFAULT_SID;
+	ubusrpc->pattern = blobmsg_get_string(tb[1]);
 
 	return 0;
+}
+
+struct ubusrpc_blob* ubusrpc_blob_list_parse(struct blob_attr *blob)
+{
+	struct ubusrpc_blob_list *ubusrpc = calloc(1, sizeof *ubusrpc);
+	if (!ubusrpc)
+		return NULL;
+
+	if (ubusrpc_blob_list_parse_(ubusrpc, blob) != 0) {
+		free(ubusrpc);
+		return NULL;
+	}
+
+	return &ubusrpc->_base;
 }
 
 struct list_cb_data {
@@ -113,8 +127,9 @@ out:
 	blobmsg_close_table(&data->buf, objs_tkt);
 }
 
-int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
+int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct blob_attr *id)
 {
+	struct ubusrpc_blob_list *ubusrpc = container_of(ubusrpc_, struct ubusrpc_blob_list, _base);
 	char *response_str;
 	int ret = 0;
 
@@ -123,8 +138,8 @@ int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct bl
 
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 
-	lwsl_info("about to lookup %s\n", ubusrpc->list.pattern);
-	ret = ubus_lookup(prog->ubus_ctx, ubusrpc->list.pattern, ubus_lookup_cb, &list_data);
+	lwsl_info("about to lookup %s\n", ubusrpc->pattern);
+	ret = ubus_lookup(prog->ubus_ctx, ubusrpc->pattern, ubus_lookup_cb, &list_data);
 	lwsl_info("after loookup rc %d, error %d\n", ret, list_data.error);
 
 	if (ret) {
@@ -140,7 +155,7 @@ int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct bl
 
 	// free memory
 	free(response_str);
-	free(ubusrpc->list.src_blob);
+	free(ubusrpc->src_blob);
 	free(ubusrpc);
 	return 0;
 }

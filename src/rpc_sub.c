@@ -90,7 +90,7 @@ int wsubus_unsubscribe_all(struct lws *wsi)
 	return ret;
 }
 
-int ubusrpc_blob_sub_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob)
+static int ubusrpc_blob_sub_parse_(struct ubusrpc_blob_sub *ubusrpc, struct blob_attr *blob)
 {
 	static const struct blobmsg_policy rpc_ubus_param_policy[] = {
 		[0] = { .type = BLOBMSG_TYPE_STRING }, // ubus-session id
@@ -118,14 +118,28 @@ int ubusrpc_blob_sub_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob)
 		return -2;
 	}
 
-	ubusrpc->sub.src_blob = dup_blob;
-	ubusrpc->sub.sid = tb[0] ? blobmsg_get_string(tb[0]) : UBUS_DEFAULT_SID;
-	ubusrpc->sub.pattern = blobmsg_get_string(tb[1]);
+	ubusrpc->src_blob = dup_blob;
+	ubusrpc->sid = tb[0] ? blobmsg_get_string(tb[0]) : UBUS_DEFAULT_SID;
+	ubusrpc->pattern = blobmsg_get_string(tb[1]);
 
 	return 0;
 }
 
-int ubusrpc_blob_sub_list_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob)
+struct ubusrpc_blob* ubusrpc_blob_sub_parse(struct blob_attr *blob)
+{
+	struct ubusrpc_blob_sub *ubusrpc = calloc(1, sizeof *ubusrpc);
+	if (!ubusrpc)
+		return NULL;
+
+	if (ubusrpc_blob_sub_parse_(ubusrpc, blob) != 0) {
+		free(ubusrpc);
+		return NULL;
+	}
+
+	return &ubusrpc->_base;
+}
+
+int ubusrpc_blob_sub_list_parse_(struct ubusrpc_blob_sub *ubusrpc, struct blob_attr *blob)
 {
 	static const struct blobmsg_policy rpc_ubus_param_policy[] = {
 		[0] = { .type = BLOBMSG_TYPE_STRING }, // ubus-session id
@@ -141,14 +155,29 @@ int ubusrpc_blob_sub_list_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *
 	if (!tb[0])
 		return 2;
 
-	ubusrpc->sub.src_blob = NULL;
-	ubusrpc->sub.sid = tb[0] ? blobmsg_get_string(tb[0]) : UBUS_DEFAULT_SID;
+	ubusrpc->src_blob = NULL;
+	ubusrpc->sid = tb[0] ? blobmsg_get_string(tb[0]) : UBUS_DEFAULT_SID;
 
 	return 0;
 }
 
-int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
+struct ubusrpc_blob* ubusrpc_blob_sub_list_parse(struct blob_attr *blob)
 {
+	struct ubusrpc_blob_sub *ubusrpc = calloc(1, sizeof *ubusrpc);
+	if (!ubusrpc)
+		return NULL;
+
+	if (ubusrpc_blob_sub_list_parse_(ubusrpc, blob) != 0) {
+		free(ubusrpc);
+		return NULL;
+	}
+
+	return &ubusrpc->_base;
+}
+
+int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct blob_attr *id)
+{
+	struct ubusrpc_blob_sub *ubusrpc = container_of(ubusrpc_, struct ubusrpc_blob_sub, _base);
 	int ret;
 	struct wsu_client_session *client = wsi_to_client(wsi);
 
@@ -162,7 +191,7 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blo
 	subinfo->ubus_handler = (struct ubus_event_handler){};
 
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
-	ret = ubus_register_event_handler(prog->ubus_ctx, &subinfo->ubus_handler, ubusrpc->sub.pattern);
+	ret = ubus_register_event_handler(prog->ubus_ctx, &subinfo->ubus_handler, ubusrpc->pattern);
 
 	if (ret) {
 		lwsl_err("ubus reg evh error %s\n", ubus_strerror(ret));
@@ -172,9 +201,9 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blo
 
 	subinfo->ubus_handler.cb = wsubus_sub_cb;
 
-	subinfo->src_blob = ubusrpc->sub.src_blob;
-	subinfo->pattern = ubusrpc->sub.pattern;
-	subinfo->sid = ubusrpc->sub.sid;
+	subinfo->src_blob = ubusrpc->src_blob;
+	subinfo->pattern = ubusrpc->pattern;
+	subinfo->sid = ubusrpc->sid;
 	// subinfo->ubus_handler inited above in ubus_register_...
 	subinfo->wsi = wsi;
 
@@ -184,7 +213,7 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blo
 
 out:
 	if (ret) {
-		free(ubusrpc->sub.src_blob);
+		free(ubusrpc->src_blob);
 		ubusrpc->src_blob = NULL;
 	}
 	char *response = jsonrpc__resp_ubus(id, ret, NULL);
@@ -205,8 +234,9 @@ static void blobmsg_add_sub_info(struct blob_buf *buf, const char *name, const s
 	blobmsg_close_table(buf, tkt);
 }
 
-int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
+int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct blob_attr *id)
 {
+	struct ubusrpc_blob_sub *ubusrpc = container_of(ubusrpc_, struct ubusrpc_blob_sub, _base);
 	struct wsu_client_session *client = wsi_to_client(wsi);
 	char *response_str;
 	int ret = 0;
@@ -233,18 +263,19 @@ int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struc
 
 	// free memory
 	free(response_str);
-	free(ubusrpc->sub.src_blob);
+	free(ubusrpc->src_blob);
 	free(ubusrpc);
 	return 0;
 }
 
-int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
+int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct blob_attr *id)
 {
+	struct ubusrpc_blob_sub *ubusrpc = container_of(ubusrpc_, struct ubusrpc_blob_sub, _base);
 	char *response;
 	int ret = 0;
 
-	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->sub.pattern, ret);
-	ret = wsubus_unsubscribe_by_pattern(wsi, ubusrpc->sub.pattern);
+	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->pattern, ret);
+	ret = wsubus_unsubscribe_by_pattern(wsi, ubusrpc->pattern);
 
 	if (ret != 0)
 		ret = UBUS_STATUS_NOT_FOUND;
@@ -252,7 +283,7 @@ int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct b
 	response = jsonrpc__resp_ubus(id, ret, NULL);
 	wsu_queue_write_str(wsi, response);
 	free(response);
-	free(ubusrpc->sub.src_blob);
+	free(ubusrpc->src_blob);
 	free(ubusrpc);
 
 	return 0;

@@ -33,7 +33,7 @@
 
 #include <assert.h>
 
-int ubusrpc_blob_call_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob)
+int ubusrpc_blob_call_parse_(struct ubusrpc_blob_call *ubusrpc, struct blob_attr *blob)
 {
 	static const struct blobmsg_policy rpc_ubus_param_policy[] = {
 		[0] = { .type = BLOBMSG_TYPE_STRING }, // ubus-session id
@@ -92,11 +92,11 @@ int ubusrpc_blob_call_parse(struct ubusrpc_blob *ubusrpc, struct blob_attr *blob
 	blobmsg_for_each_attr(cur, tb[3], rem)
 		blobmsg_add_blob(params_buf, cur);
 
-	ubusrpc->call.src_blob = dup_blob;
-	ubusrpc->call.sid = tb[0] ? blobmsg_get_string(tb[0]) : UBUS_DEFAULT_SID;
-	ubusrpc->call.object = blobmsg_get_string(tb[1]);
-	ubusrpc->call.method = blobmsg_get_string(tb[2]);
-	ubusrpc->call.params_buf = params_buf;
+	ubusrpc->src_blob = dup_blob;
+	ubusrpc->sid = tb[0] ? blobmsg_get_string(tb[0]) : UBUS_DEFAULT_SID;
+	ubusrpc->object = blobmsg_get_string(tb[1]);
+	ubusrpc->method = blobmsg_get_string(tb[2]);
+	ubusrpc->params_buf = params_buf;
 
 	return 0;
 
@@ -104,6 +104,30 @@ out:
 	free(dup_blob);
 	free(params_buf);
 	return ret;
+}
+
+static void ubusrpc_blob_call_destroy(struct ubusrpc_blob *ubusrpc_)
+{
+	struct ubusrpc_blob_call *ubusrpc = container_of(ubusrpc_, struct ubusrpc_blob_call, _base);
+	blob_buf_free(ubusrpc->params_buf);
+	free(ubusrpc->params_buf);
+	ubusrpc_blob_destroy_default(&ubusrpc->_base);
+}
+
+struct ubusrpc_blob *ubusrpc_blob_call_parse(struct blob_attr *blob)
+{
+	struct ubusrpc_blob_call *ubusrpc = calloc(1, sizeof *ubusrpc);
+	if (!ubusrpc)
+		return NULL;
+
+	if (ubusrpc_blob_call_parse_(ubusrpc, blob) != 0) {
+		free(ubusrpc);
+		return NULL;
+	}
+
+	ubusrpc->destroy = ubusrpc_blob_call_destroy;
+
+	return &ubusrpc->_base;
 }
 
 struct wsubus_percall_ctx {
@@ -122,12 +146,7 @@ static void wsubus_percall_ctx_destroy(struct ws_request_base *base)
 	struct wsubus_percall_ctx *call_ctx = container_of(base, struct wsubus_percall_ctx, _base);
 	free(call_ctx->id);
 
-	free(call_ctx->call_args->src_blob);
-	blob_buf_free(call_ctx->call_args->params_buf);
-	free(call_ctx->call_args->params_buf);
-
-	free(call_ctx->call_args);
-
+	call_ctx->call_args->destroy(&call_ctx->call_args->_base);
 	blob_buf_free(&call_ctx->retbuf);
 
 	if (call_ctx->invoke_req) {
@@ -168,7 +187,7 @@ static void wsubus_call_on_retdata(struct ubus_request *req, int type, struct bl
 
 int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, struct blob_attr *id)
 {
-	struct ubusrpc_blob_call *ubusrpc_req = &ubusrpc_blob->call;
+	struct ubusrpc_blob_call *ubusrpc_req = container_of(ubusrpc_blob, struct ubusrpc_blob_call, _base);
 	struct wsu_client_session *client = wsi_to_client(wsi);
 
 	int ret;
@@ -324,8 +343,7 @@ static void wsubus_call_on_completed(struct ubus_request *req, int status)
 	if (req->status_code != status)
 		lwsl_warn("status != req->status_code (%d != %d)\n", status, req->status_code);
 
-	// retdata is deep copied pointer from retdata handler 
-	char *json_str = jsonrpc__resp_ubus(curr_call->id, status, blobmsg_data(curr_call->retbuf.head));
+	char *json_str = jsonrpc__resp_ubus(curr_call->id, status, blobmsg_len(curr_call->retbuf.head) ? blobmsg_data(curr_call->retbuf.head) : NULL);
 
 	wsu_queue_write_str(curr_call->wsi, json_str);
 	free(json_str);

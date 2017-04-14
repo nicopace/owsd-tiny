@@ -23,9 +23,6 @@
  */
 #pragma once
 
-#include "rpc_call.h"
-#include "rpc_list.h"
-#include "rpc_sub.h"
 #include "util_jsonrpc.h"
 #include <libubox/list.h>
 
@@ -50,21 +47,15 @@ struct ws_request_base {
 };
 
 struct ubusrpc_blob {
-	union {
-		struct {
-			struct blob_attr *src_blob;
-			const char *sid;
-		};
+	struct blob_attr *src_blob;
+	const char *sid;
 
-		struct ubusrpc_blob_call call;
-
-		struct ubusrpc_blob_list list;
-
-		struct ubusrpc_blob_sub sub;
-	};
 	int (*handler)(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);
+	void (*destroy)(struct ubusrpc_blob*);
 };
+
+void ubusrpc_blob_destroy_default(struct ubusrpc_blob *ubusrpc_);
 
 int jsonrpc_blob_req_parse(struct jsonrpc_blob_req *req, const struct blob_attr *blob);
 
-enum jsonrpc_error_code ubusrpc_blob_parse(struct ubusrpc_blob *ubusrpc, const char *method, struct blob_attr *params_blob);
+struct ubusrpc_blob * ubusrpc_blob_parse(const char *method, struct blob_attr *params_blob, enum jsonrpc_error_code *err);

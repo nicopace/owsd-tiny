@@ -204,10 +204,9 @@ static void wsu_on_msg_from_client(struct lws *wsi,
 	(void)client;
 
 	struct jsonrpc_blob_req *jsonrpc_req = malloc(sizeof *jsonrpc_req);
-	struct ubusrpc_blob *ubusrpc_req = malloc(sizeof *ubusrpc_req);
-
+	struct ubusrpc_blob *ubusrpc_req = NULL;
 	int e = 0;
-	if (!jsonrpc_req || !ubusrpc_req) {
+	if (!jsonrpc_req) {
 		// free of NULL is no-op so okay
 		lwsl_err("failed to alloc\n");
 		e = JSONRPC_ERRORCODE__INTERNAL_ERROR;
@@ -220,7 +219,8 @@ static void wsu_on_msg_from_client(struct lws *wsi,
 		goto out;
 	}
 
-	if ((e = ubusrpc_blob_parse(ubusrpc_req, jsonrpc_req->method, jsonrpc_req->params)) != 0) {
+	ubusrpc_req = ubusrpc_blob_parse(jsonrpc_req->method, jsonrpc_req->params, &e);
+	if (!ubusrpc_req) {
 		lwsl_info("not valid ubus rpc in jsonrpc %d\n", e);
 		goto out;
 	}
@@ -246,7 +246,12 @@ out:
 		char *json_str = jsonrpc__resp_error(jsonrpc_req ? jsonrpc_req->id : NULL, e, NULL);
 		wsu_queue_write_str(wsi, json_str);
 		free(json_str);
-		free(ubusrpc_req);
+		if (ubusrpc_req) {
+			if (ubusrpc_req->destroy)
+				ubusrpc_req->destroy(ubusrpc_req);
+			else
+				ubusrpc_blob_destroy_default(ubusrpc_req);
+		}
 	}
 
 	free(jsonrpc_req);

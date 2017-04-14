@@ -51,7 +51,9 @@ if (WSD_HAVE_DBUS)
 
 	list(APPEND SOURCES
 		src/dbus-io.c
+		src/util_dbus.c
 		src/dbus_rpc_list.c
+		src/dbus_rpc_call.c
 		src/dubus_conversions_names.c
 		src/dubus_conversions_types.c
 	)

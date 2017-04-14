@@ -25,7 +25,11 @@
 #include "util_jsonrpc.h"
 
 // FIXME
+#include "rpc_call.h"
+#include "rpc_list.h"
+#include "rpc_sub.h"
 #include "dbus_rpc_list.h"
+#include "dbus_rpc_call.h"
 
 #include <libubox/blobmsg.h>
 #include <libubox/blobmsg_json.h>
@@ -70,11 +74,17 @@ int jsonrpc_blob_req_parse(struct jsonrpc_blob_req *req, const struct blob_attr 
 	return 0;
 }
 
-enum jsonrpc_error_code ubusrpc_blob_parse(struct ubusrpc_blob *ubusrpc, const char *method, struct blob_attr *params_blob)
+void ubusrpc_blob_destroy_default(struct ubusrpc_blob *ubusrpc_)
+{
+	free(ubusrpc_->src_blob);
+	free(ubusrpc_);
+}
+
+struct ubusrpc_blob* ubusrpc_blob_parse(const char *method, struct blob_attr *params_blob, enum jsonrpc_error_code *err)
 {
 	struct {
 		const char *name;
-		int (*parse_func)(struct ubusrpc_blob *ubusrpc, struct blob_attr *params_blob);
+		struct ubusrpc_blob* (*parse_func)(struct blob_attr *params_blob);
 		int (*handle_func)(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);
 	} supported_methods[] = {
 		{ "call", ubusrpc_blob_call_parse, ubusrpc_handle_call },
@@ -86,16 +96,25 @@ enum jsonrpc_error_code ubusrpc_blob_parse(struct ubusrpc_blob *ubusrpc, const c
 		{ "dlist", ubusrpc_blob_list_parse, ubusrpc_handle_dlist },
 		{ "dcall", ubusrpc_blob_call_parse, ubusrpc_handle_dcall },
 	};
-
+	enum jsonrpc_error_code e;
+	struct ubusrpc_blob *ret;
 	for (unsigned long i = 0; i < ARRAY_SIZE(supported_methods); ++i)
 		if (!strcmp(supported_methods[i].name, method)) {
-			if (supported_methods[i].parse_func(ubusrpc, params_blob) == 0) {
-				ubusrpc->handler = supported_methods[i].handle_func;
-				return 0;
+			ret = supported_methods[i].parse_func(params_blob);
+			if (ret) {
+				e = JSONRPC_ERRORCODE__OK;
+				ret->handler = supported_methods[i].handle_func;
 			} else {
-				return JSONRPC_ERRORCODE__INVALID_PARAMS;
+				e = JSONRPC_ERRORCODE__INVALID_PARAMS;
 			}
+			goto out;
 		}
 
-	return JSONRPC_ERRORCODE__METHOD_NOT_FOUND;
+	e = JSONRPC_ERRORCODE__METHOD_NOT_FOUND;
+	ret = NULL;
+
+out:
+	if (err)
+		*err = e;
+	return ret;
 }
