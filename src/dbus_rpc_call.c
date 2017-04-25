@@ -79,9 +79,6 @@ static void wsd_call_cb(struct DBusPendingCall *call, void *data)
 	struct wsd_call_ctx *ctx = data;
 	assert(ctx->call_req == call);
 	dbus_pending_call_unref(ctx->call_req);
-	ctx->call_req = NULL;
-
-	list_del(&ctx->cq);
 
 	DBusMessage *reply = dbus_pending_call_steal_reply(call);
 	assert(reply);
@@ -110,6 +107,9 @@ static void wsd_call_cb(struct DBusPendingCall *call, void *data)
 	free(response_str);
 out:
 	dbus_message_unref(reply);
+	ctx->call_req = NULL;
+	list_del(&ctx->cq);
+	ctx->cancel_and_destroy(&ctx->_base);
 }
 
 int ubusrpc_handle_dcall(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct blob_attr *id)
