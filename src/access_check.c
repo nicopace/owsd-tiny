@@ -19,6 +19,7 @@
  */
 #include "access_check.h"
 #include "common.h"
+#include "wsubus.impl.h"
 
 #define SID_EXTENDED_PREFIX "X-"
 

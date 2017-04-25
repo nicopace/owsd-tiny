@@ -21,14 +21,6 @@
 
 #include "owsd-config.h"
 
-#if WSD_HAVE_DBUS
-#include <dbus/dbus.h>
-#endif
-
-#if WSD_HAVE_UBUS
-#include <libubus.h>
-#endif
-
 #include <libwebsockets.h>
 #include <libubox/uloop.h>
 #include <stddef.h>

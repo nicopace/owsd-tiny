@@ -176,16 +176,8 @@ static void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
 			}
 		}
 
-#if WSD_HAVE_DBUS && 0
-		{
-			struct list_head *p, *n;
-			list_for_each_safe(p, n, &peer->u.client.dbus_call_q) {
-				list_del(p);
-				// TODO
-			}
-		}
-#endif
-
+		// XXX directly declared here to avoid depending on rpc_sub.h, TODO refactor to be callback
+		void wsubus_unsubscribe_all(struct lws*);
 		wsubus_unsubscribe_all(wsi);
 
 	} else if (peer->role == WSUBUS_ROLE_REMOTE) {
@@ -225,14 +217,7 @@ static void wsu_on_msg_from_client(struct lws *wsi,
 		goto out;
 	}
 
-	if (wsu_sid_check_and_update(wsi_to_peer(wsi), ubusrpc_req->sid) != 0) {
-		lwsl_warn("curr sid %s != prev sid %s\n", ubusrpc_req->sid, wsi_to_peer(wsi)->sid);
-		char *response = jsonrpc__resp_ubus(jsonrpc_req->id, UBUS_STATUS_NOT_SUPPORTED, NULL);
-		wsu_queue_write_str(wsi, response);
-		free(response);
-		e = 0;
-		goto out;
-	}
+	wsu_sid_update(wsi_to_peer(wsi), ubusrpc_req->sid);
 
 	if (ubusrpc_req->handler(wsi, ubusrpc_req, jsonrpc_req->id) != 0) {
 		lwsl_info("ubusrpc method handler failed\n");
@@ -474,7 +459,7 @@ static int wsubus_cb(struct lws *wsi,
 
 		json_object_put(adminadmin);
 #else
-		wsu_sid_check_and_update(peer, "X-tls-certificate");
+		wsu_sid_update(peer, "X-tls-certificate");
 
 		char *d = jsonrpc__req_ubuslisten(++remote->call_id, peer->sid, "*");
 		remote->waiting_for.listen = 1;
@@ -512,7 +497,7 @@ static int wsubus_cb(struct lws *wsi,
 						&& json_object_object_get_ex(tmp, "ubus_rpc_session", &tmp)
 						&& json_object_is_type(tmp, json_type_string)) {
 					remote->waiting_for.login = 0;
-					wsu_sid_check_and_update(peer, json_object_get_string(tmp));
+					wsu_sid_update(peer, json_object_get_string(tmp));
 				} else {
 					// TODO
 					lwsl_err("response to login not valid\n");

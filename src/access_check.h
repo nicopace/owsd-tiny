@@ -19,7 +19,12 @@
  */
 #pragma once
 
-#include "wsubus.impl.h"
+#include <stdbool.h>
+#include <stddef.h>
+
+struct lws;
+struct blob_buf;
+struct ubus_context;
 
 struct wsubus_access_check_req;
 

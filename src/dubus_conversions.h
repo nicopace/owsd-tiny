@@ -1,4 +1,5 @@
-#include "common.h"
+#include <dbus/dbus.h>
+#include <libubox/blobmsg.h>
 
 /** convert dbus basic type signature to corresponding ubus blobmsg type */
 int duconv_type_dbus_to_ubus(int dbus_type, int dbus_elem_type);
