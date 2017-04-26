@@ -17,30 +17,21 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA
  */
+#pragma once
 
 /*
  * dbus over websocket - dbus call
  */
-#include "owsd-config.h"
-#include "dbus_rpc_call.h"
 #include "rpc_call.h"
-
-#include "common.h"
 #include "wsubus.impl.h"
-#include "rpc.h"
-#include "util_ubus_blob.h"
 #include "util_dbus.h"
 #include "dubus_conversions.h"
+#include "common.h"
 
-#include <libubox/blobmsg_json.h>
 #include <libubox/blobmsg.h>
 #include <dbus/dbus.h>
-#include <libwebsockets.h>
 
-#include <assert.h>
-#include <sys/types.h>
-#include <regex.h>
-
+// per-request context {{{
 struct wsd_call_ctx {
 	union {
 		struct ws_request_base;
@@ -73,6 +64,7 @@ static void wsd_call_ctx_cancel_and_destroy(struct ws_request_base *base)
 		wsd_call_ctx_free(ctx);
 	}
 }
+//}}}
 
 static void wsd_call_cb(struct DBusPendingCall *call, void *data)
 {
@@ -112,7 +104,7 @@ out:
 	ctx->cancel_and_destroy(&ctx->_base);
 }
 
-int ubusrpc_handle_dcall(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct blob_attr *id)
+static int handle_call_dbus(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct blob_attr *id)
 {
 	struct ubusrpc_blob_call *ubusrpc_blob = container_of(ubusrpc_, struct ubusrpc_blob_call, _base);
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
@@ -131,6 +123,24 @@ int ubusrpc_handle_dcall(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct 
 
 	char *dbus_object_path = duconv_name_ubus_to_dbus_path(ubusrpc_blob->object);
 	lwsl_info("making DBus call s=%s o=%s m=%s\n", dbus_service_name, dbus_object_path, ubusrpc_blob->method);
+
+	DBusMessage *lookup = dbus_message_new_method_call(dbus_service_name, "/lookup", dbus_service_name, ubusrpc_blob->method);
+	DBusError lookup_err;
+	dbus_error_init(&lookup_err);
+	DBusMessage *lookup_reply = dbus_connection_send_with_reply_and_block(prog->dbus_ctx, lookup, 3000, &lookup_err);
+	dbus_message_unref(lookup);
+	if (lookup_reply) {
+		dbus_message_unref(lookup_reply);
+	} else if (dbus_error_is_set(&lookup_err)) {
+		if (dbus_error_has_name(&lookup_err, DBUS_ERROR_SERVICE_UNKNOWN)) {
+			dbus_error_free(&lookup_err);
+			free(dbus_service_name);
+			free(dbus_object_path);
+			return 1;
+		}
+		dbus_error_free(&lookup_err);
+	}
+
 	DBusMessage *msg = dbus_message_new_method_call(dbus_service_name, dbus_object_path, dbus_service_name, ubusrpc_blob->method);
 	free(dbus_object_path);
 	free(dbus_service_name);

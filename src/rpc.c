@@ -29,7 +29,6 @@
 #include "rpc_list.h"
 #include "rpc_sub.h"
 #include "dbus_rpc_list.h"
-#include "dbus_rpc_call.h"
 
 #include <libubox/blobmsg.h>
 #include <libubox/blobmsg_json.h>
@@ -94,7 +93,6 @@ struct ubusrpc_blob* ubusrpc_blob_parse(const char *method, struct blob_attr *pa
 		{ "unsubscribe", ubusrpc_blob_sub_parse, ubusrpc_handle_unsub }, // parse is same as sub since args same
 
 		{ "dlist", ubusrpc_blob_list_parse, ubusrpc_handle_dlist },
-		{ "dcall", ubusrpc_blob_call_parse, ubusrpc_handle_dcall },
 	};
 	enum jsonrpc_error_code e;
 	struct ubusrpc_blob *ret;
