@@ -54,7 +54,7 @@ if (WSD_HAVE_DBUS)
 		src/util_dbus.c
 		src/dubus_conversions_names.c
 		src/dubus_conversions_types.c
-		src/dbus_rpc_list.c
+		src/rpc_list_dbus.c
 	)
 endif()
 

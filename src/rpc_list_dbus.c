@@ -22,7 +22,7 @@
  * dbus over websocket - dbus list
  */
 #include "owsd-config.h"
-#include "dbus_rpc_list.h"
+#include "rpc_list_dbus.h"
 #include "rpc_list.h"
 
 #include "common.h"
@@ -42,20 +42,6 @@
 #include <sys/types.h>
 #include <regex.h>
 
-struct wsd_list_ctx {
-	union {
-		struct ws_request_base;
-		struct ws_request_base _base;
-	};
-
-	struct DBusMessage *list_reply;
-	int reply_slot;
-
-	struct DBusPendingCall *call_req;
-
-	struct list_head introspectables;
-};
-
 struct introspection_target {
 	char *service;
 	char *path;
@@ -73,11 +59,13 @@ static void wsd_list_ctx_free(void *f)
 	free(ctx);
 }
 
-static void wsd_list_ctx_cancel_and_destroy(struct ws_request_base *base)
+void wsd_list_ctx_cancel_and_destroy(struct ws_request_base *base)
 {
 	struct wsd_list_ctx *ctx = container_of(base, struct wsd_list_ctx, _base);
-	dbus_pending_call_cancel(ctx->call_req);
-	dbus_pending_call_unref(ctx->call_req);
+	if (ctx->call_req) {
+		dbus_pending_call_cancel(ctx->call_req);
+		dbus_pending_call_unref(ctx->call_req);
+	}
 
 	while (!list_empty(&ctx->introspectables)) {
 		struct introspection_target *cur = list_first_entry(&ctx->introspectables, struct introspection_target, introspectables);
@@ -315,7 +303,6 @@ static void wsd_list_cb(DBusPendingCall *call, void *data)
 	dbus_pending_call_unref(ctx->call_req);
 	ctx->call_req = NULL;
 
-	blob_buf_init(&ctx->retbuf, 0);
 	DBusMessage *reply = dbus_pending_call_steal_reply(call);
 	assert(reply);
 
@@ -338,6 +325,13 @@ static void wsd_list_cb(DBusPendingCall *call, void *data)
 	while (dbus_message_iter_get_arg_type(&arr_iter) != DBUS_TYPE_INVALID) {
 		struct introspection_target *new = malloc(sizeof *new);
 		dbus_message_iter_get_basic(&arr_iter, &new->service);
+
+		if (new->service[0] == ':') {
+			dbus_message_iter_next(&arr_iter);
+			free(new);
+			continue;
+		}
+
 		new->service = strdup(new->service);
 		new->path = strdup(WSD_DBUS_OBJECTS_PATH);
 		list_add_tail(&new->introspectables, &ctx->introspectables);
@@ -353,7 +347,7 @@ static void wsd_list_cb(DBusPendingCall *call, void *data)
 	return;
 }
 
-int ubusrpc_handle_dlist(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct blob_attr *id)
+int handle_list_dbus(struct ws_request_base *req, struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct blob_attr *id)
 {
 	struct ubusrpc_blob_list *ubusrpc = container_of(ubusrpc_, struct ubusrpc_blob_list, _base);
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
@@ -368,22 +362,13 @@ int ubusrpc_handle_dlist(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct 
 		goto out2;
 	}
 
-	struct wsd_list_ctx *ctx = calloc(1, sizeof *ctx);
-	if (!ctx) {
-		goto out3;
-	}
-	ctx->wsi = wsi;
-	ctx->id = id ? blob_memdup(id) : NULL;
-	ctx->cancel_and_destroy = wsd_list_ctx_cancel_and_destroy;
+	struct wsd_list_ctx *ctx = container_of(req, struct wsd_list_ctx, _base);
 	ctx->call_req = call;
-	ubusrpc_blob_destroy_default(&ubusrpc->_base);
-	if (id && !ctx->id) {
-		goto out4;
-	}
 	ctx->reply_slot = -1;
+	ubusrpc_blob_destroy_default(&ubusrpc->_base);
 
 	if (!dbus_pending_call_set_notify(call, wsd_list_cb, ctx, NULL)) {
-		goto out5;
+		goto out3;
 	}
 
 	dbus_message_unref(msg);
@@ -393,10 +378,6 @@ int ubusrpc_handle_dlist(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct 
 
 	return 0;
 
-out5:
-	free(ctx->id);
-out4:
-	free(ctx);
 out3:
 	dbus_pending_call_unref(call);
 out2:

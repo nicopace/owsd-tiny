@@ -26,11 +26,14 @@
 #include "common.h"
 #include "wsubus.impl.h"
 #include "rpc.h"
-#include "util_ubus_blob.h"
 
-#include <libubox/blobmsg_json.h>
-#include <libubox/blobmsg.h>
-#include <libubus.h>
+#if WSD_HAVE_DBUS
+#include "rpc_list_dbus.h"
+#endif
+
+#if WSD_HAVE_UBUS
+#include "rpc_list_ubus.h"
+#endif
 
 #include <libwebsockets.h>
 
@@ -87,76 +90,29 @@ struct ubusrpc_blob* ubusrpc_blob_list_parse(struct blob_attr *blob)
 	return &ubusrpc->_base;
 }
 
-struct list_cb_data {
-	int error;
-	struct blob_buf buf;
-};
-
-static void ubus_lookup_cb(struct ubus_context *ctx, struct ubus_object_data *obj, void *user)
+int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
 {
-	(void)ctx;
+#if WSD_HAVE_DBUS
+	struct ws_request_base *req = calloc(1, sizeof(struct wsd_list_ctx));
+#else
+	struct ws_request_base *req = calloc(1, sizeof(struct ws_request_base));
+#endif
 
-	lwsl_info("looked up %s\n", obj->path);
-	struct list_cb_data *data = user;
+	req->id = blob_memdup(id);
+	req->wsi = wsi;
+	blob_buf_init(&req->retbuf, 0);
 
-	void *objs_tkt = blobmsg_open_table(&data->buf, obj->path);
+#if WSD_HAVE_DBUS
+	req->cancel_and_destroy = wsd_list_ctx_cancel_and_destroy;
+	handle_list_ubus(req, wsi, ubusrpc, id, false);
+	handle_list_dbus(req, wsi, ubusrpc, id);
+#else
+	handle_list_ubus(req, wsi, ubusrpc, id, true);
+	ubusrpc_blob_destroy_default(ubusrpc);
+	blob_buf_free(&req->retbuf);
+	free(req->id);
+	free(req);
+#endif
 
-	if (!obj->signature) {
-		goto out;
-	}
-
-	unsigned int r_methods;
-	struct blob_attr *cur_method;
-
-	blob_for_each_attr(cur_method, obj->signature, r_methods) {
-		void *methods_tkt = blobmsg_open_table(&data->buf, blobmsg_name(cur_method));
-
-		struct blob_attr *cur_arg;
-		unsigned r_args = (unsigned)blobmsg_len(cur_method);
-		__blob_for_each_attr(cur_arg, blobmsg_data(cur_method), r_args) {
-			if (blobmsg_type(cur_arg) != BLOBMSG_TYPE_INT32)
-				continue;
-			const char *typestr = blobmsg_type_to_str(blobmsg_get_u32(cur_arg));
-			typestr = typestr ? typestr : "unknown";
-			blobmsg_add_string(&data->buf, blobmsg_name(cur_arg), typestr);
-		}
-
-		blobmsg_close_table(&data->buf, methods_tkt);
-	}
-out:
-	blobmsg_close_table(&data->buf, objs_tkt);
-}
-
-int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct blob_attr *id)
-{
-	struct ubusrpc_blob_list *ubusrpc = container_of(ubusrpc_, struct ubusrpc_blob_list, _base);
-	char *response_str;
-	int ret = 0;
-
-	struct list_cb_data list_data = {1, {}};
-	blob_buf_init(&list_data.buf, 0);
-
-	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
-
-	lwsl_info("about to lookup %s\n", ubusrpc->pattern);
-	ret = ubus_lookup(prog->ubus_ctx, ubusrpc->pattern, ubus_lookup_cb, &list_data);
-	lwsl_info("after loookup rc %d, error %d\n", ret, list_data.error);
-
-	if (ret) {
-		response_str = jsonrpc__resp_ubus(id, ret ? ret : -1, NULL);
-	} else {
-		// using blobmsg_data here to pass only array part of blobmsg
-		response_str = jsonrpc__resp_ubus(id, 0, list_data.buf.head);
-	}
-
-	blob_buf_free(&list_data.buf);
-
-	wsu_queue_write_str(wsi, response_str);
-
-	// free memory
-	free(response_str);
-	free(ubusrpc->src_blob);
-	free(ubusrpc);
 	return 0;
 }
-

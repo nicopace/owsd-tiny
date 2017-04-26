@@ -19,8 +19,26 @@
  */
 #pragma once
 
+#include "rpc.h"
+
 struct ubusrpc_blob;
 struct blob_attr;
 struct lws;
 
-int ubusrpc_handle_dlist(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);
+struct wsd_list_ctx {
+	union {
+		struct ws_request_base;
+		struct ws_request_base _base;
+	};
+
+	struct DBusMessage *list_reply;
+	int reply_slot;
+
+	struct DBusPendingCall *call_req;
+
+	struct list_head introspectables;
+};
+
+void wsd_list_ctx_cancel_and_destroy(struct ws_request_base *base);
+
+int handle_list_dbus(struct ws_request_base *req, struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);
