@@ -2,7 +2,7 @@
 #include "dubus_conversions.h"
 
 /** private function that does all the converting logic for basic types */
-static bool _duconv_dbus_to_ubus_basic(
+static enum blobmsg_type _duconv_dbus_to_ubus_basic(
 		struct blob_buf *b,
 		int dbus_type,
 		int dbus_elem_type,
@@ -60,7 +60,7 @@ static bool _duconv_dbus_to_ubus_basic(
 }
 
 /** private function that does all the converting logic or forwards to basic type function */
-static bool _duconv_dbus_to_ubus(
+static enum blobmsg_type _duconv_dbus_to_ubus(
 		struct blob_buf *b,
 		int dbus_type,
 		int dbus_elem_type,
@@ -93,12 +93,12 @@ static bool _duconv_dbus_to_ubus(
 }
 
 
-int duconv_type_dbus_to_ubus(int dbus_type, int dbus_elem_type)
+enum blobmsg_type duconv_type_dbus_to_ubus(int dbus_type, int dbus_elem_type)
 {
 	return _duconv_dbus_to_ubus(NULL, dbus_type, dbus_elem_type, NULL, NULL);
 }
 
-int duconv_type_dbus_sigiter_to_ubus(DBusSignatureIter *dbus_sig_iter)
+enum blobmsg_type duconv_type_dbus_sigiter_to_ubus(DBusSignatureIter *dbus_sig_iter)
 {
 	int dbus_type = dbus_signature_iter_get_current_type(dbus_sig_iter);
 	return duconv_type_dbus_to_ubus(dbus_type, dbus_type == DBUS_TYPE_ARRAY ? dbus_signature_iter_get_element_type(dbus_sig_iter) : DBUS_TYPE_INVALID);

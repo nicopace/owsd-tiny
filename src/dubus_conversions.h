@@ -2,10 +2,10 @@
 #include <libubox/blobmsg.h>
 
 /** convert dbus basic type signature to corresponding ubus blobmsg type */
-int duconv_type_dbus_to_ubus(int dbus_type, int dbus_elem_type);
+enum blobmsg_type duconv_type_dbus_to_ubus(int dbus_type, int dbus_elem_type);
 
 /** convert dbus type signature to corresponding ubus blobmsg type */
-int duconv_type_dbus_sigiter_to_ubus(DBusSignatureIter *dbus_sig_iter);
+enum blobmsg_type duconv_type_dbus_sigiter_to_ubus(DBusSignatureIter *dbus_sig_iter);
 
 struct duconv_convert {
 	struct blob_buf b;
