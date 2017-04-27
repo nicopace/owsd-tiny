@@ -234,7 +234,10 @@ static void wsd_introspect_cb(DBusPendingCall *call, void *data)
 						q = blobmsg_open_table(&ctx->retbuf, m_name);
 					}
 					if (q && !arg_is_out) {
-						blobmsg_add_string(&ctx->retbuf, arg_name, arg_type);
+						int ubus_type = duconv_type_dbus_to_ubus(arg_type[0], arg_type[1]);
+						const char *typestr = blobmsg_type_to_str(ubus_type);
+						typestr = typestr ? typestr : "unknown";
+						blobmsg_add_string(&ctx->retbuf, arg_name, typestr);
 					}
 
 					//lwsl_warn("### %s   %-20s %s type=%s name=%s\n", is_signal ? "signal" : "method", m_name, arg_is_out ? "ret" : "arg", arg_type, arg_name ? arg_name : "?");
