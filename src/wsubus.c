@@ -353,7 +353,7 @@ static int wsubus_tx_text(struct lws *wsi)
 			free(w);
 		}
 		if (lws_partial_buffered(wsi)) {
-			lwsl_notice("client IO: partial buffered, wrote %zu of %zu\n", w->written, w->len);
+			lwsl_notice("client IO: partial buffered");
 			lws_callback_on_writable(wsi);
 			break;
 		}
