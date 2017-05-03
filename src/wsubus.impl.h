@@ -64,7 +64,6 @@ struct wsu_peer {
 
 			struct list_head rpc_call_q;
 			struct list_head access_check_q;
-			struct list_head listen_list;
 		} client;
 
 		struct wsu_remote_bus {

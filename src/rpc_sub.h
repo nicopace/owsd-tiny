@@ -38,9 +38,6 @@ struct ubusrpc_blob_sub {
 struct ubusrpc_blob;
 struct lws;
 
-int wsubus_unsubscribe_by_pattern(struct lws *wsi, const char *pattern);
-int wsubus_unsubscribe_all(struct lws *wsi);
-
 struct ubusrpc_blob* ubusrpc_blob_sub_parse(struct blob_attr *blob);
 struct ubusrpc_blob* ubusrpc_blob_sub_list_parse(struct blob_attr *blob);
 

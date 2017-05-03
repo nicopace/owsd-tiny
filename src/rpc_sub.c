@@ -36,58 +36,33 @@
 
 #include <assert.h>
 
-struct wsubus_sub_info {
-	struct list_head list;
+static LIST_HEAD(listen_list);
 
-	struct blob_attr *src_blob;
-	const char *pattern;
-	const char *sid;
+struct ws_sub_info_ubus {
+	union {
+		struct ws_request_base;
+		struct ws_request_base _base;
+	};
 
+	struct ubusrpc_blob_sub *sub;
 	struct ubus_event_handler ubus_handler;
-
-	struct lws *wsi;
+	struct list_head list;
 };
 
 static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *ev, const char *type, struct blob_attr *msg);
 
-static void wsubus_unsub_elem(struct wsubus_sub_info *elem)
+static void wsubus_unsub_elem(struct ws_request_base *elem_)
 {
+	struct ws_sub_info_ubus *elem = container_of(elem_, struct ws_sub_info_ubus, _base);
 	struct prog_context *prog = lws_context_user(lws_get_context(elem->wsi));
 	ubus_unregister_event_handler(prog->ubus_ctx, &elem->ubus_handler);
-	free(elem->src_blob);
 	list_del(&elem->list);
+	if (elem->sub->destroy) {
+		elem->sub->destroy(&elem->sub->_base);
+	} else {
+		ubusrpc_blob_destroy_default(&elem->sub->_base);
+	}
 	free(elem);
-}
-
-int wsubus_unsubscribe_by_pattern(struct lws *wsi, const char *pattern)
-{
-	struct wsubus_sub_info *elem, *tmp;
-	int ret = 1;
-	struct wsu_client_session *client = wsi_to_client(wsi);
-
-	list_for_each_entry_safe(elem, tmp, &client->listen_list, list) {
-		// check pattern
-		if (elem->wsi == wsi && !strcmp(pattern, elem->pattern)) {
-			wsubus_unsub_elem(elem);
-			elem = NULL;
-			ret = 0;
-		}
-	}
-	return ret;
-}
-
-int wsubus_unsubscribe_all(struct lws *wsi)
-{
-	struct wsubus_sub_info *elem, *tmp;
-	int ret = 1;
-	struct wsu_client_session *client = wsi_to_client(wsi);
-
-	list_for_each_entry_safe(elem, tmp, &client->listen_list, list) {
-		wsubus_unsub_elem(elem);
-		elem = NULL;
-		ret = 0;
-	}
-	return ret;
 }
 
 static int ubusrpc_blob_sub_parse_(struct ubusrpc_blob_sub *ubusrpc, struct blob_attr *blob)
@@ -181,7 +156,7 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct bl
 	int ret;
 	struct wsu_client_session *client = wsi_to_client(wsi);
 
-	struct wsubus_sub_info *subinfo = malloc(sizeof *subinfo);
+	struct ws_sub_info_ubus *subinfo = malloc(sizeof *subinfo);
 	if (!subinfo) {
 		lwsl_err("alloc subinfo error\n");
 		ret = UBUS_STATUS_UNKNOWN_ERROR;
@@ -201,15 +176,14 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct bl
 
 	subinfo->ubus_handler.cb = wsubus_sub_cb;
 
-	subinfo->src_blob = ubusrpc->src_blob;
-	subinfo->pattern = ubusrpc->pattern;
-	subinfo->sid = ubusrpc->sid;
+	subinfo->id = NULL;
+	subinfo->sub = ubusrpc;
 	// subinfo->ubus_handler inited above in ubus_register_...
 	subinfo->wsi = wsi;
 
-	ubusrpc->src_blob = NULL;
-
-	list_add_tail(&subinfo->list, &client->listen_list);
+	list_add_tail(&subinfo->list, &listen_list);
+	list_add_tail(&subinfo->cq, &client->rpc_call_q);
+	subinfo->cancel_and_destroy = wsubus_unsub_elem;
 
 out:
 	if (ret) {
@@ -219,17 +193,16 @@ out:
 	char *response = jsonrpc__resp_ubus(id, ret, NULL);
 	wsu_queue_write_str(wsi, response);
 	free(response);
-	free(ubusrpc);
 
 	return 0;
 }
 
-static void blobmsg_add_sub_info(struct blob_buf *buf, const char *name, const struct wsubus_sub_info *sub)
+static void blobmsg_add_sub_info(struct blob_buf *buf, const char *name, const struct ws_sub_info_ubus *info)
 {
 	void *tkt = blobmsg_open_table(buf, name);
 
-	blobmsg_add_string(buf, "pattern", sub->pattern);
-	blobmsg_add_string(buf, "ubus_rpc_session", sub->sid);
+	blobmsg_add_string(buf, "pattern", info->sub->pattern);
+	blobmsg_add_string(buf, "ubus_rpc_session", info->sub->sid);
 
 	blobmsg_close_table(buf, tkt);
 }
@@ -237,7 +210,6 @@ static void blobmsg_add_sub_info(struct blob_buf *buf, const char *name, const s
 int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct blob_attr *id)
 {
 	struct ubusrpc_blob_sub *ubusrpc = container_of(ubusrpc_, struct ubusrpc_blob_sub, _base);
-	struct wsu_client_session *client = wsi_to_client(wsi);
 	char *response_str;
 	int ret = 0;
 
@@ -245,9 +217,10 @@ int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, stru
 	blob_buf_init(&sub_list_blob, 0);
 
 	void* array_ticket = blobmsg_open_array(&sub_list_blob, "");
-	struct wsubus_sub_info *elem, *tmp;
-	list_for_each_entry_safe(elem, tmp, &client->listen_list, list) {
-		blobmsg_add_sub_info(&sub_list_blob, "", elem);
+	struct ws_sub_info_ubus *elem, *tmp;
+	list_for_each_entry_safe(elem, tmp, &listen_list, list) {
+		if (elem->wsi == wsi)
+			blobmsg_add_sub_info(&sub_list_blob, "", elem);
 	}
 	blobmsg_close_array(&sub_list_blob, array_ticket);
 
@@ -275,7 +248,19 @@ int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct 
 	int ret = 0;
 
 	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->pattern, ret);
-	ret = wsubus_unsubscribe_by_pattern(wsi, ubusrpc->pattern);
+
+	{
+		ret = 1;
+		struct ws_sub_info_ubus *elem, *tmp;
+		list_for_each_entry_safe(elem, tmp, &listen_list, list) {
+			// check pattern
+			if (elem->wsi == wsi && !strcmp(ubusrpc->pattern, elem->sub->pattern)) {
+				list_del(&elem->cq);
+				wsubus_unsub_elem(&elem->_base);
+				ret = 0;
+			}
+		}
+	}
 
 	if (ret != 0)
 		ret = UBUS_STATUS_NOT_FOUND;
@@ -292,7 +277,7 @@ int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct 
 struct wsubus_ev_notif {
 	char *type;
 	struct blob_attr *msg;
-	struct wsubus_sub_info *sub;
+	struct ws_sub_info_ubus *info;
 	struct wsubus_client_access_check_ctx cr;
 };
 
@@ -328,13 +313,13 @@ static void wsubus_ev_check_cb(struct wsubus_access_check_req *req, void *ctx, b
 	void *tkt = blobmsg_open_table(&resp_buf, "params");
 	blobmsg_add_string(&resp_buf, "type", t->type);
 	blobmsg_add_field(&resp_buf, BLOBMSG_TYPE_TABLE, "data", blobmsg_data(t->msg), blobmsg_len(t->msg));
-	blobmsg_add_sub_info(&resp_buf, "subscription", t->sub);
+	blobmsg_add_sub_info(&resp_buf, "subscription", t->info);
 	blobmsg_close_table(&resp_buf, tkt);
 
 	char *response = blobmsg_format_json(resp_buf.head, true);
 	blob_buf_free(&resp_buf);
 
-	wsu_queue_write_str(t->sub->wsi, response);
+	wsu_queue_write_str(t->info->wsi, response);
 	free(response);
 
 out:
@@ -351,19 +336,19 @@ static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *e
 			mtype == BLOBMSG_TYPE_TABLE ? "{}" :
 			mtype == BLOBMSG_TYPE_ARRAY ? "[]" : "<>");
 
-	struct wsubus_sub_info *sub = container_of(ev, struct wsubus_sub_info, ubus_handler);
-	struct wsu_client_session *client = wsi_to_client(sub->wsi);
+	struct ws_sub_info_ubus *info = container_of(ev, struct ws_sub_info_ubus, ubus_handler);
+	struct wsu_client_session *client = wsi_to_client(info->wsi);
 
 	struct wsubus_ev_notif *t = malloc(sizeof *t);
 	t->type = strdup(type);
 	t->msg = blob_memdup(msg);
-	t->sub = sub;
+	t->info = info;
 	t->cr.destructor = wsubus_ev_check__destroy;
 	list_add_tail(&t->cr.acq, &client->access_check_q);
 
 	int err = 0;
 	if((t->cr.req = wsubus_access_check_new()))
-		err = wsubus_access_check__event(t->cr.req, sub->wsi, sub->sid, t->type, NULL /* XXX */, t, wsubus_ev_check_cb);
+		err = wsubus_access_check__event(t->cr.req, info->wsi, info->sub->sid, t->type, NULL /* XXX */, t, wsubus_ev_check_cb);
 
 	if (!t->cr.req || err) {
 		list_del(&t->cr.acq);
