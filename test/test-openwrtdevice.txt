@@ -148,7 +148,7 @@
 
 # verify it in list
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"subscribe-list", "params": [ "SESSION_ID" ]}
-{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[{"pattern":"bla","id":1}]]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[{"pattern":"bla","ubus_rpc_session":"SESSION_ID"}]]}
 
 # unsubscrube by name
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"unsubscribe", "params": [ "SESSION_ID", "bla"]}
@@ -160,10 +160,10 @@
 
 # verify it in list
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"subscribe-list", "params": [ "SESSION_ID" ]}
-{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[{"pattern":"foo.*","id":2}]]}
+{"jsonrpc":"2.0","id":UBUS_ID,"result":[0,[{"pattern":"foo.*","ubus_rpc_session":"SESSION_ID"}]]}
 
-#unsubscribe by id
-{"jsonrpc":"2.0","id":UBUS_ID,"method":"unsubscribe-id", "params": [ "SESSION_ID", 2]}
+#unsubscribe
+{"jsonrpc":"2.0","id":UBUS_ID,"method":"unsubscribe", "params": [ "SESSION_ID", "foo.*"]}
 {"jsonrpc":"2.0","id":UBUS_ID,"result":[0]}
 
 # big output
@@ -185,7 +185,7 @@
 
 #start expecting foo object
 +
-{"jsonrpc":"2.0","method":"event","params":{"type":"foo","data":{"one":"two"},"subscription":{"pattern":"f*","id"
+{"jsonrpc":"2.0","method":"event","params":{"type":"foo","data":{"one":"two"},"subscription":{"pattern":"f*","ubus_rpc_session":"SESSION_ID"}}}
 
 # sh /tmp/scripts.sh
 {"jsonrpc":"2.0","id":UBUS_ID,"method":"call", "params": [ "SESSION_ID", "file", "exec", {"command":"sh","params":["/tmp/scripts.sh","lo"]} ] }
