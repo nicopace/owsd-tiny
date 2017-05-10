@@ -21,6 +21,10 @@
 #include "common.h"
 #include "wsubus.impl.h"
 
+#if WSD_HAVE_UBUS
+#include <libubus.h>
+#endif
+
 #define SID_EXTENDED_PREFIX "X-"
 
 static inline const char* wsu_sid_extended(const char *sid)
@@ -101,11 +105,15 @@ struct wsubus_access_check_req {
 	void *ctx;
 
 	enum {
+#if WSD_HAVE_UBUS
 		REQ_TAG_UBUS,
+#endif
 		REQ_TAG_DEFER,
 	} tag;
 	union {
+#if WSD_HAVE_UBUS
 		struct ubus_request ubus_req;
+#endif
 		struct uloop_timeout defer_timer;
 	};
 };
@@ -120,6 +128,7 @@ void wsubus_access_check_free(struct wsubus_access_check_req *req)
 	free(req);
 }
 
+#if WSD_HAVE_UBUS
 static void wsubus_access_check__on_ret(struct ubus_request *ureq, int type, struct blob_attr *msg)
 {
 	(void)type;
@@ -209,6 +218,7 @@ fail_mem_blob:
 fail:
 	return -1;
 }
+#endif // WSD_HAVE_UBUS
 
 static void deferral_cb(struct uloop_timeout *t) {
 	struct wsubus_access_check_req *req = container_of(t, struct wsubus_access_check_req, defer_timer);
@@ -268,7 +278,11 @@ int wsubus_access_check_(
 	}
 
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
+#if WSD_HAVE_UBUS
 	return wsubus_access_check_via_session(req, prog->ubus_ctx, sid, scope, object, method, args, ctx, cb);
+#else
+	return EXT_CHECK_ALLOW;
+#endif
 }
 
 void wsubus_access_check__cancel(struct ubus_context *ubus_ctx, struct wsubus_access_check_req *req)
@@ -277,8 +291,10 @@ void wsubus_access_check__cancel(struct ubus_context *ubus_ctx, struct wsubus_ac
 	case REQ_TAG_DEFER:
 		uloop_timeout_cancel(&req->defer_timer);
 		break;
+#if WSD_HAVE_UBUS
 	case REQ_TAG_UBUS:
 		ubus_abort_request(ubus_ctx, &req->ubus_req);
 		break;
+#endif
 	}
 }

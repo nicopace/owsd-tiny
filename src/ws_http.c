@@ -85,12 +85,14 @@ static void ufd_service_cb(struct uloop_fd *ufd, unsigned int revents)
 	}
 }
 
+#if WSD_HAVE_UBUSPROXY
 static void utimer_reconnect_cb(struct uloop_timeout *timer)
 {
 	struct reconnect_info *c = container_of(timer, struct reconnect_info, timer);
 	lwsl_warn("connecting as client too to %s %d\n", c->cl_info.address, c->cl_info.port);
 	lws_client_connect_via_info(&c->cl_info);
 }
+#endif
 
 static int ws_http_cb(struct lws *wsi,
 		enum lws_callback_reasons reason,
@@ -173,6 +175,7 @@ static int ws_http_cb(struct lws *wsi,
 		return 0;
 	}
 
+#if WSD_HAVE_UBUSPROXY
 	case LWS_CALLBACK_PROTOCOL_INIT: {
 		struct clvh_context *client_infos = lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
 		struct reconnect_info *c;
@@ -195,6 +198,7 @@ static int ws_http_cb(struct lws *wsi,
 		lwsl_err("CCE ERROR, reason %s\n", in ? (char *)in : "");
 		break;
 	}
+#endif
 
 		// deny websocket clients with default (no) subprotocol
 	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:

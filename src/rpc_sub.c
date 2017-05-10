@@ -189,7 +189,7 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct bl
 	struct ws_sub_info_ubus *subinfo = malloc(sizeof *subinfo);
 	if (!subinfo) {
 		lwsl_err("alloc subinfo error\n");
-		ret = UBUS_STATUS_UNKNOWN_ERROR;
+		ret = 9; // FIXME this is UBUS_STATUS_NO_DATA, should have our enum
 		goto out;
 	}
 
@@ -353,7 +353,7 @@ int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct 
 	}
 
 	if (ret != 0)
-		ret = UBUS_STATUS_NOT_FOUND;
+		ret = 5; // FIXME this is UBUS_STATUS_NOT_FOUND, should have our enum
 
 	response = jsonrpc__resp_ubus(id, ret, NULL);
 	wsu_queue_write_str(wsi, response);

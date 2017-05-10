@@ -1,6 +1,7 @@
 #cmakedefine01 WSD_HAVE_SSL
 
-#define WSD_HAVE_UBUS 1
+#cmakedefine01 WSD_HAVE_UBUS
+#cmakedefine01 WSD_HAVE_UBUSPROXY
 
 #cmakedefine01 WSD_HAVE_DBUS
 #cmakedefine WSD_DBUS_OBJECTS_PATH "@WSD_DBUS_OBJECTS_PATH@"

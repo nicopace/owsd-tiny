@@ -5,12 +5,18 @@ add_definitions(-Os -Wall -std=gnu11 -fms-extensions -fplan9-extensions -D_XOPEN
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules")
 
 set(WSD_NEED_SSL OFF CACHE BOOL "Fail if SSL is not available")
-set(WSD_HAVE_UBUS ON CACHE BOOL "ubus RPC support" MARK_AS_ADVANCED)
+
+set(WSD_HAVE_UBUS ON CACHE BOOL "ubus RPC support")
+if (WSD_HAVE_UBUS)
+	set(WSD_HAVE_UBUSPROXY ON CACHE BOOL "support for proxying remote ubus objects on local ubus")
+endif()
+
 set(WSD_HAVE_DBUS ON CACHE BOOL "DBus RPC support")
 if (WSD_HAVE_DBUS)
 	set(WSD_DBUS_OBJECTS_PATH "/se/inteno/iopsys" CACHE STRING
 		"Path under which to (non-recursively) look for DBus objects")
 endif()
+
 set(WSD_USER_BLACKLIST_OLD ON CACHE BOOL "Support old way of limiting user to specific listen interface")
 
 set(SOURCES
@@ -23,7 +29,6 @@ set(SOURCES
 	src/rpc_list.c
 	src/rpc_sub.c
 	src/access_check.c
-	src/local_stub.c
 	src/util_jsonrpc.c
 	)
 
@@ -37,7 +42,11 @@ if (WSD_HAVE_UBUS)
 	find_path(UBUS_INCLUDE_DIRS libubus.h)
 	list(APPEND WSD_LINK ${UBUS_LIBRARIES})
 	list(APPEND WSD_INCLUDE ${UBUS_INCLUDE_DIRS})
-	# list(APPEND SOURCES ...)
+	if (WSD_HAVE_UBUSPROXY)
+		list(APPEND SOURCES
+			src/local_stub.c
+			)
+	endif()
 endif()
 
 if (WSD_HAVE_DBUS)

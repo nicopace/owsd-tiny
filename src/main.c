@@ -61,12 +61,14 @@ static void usage(char *name)
 			"  -w <www_path>    HTTP resources path [" WSD_DEF_WWW_PATH "]\n"
 			"  -t <www_maxage>  enable HTTP caching with specified max_age in seconds\n"
 			"  -r <from>:<to>   HTTP path redirect pair\n"
+#if WSD_HAVE_UBUSPROXY
 			"  -P <url> ...     URL of remote WS ubus to proxy as client\n"
 #ifdef LWS_OPENSSL_SUPPORT
 			"  -C <cert_path>   SSL client cert path\n"
 			"  -K <cert_path>   SSL client key path\n"
 			"  -A <ca_file>     SSL CA file path trusted by client\n"
 #endif // LWS_OPENSSL_SUPPORT
+#endif
 			"\n"
 			"  -p <port> ...    port number (repeat for multiple):\n"
 			" per-port options (apply to last port (-p))\n"
@@ -104,7 +106,6 @@ int main(int argc, char *argv[])
 	char *redir_from = NULL;
 	char *redir_to = NULL;
 	bool any_ssl = false;
-	bool any_ssl_client = false;
 
 	struct vhinfo_list {
 		struct lws_context_creation_info vh_info;
@@ -112,11 +113,14 @@ int main(int argc, char *argv[])
 		struct vh_context vh_ctx;
 	} *currvh = NULL;
 
+#if WSD_HAVE_UBUSPROXY
+	bool any_ssl_client = false;
 	struct clvh_context connect_infos;
 	INIT_LIST_HEAD(&connect_infos.clients);
 
 	struct lws_context_creation_info clvh_info = {};
 	// FIXME to support different certs per different client, this becomes per-client
+#endif
 
 	int c;
 	while ((c = getopt(argc, argv,
@@ -164,6 +168,7 @@ int main(int argc, char *argv[])
 			break;
 
 			// client
+#if WSD_HAVE_UBUSPROXY
 		case 'P': {
 			struct reconnect_info *newcl = malloc(sizeof *newcl);
 			newcl->wsi = NULL;
@@ -206,6 +211,7 @@ int main(int argc, char *argv[])
 			clvh_info.ssl_ca_filepath = optarg;
 			break;
 #endif
+#endif // WSD_HAVE_UBUSPROXY
 
 			// vhost
 		case 'p': {
@@ -416,7 +422,7 @@ ssl:
 		}
 	}
 
-
+#if WSD_HAVE_UBUSPROXY
 	if (!list_empty(&connect_infos.clients)) {
 		clvh_info.port = CONTEXT_PORT_NO_LISTEN;
 		clvh_info.protocols = ws_protocols;
@@ -438,6 +444,7 @@ ssl:
 			}
 		}
 	}
+#endif
 
 	global.utimer.cb = utimer_service;
 	uloop_timeout_add(&global.utimer);

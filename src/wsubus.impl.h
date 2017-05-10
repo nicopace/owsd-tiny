@@ -30,8 +30,11 @@
 #include <json-c/json.h>
 #include <libubox/list.h>
 #include <libubox/blobmsg.h>
-#include <libubus.h>
 #include <libwebsockets.h>
+
+#if WSD_HAVE_UBUSPROXY
+#include <libubus.h>
+#endif
 
 #define WSUBUS_MAX_MESSAGE_LEN (1 << 27) // 128M
 
@@ -43,7 +46,9 @@
 struct wsu_peer {
 	enum wsu_role {
 		WSUBUS_ROLE_CLIENT = 1,
+#if WSD_HAVE_UBUSPROXY
 		WSUBUS_ROLE_REMOTE,
+#endif
 	} role;
 
 	// I/O
@@ -65,7 +70,7 @@ struct wsu_peer {
 			struct list_head rpc_call_q;
 			struct list_head access_check_q;
 		} client;
-
+#if WSD_HAVE_UBUSPROXY
 		struct wsu_remote_bus {
 			int call_id;
 
@@ -84,6 +89,7 @@ struct wsu_peer {
 			struct lws *wsi;
 			struct avl_tree stubs;
 		} remote;
+#endif
 	} u;
 };
 
@@ -101,6 +107,7 @@ static inline struct wsu_client_session *wsi_to_client(struct lws *wsi)
 	assert(p->role == WSUBUS_ROLE_CLIENT);
 	return &p->u.client;
 }
+#if WSD_HAVE_UBUSPROXY
 static inline struct wsu_remote_bus *wsi_to_remote(struct lws *wsi)
 {
 	struct wsu_peer *p = wsi_to_peer(wsi);
@@ -111,12 +118,14 @@ static inline struct wsu_peer *wsu_remote_to_peer(struct wsu_remote_bus *remote)
 {
 	return container_of(remote, struct wsu_peer, u.remote);
 }
+#endif
 static inline struct wsu_peer *wsu_client_to_peer(struct wsu_client_session *client)
 {
 	return container_of(client, struct wsu_peer, u.client);
 }
 //}}}
 
+#if WSD_HAVE_UBUSPROXY
 //{{{ accessors for remote.calls collection
 static inline struct wsu_proxied_call *wsu_proxied_call_new(struct wsu_remote_bus *remote)
 {
@@ -147,6 +156,7 @@ static inline void wsu_proxied_call_free(struct wsu_remote_bus *remote, struct w
 			_mask_##REMOTE &= ~_callbit_##REMOTE)
 
 //}}}
+#endif // WSD_HAVE_UBUSPROXY
 
 struct wsubus_client_access_check_ctx {
 	struct wsubus_access_check_req *req;

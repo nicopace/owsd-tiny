@@ -34,7 +34,10 @@
 #include <json-c/json.h>
 #include <libubox/blobmsg_json.h>
 #include <libubox/avl-cmp.h>
+
+#if WSD_HAVE_UBUS
 #include <libubus.h>
+#endif
 
 #include <libwebsockets.h>
 
@@ -114,7 +117,9 @@ static inline int wsu_peer_init(struct wsu_peer *peer, enum wsu_role role)
 		peer->u.client.id = clientid++;
 		INIT_LIST_HEAD(&peer->u.client.rpc_call_q);
 		INIT_LIST_HEAD(&peer->u.client.access_check_q);
-	} else if (role ==  WSUBUS_ROLE_REMOTE) {
+#if WSD_HAVE_UBUSPROXY
+	} else if (role == WSUBUS_ROLE_REMOTE) {
+#endif
 	} else {
 		return -1;
 	}
@@ -156,7 +161,12 @@ static void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
 			list_for_each_entry_safe(p, n, &peer->u.client.access_check_q, acq) {
 				lwsl_info("free check in progress %p\n", p);
 				list_del(&p->acq);
+#if WSD_HAVE_UBUS
 				wsubus_access_check__cancel(prog->ubus_ctx, p->req);
+#else
+				(void)prog;
+				wsubus_access_check__cancel(NULL, p->req);
+#endif
 				wsubus_access_check_free(p->req);
 				if (p->destructor)
 					p->destructor(p);
@@ -174,13 +184,15 @@ static void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
 				}
 			}
 		}
-
-	} else if (peer->role == WSUBUS_ROLE_REMOTE) {
+	}
+#if WSD_HAVE_UBUSPROXY
+	else if (peer->role == WSUBUS_ROLE_REMOTE) {
 		struct wsu_local_stub *cur, *next;
 		avl_for_each_element_safe(&peer->u.remote.stubs, cur, avl, next) {
 			wsu_local_stub_destroy(cur);
 		}
 	}
+#endif
 }
 
 static void wsu_on_msg_from_client(struct lws *wsi,
@@ -432,6 +444,7 @@ static int wsubus_cb(struct lws *wsi,
 
 		break;
 
+#if WSD_HAVE_UBUSPROXY
 	case LWS_CALLBACK_CLIENT_ESTABLISHED: {
 		if (0 != wsu_peer_init(peer, WSUBUS_ROLE_REMOTE))
 			return -1;
@@ -679,6 +692,7 @@ out:
 		
 		return 0;
 	}
+#endif // WSD_HAVE_UBUSPROXY
 
 	default:
 		break;

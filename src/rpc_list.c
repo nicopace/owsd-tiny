@@ -104,9 +104,11 @@ int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct bl
 
 #if WSD_HAVE_DBUS
 	req->cancel_and_destroy = wsd_list_ctx_cancel_and_destroy;
+#if WSD_HAVE_UBUS
 	handle_list_ubus(req, wsi, ubusrpc, id, false);
+#endif
 	handle_list_dbus(req, wsi, ubusrpc, id);
-#else
+#elif WSD_HAVE_UBUS && !WSD_HAVE_DBUS
 	handle_list_ubus(req, wsi, ubusrpc, id, true);
 	ubusrpc_blob_destroy_default(ubusrpc);
 	blob_buf_free(&req->retbuf);

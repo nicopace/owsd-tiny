@@ -56,7 +56,7 @@ struct str_list {
 	const char *str;
 };
 
-
+#if WSD_HAVE_UBUSPROXY
 // the vhost for clients has list of client infos so they can be reconnected
 struct clvh_context {
 	struct list_head clients;
@@ -69,3 +69,4 @@ struct reconnect_info {
 	struct uloop_timeout timer;
 	struct lws_client_connect_info cl_info;
 };
+#endif
