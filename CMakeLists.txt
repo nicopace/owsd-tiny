@@ -4,17 +4,25 @@ add_definitions(-Os -Wall -std=gnu11 -fms-extensions -fplan9-extensions -D_XOPEN
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules")
 
-set(WSD_NEED_SSL OFF CACHE BOOL "Fail if SSL is not available")
+option(WSD_REQUIRE_SSL "Fail if SSL is not available" OFF)
 
-set(WSD_HAVE_UBUS ON CACHE BOOL "ubus RPC support")
+option(WSD_HAVE_UBUS "ubus RPC support" ON)
 if (WSD_HAVE_UBUS)
 	set(WSD_HAVE_UBUSPROXY ON CACHE BOOL "support for proxying remote ubus objects on local ubus")
+else()
+	unset(WSD_HAVE_UBUSPROXY CACHE)
 endif()
 
-set(WSD_HAVE_DBUS ON CACHE BOOL "DBus RPC support")
+option(WSD_HAVE_DBUS "DBus RPC support" ON)
 if (WSD_HAVE_DBUS)
 	set(WSD_DBUS_OBJECTS_PATH "/se/inteno/iopsys" CACHE STRING
 		"Path under which to (non-recursively) look for DBus objects")
+else()
+	unset(WSD_DBUS_OBJECTS_PATH CACHE)
+endif()
+
+if (NOT WSD_HAVE_UBUS AND NOT WSD_HAVE_DBUS)
+	message(CRITICAL "select at least one of DBus or ubus ...")
 endif()
 
 set(WSD_USER_BLACKLIST_OLD ON CACHE BOOL "Support old way of limiting user to specific listen interface")
@@ -75,7 +83,7 @@ if (LWS_HAS_SSL)
 	list(APPEND WSD_LINK ${OPENSSL_LIBRARIES})
 	list(APPEND WSD_INCLUDE ${OPENSSL_INCLUDE_DIRS})
 else()
-	if (WSD_NEED_SSL)
+	if (WSD_REQUIRE_SSL)
 		message (FATAL_ERROR "Didn't find SSL support in lws!")
 	endif()
 	set(WSD_HAVE_SSL BOOL OFF)
