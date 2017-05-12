@@ -78,16 +78,16 @@ static enum wsu_ext_result wsu_ext_check_tls(struct lws *wsi)
 		return EXT_CHECK_NEXT;
 	}
 
-	struct wsu_peer *peer = wsi_to_peer(wsi);
 	SSL *ssl = lws_get_ssl(wsi);
 	X509 *x = SSL_get_peer_certificate(ssl);
 	int have_cert = !!x;
 	X509_free(x);
 	if (have_cert && SSL_get_verify_result(ssl) == X509_V_OK) {
 #ifdef _DEBUG
+		char cert_subj[80] = "";
 		X509_NAME *xname = X509_get_subject_name(x);
-		X509_NAME_get_text_by_NID(xname, NID_commonName, peer->tls.cert_subj, sizeof peer->tls.cert_subj);
-		lwsl_notice("wsi %p was TLS authenticated with cert CN= %s\n", wsi, peer->tls.cert_subj);
+		X509_NAME_get_text_by_NID(xname, NID_commonName, cert_subj, sizeof cert_subj);
+		lwsl_notice("wsi %p was TLS authenticated with cert CN= %s\n", wsi, cert_subj);
 #endif
 		return EXT_CHECK_ALLOW;
 	} else {

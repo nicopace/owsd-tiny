@@ -58,9 +58,6 @@ struct wsu_peer {
 	} curr_msg; // read
 	struct list_head write_q; // write
 
-	struct tls_auth {
-		char cert_subj[64];
-	} tls;
 	char sid[UBUS_SID_MAX_STRLEN + 1];
 
 	union {
