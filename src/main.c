@@ -152,10 +152,11 @@ int main(int argc, char *argv[])
 			char *error;
 			int secs = strtol(optarg, &error, 10);
 			if (*error) {
-				lwsl_err("Invalid port '%s' specified\n", optarg);
+				lwsl_err("Invalid maxage '%s' specified\n", optarg);
 				goto error;
 			}
 			www_maxage = secs;
+			break;
 		}
 		case 'r':
 			redir_to = strchr(optarg, ':');
