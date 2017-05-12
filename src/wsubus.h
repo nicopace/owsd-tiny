@@ -19,4 +19,10 @@
  */
 #pragma once
 
+#include "owsd-config.h"
+
 extern struct lws_protocols wsubus_proto;
+
+#if WSD_HAVE_UBUSPROXY
+extern struct lws_protocols ws_ubusproxy_proto;
+#endif

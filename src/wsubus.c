@@ -27,17 +27,11 @@
 #include "wsubus.impl.h"
 #include "rpc.h"
 #include "access_check.h"
-#include "local_stub.h"
 #include "util_jsonrpc.h"
-
 
 #include <json-c/json.h>
 #include <libubox/blobmsg_json.h>
 #include <libubox/avl-cmp.h>
-
-#if WSD_HAVE_UBUS
-#include <libubus.h>
-#endif
 
 #include <libwebsockets.h>
 
@@ -45,8 +39,6 @@
 #include <errno.h>
 #include <assert.h>
 #include <fnmatch.h>
-
-#define WSUBUS_PROTO_NAME "ubus-json"
 
 static lws_callback_function wsubus_cb;
 
@@ -109,92 +101,6 @@ static int wsubus_filter(struct lws *wsi)
 	return rc;
 }
 
-static inline int wsu_peer_init(struct wsu_peer *peer, enum wsu_role role)
-{
-	if (role == WSUBUS_ROLE_CLIENT) {
-		static unsigned int clientid = 1;
-
-		peer->u.client.id = clientid++;
-		INIT_LIST_HEAD(&peer->u.client.rpc_call_q);
-		INIT_LIST_HEAD(&peer->u.client.access_check_q);
-#if WSD_HAVE_UBUSPROXY
-	} else if (role == WSUBUS_ROLE_REMOTE) {
-#endif
-	} else {
-		return -1;
-	}
-
-	peer->role = role;
-
-	struct json_tokener *jtok = json_tokener_new();
-
-	if (!jtok)
-		return 1;
-
-	peer->curr_msg.len = 0;
-	peer->curr_msg.jtok = jtok;
-	INIT_LIST_HEAD(&peer->write_q);
-
-	peer->sid[0] = '\0';
-	return 0;
-}
-
-static void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
-{
-	json_tokener_free(peer->curr_msg.jtok);
-	peer->curr_msg.jtok = NULL;
-
-	{
-		struct wsu_writereq *p, *n;
-		list_for_each_entry_safe(p, n, &peer->write_q, wq) {
-			lwsl_info("free write in progress %p\n", p);
-			list_del(&p->wq);
-			free(p);
-		}
-	}
-
-	if (peer->role == WSUBUS_ROLE_CLIENT) {
-		struct prog_context *prog = lws_context_user(lws_get_context(wsi));
-
-		{
-			struct wsubus_client_access_check_ctx *p, *n;
-			list_for_each_entry_safe(p, n, &peer->u.client.access_check_q, acq) {
-				lwsl_info("free check in progress %p\n", p);
-				list_del(&p->acq);
-#if WSD_HAVE_UBUS
-				wsubus_access_check__cancel(prog->ubus_ctx, p->req);
-#else
-				(void)prog;
-				wsubus_access_check__cancel(NULL, p->req);
-#endif
-				wsubus_access_check_free(p->req);
-				if (p->destructor)
-					p->destructor(p);
-			}
-		}
-
-		{
-			struct list_head *p, *n;
-			list_for_each_safe(p, n, &peer->u.client.rpc_call_q) {
-				list_del(p);
-				struct ws_request_base *base = container_of(p, struct ws_request_base, cq);
-				if (base->cancel_and_destroy) {
-					lwsl_debug("free req in progress %p\n", base);
-					base->cancel_and_destroy(base);
-				}
-			}
-		}
-	}
-#if WSD_HAVE_UBUSPROXY
-	else if (peer->role == WSUBUS_ROLE_REMOTE) {
-		struct wsu_local_stub *cur, *next;
-		avl_for_each_element_safe(&peer->u.remote.stubs, cur, avl, next) {
-			wsu_local_stub_destroy(cur);
-		}
-	}
-#endif
-}
-
 static void wsu_on_msg_from_client(struct lws *wsi,
 		struct blob_attr *blob)
 {
@@ -248,6 +154,13 @@ out:
 
 	free(jsonrpc_req);
 	return;
+}
+
+static void wsu_read_reset(struct wsu_peer *peer)
+{
+	peer->curr_msg.len = 0;
+
+	json_tokener_reset(peer->curr_msg.jtok);
 }
 
 static void wsubus_rx_json(struct lws *wsi,
@@ -338,42 +251,6 @@ static void wsubus_rx(struct lws *wsi,
 	}
 }
 
-static int wsubus_tx_text(struct lws *wsi)
-{
-	struct wsu_peer *peer = wsi_to_peer(wsi);
-
-	struct wsu_writereq *w, *other;
-
-	list_for_each_entry_safe(w, other, &peer->write_q, wq) {
-		do {
-			int written = lws_write(wsi, w->buf + LWS_SEND_BUFFER_PRE_PADDING + w->written, w->len - w->written, LWS_WRITE_TEXT);
-
-			if (written < 0) {
-				lwsl_err("peer IO: error %d in writing\n", written);
-				// TODO<lwsclose> check
-				// stop reading and writing
-				shutdown(lws_get_socket_fd(wsi), SHUT_RDWR);
-				return -1;
-			}
-
-			w->written += (size_t)written;
-		} while (w->written < w->len && !lws_partial_buffered(wsi));
-
-		if (w->written == w->len) {
-			lwsl_notice("peer IO: fin write %zu\n", w->len);
-			list_del(&w->wq);
-			free(w);
-		}
-		if (lws_partial_buffered(wsi)) {
-			lwsl_notice("client IO: partial buffered");
-			lws_callback_on_writable(wsi);
-			break;
-		}
-	}
-
-	return 0;
-}
-
 static int wsubus_cb(struct lws *wsi,
 		enum lws_callback_reasons reason,
 		void *user,
@@ -416,264 +293,6 @@ static int wsubus_cb(struct lws *wsi,
 	case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE:
 		lwsl_notice(WSUBUS_PROTO_NAME ": peer closing\n");
 		return 0;
-
-		// proto init-destroy
-	case LWS_CALLBACK_PROTOCOL_INIT:
-		lwsl_info(WSUBUS_PROTO_NAME ": create proto\n");
-		break;
-	case LWS_CALLBACK_PROTOCOL_DESTROY:
-		lwsl_info(WSUBUS_PROTO_NAME ": destroy proto\n");
-		break;
-
-#if WSD_HAVE_UBUSPROXY
-	case LWS_CALLBACK_CLIENT_ESTABLISHED: {
-		if (0 != wsu_peer_init(peer, WSUBUS_ROLE_REMOTE))
-			return -1;
-
-		struct wsu_remote_bus *remote = &peer->u.remote;
-
-		remote->wsi = wsi;
-		memset(&remote->waiting_for, 0, sizeof remote->waiting_for);
-		avl_init(&remote->stubs, avl_strcmp, false, NULL);
-
-#if 0
-		remote->waiting_for.login = 1;
-
-		json_object *adminadmin = json_object_new_object();
-		json_object_object_add(adminadmin, "username", json_object_new_string("admin"));
-		json_object_object_add(adminadmin, "password", json_object_new_string("admin"));
-
-		char *d = jsonrpc__req_login(++remote->call_id, NULL, "tls-certificate");
-		wsu_queue_write_str(wsi, d);
-
-		json_object_put(adminadmin);
-#else
-		wsu_sid_update(peer, "X-tls-certificate");
-
-		char *d = jsonrpc__req_ubuslisten(++remote->call_id, peer->sid, "*");
-		remote->waiting_for.listen = 1;
-		wsu_queue_write_str(wsi, d);
-#endif
-
-		return 0;
-	}
-
-	case LWS_CALLBACK_CLIENT_RECEIVE: {
-		struct wsu_remote_bus *remote = wsi_to_remote(wsi);
-		struct wsu_peer *peer = wsi_to_peer(wsi);
-
-		struct json_tokener *jtok = json_tokener_new();
-		struct json_object *jobj = json_tokener_parse_ex(jtok, in, len);
-
-		struct prog_context *prog = lws_context_user(lws_get_context(remote->wsi));
-
-		lwsl_notice("received, len %d < %.*s > \n", len, len > 200 ? 200 : len, (char *)in);
-
-		if (!jobj)
-			goto out;
-
-		json_object *id_jobj;
-		json_object_object_get_ex(jobj, "id", &id_jobj);
-
-		json_object *tmp;
-		if (json_object_object_get_ex(jobj, "result", &tmp)) {
-			// result came back
-			if (remote->waiting_for.login) {
-				if (
-						json_object_is_type(tmp, json_type_array)
-						&& !json_object_get_int(json_object_array_get_idx(tmp, 0))
-						&& (tmp = json_object_array_get_idx(tmp, 1))
-						&& json_object_object_get_ex(tmp, "ubus_rpc_session", &tmp)
-						&& json_object_is_type(tmp, json_type_string)) {
-					remote->waiting_for.login = 0;
-					wsu_sid_update(peer, json_object_get_string(tmp));
-				} else {
-					// TODO
-					lwsl_err("response to login not valid\n");
-					goto out;
-				}
-
-				char *d = jsonrpc__req_ubuslisten(++remote->call_id, peer->sid, "*");
-				remote->waiting_for.listen = 1;
-				wsu_queue_write_str(wsi, d);
-			} else if (remote->waiting_for.listen) {
-				if (
-						json_object_is_type(tmp, json_type_array)
-						&& !json_object_get_int(json_object_array_get_idx(tmp, 0))) {
-					remote->waiting_for.listen = 0;
-				} else {
-					// TODO
-					lwsl_err("response to ubus listen not valid\n");
-					goto out;
-				}
-
-				char *d = jsonrpc__req_ubuslist(++remote->call_id, peer->sid, "*");
-				remote->waiting_for.list_id = remote->call_id;
-				wsu_queue_write_str(wsi, d);
-			} else if (remote->waiting_for.list_id
-					&& json_object_is_type(id_jobj, json_type_int)
-					&& json_object_get_int(id_jobj) == remote->waiting_for.list_id) {
-				if (
-						json_object_is_type(tmp, json_type_array)
-						&& !json_object_get_int(json_object_array_get_idx(tmp, 0))
-						&& (tmp = json_object_array_get_idx(tmp, 1))
-						&& json_object_is_type(tmp, json_type_object)) {
-
-					// iterate through our stubs as we iterate through listed objects,
-					int cmp_result = 1;
-					struct wsu_local_stub *cur = NULL, *last = avl_last_element(&remote->stubs, last, avl), *next;
-					{
-						json_object_object_foreach(tmp, obj_name, obj_methods) {
-							cur = avl_find_ge_element(&remote->stubs, obj_name, cur, avl);
-							//lwsl_notice("after find, cur is %p\n", cur);
-							if (cur)
-								cmp_result = remote->stubs.comp(cur->avl.key, obj_name, remote->stubs.cmp_ptr);
-							(void)obj_methods;
-							break;
-						}
-					}
-
-					json_object_object_foreach(tmp, obj_name, obj_methods) {
-						if (cur) {
-							// advance pointer cur until it's on or after objname
-							avl_for_element_range_safe(cur, last, cur, avl, next) {
-								cmp_result = remote->stubs.comp(cur->avl.key, obj_name, remote->stubs.cmp_ptr);
-								if (cmp_result >= 0)
-									break;
-							}
-						}
-
-						if (cmp_result) {
-							// we don't have that object proxied, create new
-							lwsl_notice("create stub object for %s\n", obj_name);
-							wsu_local_stub_create(remote, obj_name, obj_methods);
-						} else if (!wsu_local_stub_is_same_signature(cur, obj_methods)) {
-							lwsl_notice("signatures differ for %s\n", obj_name);
-							// we have old version of object type / signature
-							wsu_local_stub_destroy(cur);
-							cur = next;
-							// TODO could avoid realloc here if wsu_local_stub_create is converted to caller-allocated
-							lwsl_notice("create NEW stub object for %s\n", obj_name);
-							wsu_local_stub_create(remote, obj_name, obj_methods);
-						}
-					}
-
-					// FIXME when multiple object add events fire, only first one will be handled
-					remote->waiting_for.list_id = 0;
-				} else {
-					// TODO
-					lwsl_err("response to ubus list not valid, ignorind\n");
-					goto out;
-				}
-			} else if (remote->waiting_for.call) {
-				int id;
-				struct wsu_proxied_call *p = NULL;
-				if (
-						json_object_is_type(id_jobj, json_type_int)
-						&& (id = json_object_get_int(id_jobj), 1) ) {
-					lwsl_notice("got response to call %d \n", id);
-
-					wsu_proxied_call_foreach(remote, p) {
-						if (p->jsonrpc_id == id) {
-							break;
-						} else {
-							p = NULL;
-						}
-					}
-				}
-
-				if (!p) {
-					lwsl_err("call id not found, ignoring\n");
-					goto out;
-				}
-
-				// will send response to found request
-
-				// send data if result contains any
-				json_object *data_jobj;
-				if (
-						json_object_is_type(tmp, json_type_array)
-						&& (data_jobj = json_object_array_get_idx(tmp, 1))
-						&& json_object_is_type(data_jobj, json_type_object))  {
-					struct blob_buf b = {};
-					blob_buf_init(&b, 0);
-					blobmsg_add_object(&b, data_jobj);
-					ubus_send_reply(prog->ubus_ctx, &p->ureq, b.head);
-					blob_buf_free(&b);
-				}
-
-				// send status code
-				json_object *rc_jobj;
-				if (
-						json_object_is_type(tmp, json_type_array)
-						&& (rc_jobj = json_object_array_get_idx(tmp, 0))
-						&& json_object_is_type(rc_jobj, json_type_int)) {
-					ubus_complete_deferred_request(prog->ubus_ctx, &p->ureq, json_object_get_int(rc_jobj));
-				} else {
-					ubus_complete_deferred_request(prog->ubus_ctx, &p->ureq, UBUS_STATUS_UNKNOWN_ERROR);
-				}
-
-				wsu_proxied_call_free(remote, p);
-			}
-		} else if (json_object_object_get_ex(jobj, "method", &tmp)) {
-			// call or event came in, we need to proxy it
-			json_object *type_jobj;
-			if (
-					!strcmp("event", json_object_get_string(tmp))
-					&& json_object_object_get_ex(jobj, "params", &tmp)
-					&& json_object_is_type(tmp, json_type_object)
-					&& json_object_object_get_ex(tmp, "type", &type_jobj)
-					&& json_object_is_type(type_jobj, json_type_string)) {
-				json_object_object_get_ex(tmp, "data", &tmp);
-				if (
-						!strcmp("ubus.object.add", json_object_get_string(type_jobj))
-						&& json_object_object_get_ex(tmp, "path", &tmp)
-						&& json_object_is_type(tmp, json_type_string)) {
-					// object added, look it up, when done, we'll add it
-
-					if (!remote->waiting_for.list_id) {
-						// FIXME: because we can't wait for multiple lists
-						lwsl_warn("calling list again...\n");
-					}
-
-					char *d = jsonrpc__req_ubuslist(++remote->call_id, peer->sid, "*");
-					remote->waiting_for.list_id = remote->call_id;
-					wsu_queue_write_str(wsi, d);
-				} else if (
-						!strcmp("ubus.object.remove", json_object_get_string(type_jobj))
-						&& json_object_object_get_ex(tmp, "path", &tmp)
-						&& json_object_is_type(tmp, json_type_string)) {
-					// object removed, lookup and remove
-					struct wsu_local_stub *cur = avl_find_element(&remote->stubs, json_object_get_string(tmp), cur, avl);
-					if (cur) {
-						lwsl_notice("removing stub object for %s\n", (const char *)cur->avl.key);
-						wsu_local_stub_destroy(cur);
-					}
-				} else {
-					const char *eventname = json_object_get_string(type_jobj);
-
-					struct wsu_local_proxied_event *event = wsu_local_proxied_event_create(remote, eventname, tmp);
-
-					if (!event) {
-						lwsl_err("error creating proxied event %s\n", eventname);
-						return 0;
-					}
-
-					ubus_send_event(prog->ubus_ctx, event->name, event->b.head);
-					wsu_local_proxied_event_destroy(event);
-				}
-			}
-		}
-
-out:
-		if (jobj)
-			json_object_put(jobj);
-
-		json_tokener_free(jtok);
-		
-		return 0;
-	}
-#endif // WSD_HAVE_UBUSPROXY
 
 	default:
 		break;

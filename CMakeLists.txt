@@ -53,6 +53,7 @@ if (WSD_HAVE_UBUS)
 	if (WSD_HAVE_UBUSPROXY)
 		list(APPEND SOURCES
 			src/local_stub.c
+			src/ws_ubusproxy.c
 			)
 	endif()
 endif()

@@ -22,6 +22,17 @@
  * ubus over websocket - used to implement individual rpc methods
  */
 #pragma once
+
+#include "common.h"
+#include "owsd-config.h"
+#include "rpc.h"
+
+#if WSD_HAVE_UBUSPROXY
+#include "local_stub.h"
+#endif
+
+#include "access_check.h"
+
 #include <stddef.h>
 #include <assert.h>
 #include <stdlib.h>
@@ -36,6 +47,7 @@
 #include <libubus.h>
 #endif
 
+#define WSUBUS_PROTO_NAME "ubus-json"
 #define WSUBUS_MAX_MESSAGE_LEN (1 << 27) // 128M
 
 #define UBUS_DEFAULT_SID "00000000000000000000000000000000"
@@ -235,18 +247,133 @@ static inline int wsu_queue_write_str(struct lws *wsi, const char *response_str)
 
 	return 0;
 }
-
-static inline void wsu_read_reset(struct wsu_peer *peer)
-{
-	peer->curr_msg.len = 0;
-
-	json_tokener_reset(peer->curr_msg.jtok);
-}
 //}}}
 
 static inline int wsu_sid_update(struct wsu_peer *peer, const char *sid)
 {
 	peer->sid[0] = '\0';
 	strncat(peer->sid, sid, sizeof peer->sid - 1);
+	return 0;
+}
+
+static inline int wsu_peer_init(struct wsu_peer *peer, enum wsu_role role)
+{
+	if (role == WSUBUS_ROLE_CLIENT) {
+		static unsigned int clientid = 1;
+
+		peer->u.client.id = clientid++;
+		INIT_LIST_HEAD(&peer->u.client.rpc_call_q);
+		INIT_LIST_HEAD(&peer->u.client.access_check_q);
+#if WSD_HAVE_UBUSPROXY
+	} else if (role == WSUBUS_ROLE_REMOTE) {
+#endif
+	} else {
+		return -1;
+	}
+
+	peer->role = role;
+
+	struct json_tokener *jtok = json_tokener_new();
+
+	if (!jtok)
+		return 1;
+
+	peer->curr_msg.len = 0;
+	peer->curr_msg.jtok = jtok;
+	INIT_LIST_HEAD(&peer->write_q);
+
+	peer->sid[0] = '\0';
+	return 0;
+}
+
+static inline void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
+{
+	json_tokener_free(peer->curr_msg.jtok);
+	peer->curr_msg.jtok = NULL;
+
+	{
+		struct wsu_writereq *p, *n;
+		list_for_each_entry_safe(p, n, &peer->write_q, wq) {
+			lwsl_info("free write in progress %p\n", p);
+			list_del(&p->wq);
+			free(p);
+		}
+	}
+
+	if (peer->role == WSUBUS_ROLE_CLIENT) {
+		struct prog_context *prog = lws_context_user(lws_get_context(wsi));
+
+		{
+			struct wsubus_client_access_check_ctx *p, *n;
+			list_for_each_entry_safe(p, n, &peer->u.client.access_check_q, acq) {
+				lwsl_info("free check in progress %p\n", p);
+				list_del(&p->acq);
+#if WSD_HAVE_UBUS
+				wsubus_access_check__cancel(prog->ubus_ctx, p->req);
+#else
+				(void)prog;
+				wsubus_access_check__cancel(NULL, p->req);
+#endif
+				wsubus_access_check_free(p->req);
+				if (p->destructor)
+					p->destructor(p);
+			}
+		}
+
+		{
+			struct list_head *p, *n;
+			list_for_each_safe(p, n, &peer->u.client.rpc_call_q) {
+				list_del(p);
+				struct ws_request_base *base = container_of(p, struct ws_request_base, cq);
+				if (base->cancel_and_destroy) {
+					lwsl_debug("free req in progress %p\n", base);
+					base->cancel_and_destroy(base);
+				}
+			}
+		}
+	}
+#if WSD_HAVE_UBUSPROXY
+	else if (peer->role == WSUBUS_ROLE_REMOTE) {
+		struct wsu_local_stub *cur, *next;
+		avl_for_each_element_safe(&peer->u.remote.stubs, cur, avl, next) {
+			wsu_local_stub_destroy(cur);
+		}
+	}
+#endif
+}
+
+static inline int wsubus_tx_text(struct lws *wsi)
+{
+	struct wsu_peer *peer = wsi_to_peer(wsi);
+
+	struct wsu_writereq *w, *other;
+
+	list_for_each_entry_safe(w, other, &peer->write_q, wq) {
+		do {
+			int written = lws_write(wsi, w->buf + LWS_SEND_BUFFER_PRE_PADDING + w->written, w->len - w->written, LWS_WRITE_TEXT);
+
+			if (written < 0) {
+				lwsl_err("peer IO: error %d in writing\n", written);
+				// TODO<lwsclose> check
+				// stop reading and writing
+				shutdown(lws_get_socket_fd(wsi), SHUT_RDWR);
+				return -1;
+			}
+
+			w->written += (size_t)written;
+		} while (w->written < w->len && !lws_partial_buffered(wsi));
+
+		if (w->written == w->len) {
+			lwsl_notice("peer IO: fin write %zu\n", w->len);
+			list_del(&w->wq);
+			free(w);
+		}
+		if (lws_partial_buffered(wsi)) {
+			lwsl_notice("client IO: partial buffered");
+			lws_callback_on_writable(wsi);
+			break;
+		}
+	}
+
 	return 0;
 }

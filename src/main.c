@@ -429,10 +429,15 @@ ssl:
 	}
 
 #if WSD_HAVE_UBUSPROXY
+	struct lws_protocols ws_ubusproxy_protocols[] = {
+		ws_http_proto,
+		ws_ubusproxy_proto,
+		{ }
+	};
 	if (!list_empty(&connect_infos.clients)) {
 		// create fake "vhost" under which ubusproxy will connect as client
 		clvh_info.port = CONTEXT_PORT_NO_LISTEN;
-		clvh_info.protocols = ws_protocols;
+		clvh_info.protocols = ws_ubusproxy_protocols;
 		if (any_ssl_client) {
 			clvh_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT | LWS_SERVER_OPTION_DISABLE_OS_CA_CERTS;
 		}
@@ -447,7 +452,7 @@ ssl:
 				// but first we set up some missing members
 				c->cl_info.vhost = clvh;
 				c->cl_info.context = lws_ctx;
-				c->cl_info.protocol = ws_protocols[1].name;
+				c->cl_info.protocol = ws_ubusproxy_protocols[1].name;
 			}
 			*clvh_context = &connect_infos;
 		}
