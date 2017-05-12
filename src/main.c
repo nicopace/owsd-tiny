@@ -91,7 +91,7 @@ static void usage(char *name)
 void utimer_service(struct uloop_timeout *utimer)
 {
 	struct prog_context *prog = container_of(utimer, struct prog_context, utimer);
-
+	// inform LWS that a second has passed
 	lws_service_fd(prog->lws_ctx, NULL);
 	uloop_timeout_set(utimer, 1000);
 }
@@ -107,6 +107,7 @@ int main(int argc, char *argv[])
 	char *redir_to = NULL;
 	bool any_ssl = false;
 
+	// list of per-vhost creation_info structs, with custom per-vhost storage
 	struct vhinfo_list {
 		struct lws_context_creation_info vh_info;
 		struct vhinfo_list *next;
@@ -118,6 +119,7 @@ int main(int argc, char *argv[])
 	struct clvh_context connect_infos;
 	INIT_LIST_HEAD(&connect_infos.clients);
 
+	// contains list of urls where to connect as ubus proxy
 	struct lws_context_creation_info clvh_info = {};
 	// FIXME to support different certs per different client, this becomes per-client
 #endif
@@ -198,10 +200,12 @@ int main(int argc, char *argv[])
 			newcl->cl_info.pwsi = &newcl->wsi;
 			newcl->reconnect_count = 0;
 
+			// push the connect url info into our list
 			list_add_tail(&newcl->list, &connect_infos.clients);
 			break;
 		}
 #ifdef LWS_OPENSSL_SUPPORT
+			// following options tweak options for connecting as proxy
 		case 'C':
 			clvh_info.ssl_cert_filepath = optarg;
 			break;
@@ -237,10 +241,13 @@ int main(int argc, char *argv[])
 			newvh->vh_info.port = port;
 			newvh->vh_ctx.name = optarg;
 
+			// add this listening vhost into our list
 			newvh->next = currvh;
 			currvh = newvh;
 			break;
 		}
+			// following options affect last added vhost
+			// currvh (and assume there is one)
 		case 'i':
 			currvh->vh_info.iface = optarg;
 			break;
@@ -303,6 +310,8 @@ ssl:
 
 	uloop_init();
 
+	// connect to bus(es)
+
 #if WSD_HAVE_UBUS
 	struct ubus_context *ubus_ctx = ubus_connect(ubus_sock_path);
 	if (!ubus_ctx) {
@@ -337,6 +346,7 @@ ssl:
 
 	lwsl_info("Will serve dir '%s' for HTTP\n", www_dirpath);
 
+	// allocate file descriptor watchers
 	// typically 1024, so a couple of KiBs just for pointers...
 	{
 		struct rlimit lim = {0, 0};
@@ -345,10 +355,12 @@ ssl:
 	}
 	global.ufds = calloc(global.num_ufds, sizeof(struct uloop_fd*));
 
+	// switch to UTC for HTTP timestamp format
 	setenv("TZ", "", 1);
 	setlocale(LC_TIME, "C");
 	tzset();
 
+	// lws context constructor under which are all vhosts
 	struct lws_context_creation_info lws_info = {};
 
 	lws_info.uid = -1;
@@ -369,6 +381,7 @@ ssl:
 
 	global.lws_ctx = lws_ctx;
 
+	// these protocols and the wwwmount are connected to all vhosts
 	struct lws_protocols ws_protocols[] = {
 		ws_http_proto,
 		wsubus_proto,
@@ -387,10 +400,12 @@ ssl:
 	wwwmount.mountpoint_len = strlen(wwwmount.mountpoint);
 	wwwmount.origin_protocol = LWSMPRO_FILE;
 
+	// create all listening vhosts
 	for (struct vhinfo_list *c = currvh; c; c = c->next) {
 		c->vh_info.protocols = ws_protocols;
 		c->vh_info.mounts = &wwwmount;
 
+		// tell SSL clients to include their certificate but don't fail if they don't
 		if (c->vh_info.ssl_ca_filepath) {
 			c->vh_info.options |= LWS_SERVER_OPTION_PEER_CERT_NOT_REQUIRED | LWS_SERVER_OPTION_REQUIRE_VALID_OPENSSL_CLIENT_CERT;
 		}
@@ -415,6 +430,7 @@ ssl:
 
 #if WSD_HAVE_UBUSPROXY
 	if (!list_empty(&connect_infos.clients)) {
+		// create fake "vhost" under which ubusproxy will connect as client
 		clvh_info.port = CONTEXT_PORT_NO_LISTEN;
 		clvh_info.protocols = ws_protocols;
 		if (any_ssl_client) {

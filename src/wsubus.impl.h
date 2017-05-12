@@ -43,14 +43,12 @@
 
 #define MAX_PROXIED_CALLS 20
 
+/**
+ * \brief lws allocates one instance of this for each websocket connection
+ *
+ * Used to store per-connection information and structures
+ */
 struct wsu_peer {
-	enum wsu_role {
-		WSUBUS_ROLE_CLIENT = 1,
-#if WSD_HAVE_UBUSPROXY
-		WSUBUS_ROLE_REMOTE,
-#endif
-	} role;
-
 	// I/O
 	struct {
 		struct json_tokener *jtok;
@@ -60,17 +58,33 @@ struct wsu_peer {
 
 	char sid[UBUS_SID_MAX_STRLEN + 1];
 
+	/**
+	 * \brief enum tag + union is used to differentiate between client and server
+	 */
+	enum wsu_role {
+		WSUBUS_ROLE_CLIENT = 1,
+#if WSD_HAVE_UBUSPROXY
+		WSUBUS_ROLE_REMOTE,
+#endif
+	} role;
 	union {
+		/**
+		 * \brief stores per-connection data about active (connected) client
+		 */
 		struct wsu_client_session {
 			unsigned int id;
-
+			// used to track/cancel the long-lived handles or async requests
 			struct list_head rpc_call_q;
 			struct list_head access_check_q;
 		} client;
 #if WSD_HAVE_UBUSPROXY
+		/**
+		 * \brief stores per-connection data needed when we connect as ubus proxy
+		 */
 		struct wsu_remote_bus {
 			int call_id;
 
+			/** \brief state information */
 			struct {
 				unsigned int login  : 1;
 				unsigned int listen : 1;
@@ -78,6 +92,7 @@ struct wsu_peer {
 				int list_id;
 			} waiting_for;
 
+			/** \brief collection of calls for which we are waiting for reply */
 			struct wsu_proxied_call {
 				int jsonrpc_id;
 				struct ubus_request_data ureq;
@@ -155,6 +170,9 @@ static inline void wsu_proxied_call_free(struct wsu_remote_bus *remote, struct w
 //}}}
 #endif // WSD_HAVE_UBUSPROXY
 
+/**
+ * \brief used to tie access_check_req context into list to be tracked/cancellable
+ */
 struct wsubus_client_access_check_ctx {
 	struct wsubus_access_check_req *req;
 	void (*destructor)(struct wsubus_client_access_check_ctx *);
@@ -171,6 +189,14 @@ struct wsu_writereq {
 	unsigned char buf[0];
 };
 
+/**
+ * \brief queue text data for writing to the other end of WebSocket
+ *
+ * \param wsi whom to write to
+ * \param response_str what to write
+ *
+ * @return 0 if succeeded
+ */
 static inline int wsu_queue_write_str(struct lws *wsi, const char *response_str)
 {
 	struct wsu_peer *peer = wsi_to_peer(wsi);
