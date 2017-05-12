@@ -141,7 +141,7 @@ static int wsubus_call_do_call(struct wsubus_percall_ctx *curr_call)
 
 #if WSD_USER_BLACKLIST_OLD
 	if (!strcmp(curr_call->call_args->sid, UBUS_DEFAULT_SID)) {
-		struct vh_context *vc = lws_protocol_vh_priv_get(lws_get_vhost(curr_call->wsi), lws_get_protocol(curr_call->wsi));
+		struct vh_context *vc = *(struct vh_context**)lws_protocol_vh_priv_get(lws_get_vhost(curr_call->wsi), lws_get_protocol(curr_call->wsi));
 		blobmsg_add_string(curr_call->call_args->params_buf, "_owsd_listen", vc->name);
 	}
 #endif

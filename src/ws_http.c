@@ -176,27 +176,15 @@ static int ws_http_cb(struct lws *wsi,
 	}
 
 #if WSD_HAVE_UBUSPROXY
-	case LWS_CALLBACK_PROTOCOL_INIT: {
-		struct clvh_context *client_infos = lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
+	case LWS_CALLBACK_PROTOCOL_INIT:
+	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR: {
+		struct clvh_context **client_infos = lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
 		struct reconnect_info *c;
-		if (client_infos) list_for_each_entry(c, &client_infos->clients, list) {
+		if (client_infos) list_for_each_entry(c, &(*client_infos)->clients, list) {
 			c->timer.cb = utimer_reconnect_cb;
-			uloop_timeout_set(&c->timer, 0);
+			uloop_timeout_set(&c->timer, (++c->reconnect_count)*2000);
 		}
 		return 0;
-	}
-
-	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR: {
-		struct clvh_context *client_infos = lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
-		struct reconnect_info *c;
-		if (client_infos) list_for_each_entry(c, &client_infos->clients, list) {
-			if (c->wsi == wsi) {
-				uloop_timeout_set(&c->timer, (++c->reconnect_count)*2000);
-			}
-		}
-
-		lwsl_err("CCE ERROR, reason %s\n", in ? (char *)in : "");
-		break;
 	}
 #endif
 

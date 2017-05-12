@@ -55,7 +55,7 @@ static enum wsu_ext_result wsu_ext_restrict_interface(struct lws *wsi,
 		struct blob_attr *cur;
 		blobmsg_for_each_attr(cur, args->head, rem) {
 			if (!strcmp("username", blobmsg_name(cur))) {
-				struct vh_context *vc = lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
+				struct vh_context *vc = *(struct vh_context**)lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
 				if (!list_empty(&vc->users)) {
 					struct str_list *s;
 					list_for_each_entry(s, &vc->users, list)

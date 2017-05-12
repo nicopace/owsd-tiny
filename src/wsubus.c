@@ -95,7 +95,7 @@ static int wsubus_filter(struct lws *wsi)
 	} else if ((e = lws_hdr_copy(wsi, origin, len + 1, WSI_TOKEN_ORIGIN)) < 0) {
 		lwsl_err("error copying origin header %d\n", e);
 		rc = -3;
-	} else if (!(vc = lws_protocol_vh_priv_get(
+	} else if (!(vc = *(struct vh_context**)lws_protocol_vh_priv_get(
 				lws_get_vhost(wsi),
 				lws_get_protocol(wsi)))) {
 		lwsl_err("no list of origins\n");
@@ -423,25 +423,6 @@ static int wsubus_cb(struct lws *wsi,
 		break;
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
 		lwsl_info(WSUBUS_PROTO_NAME ": destroy proto\n");
-		struct vh_context *vc = lws_protocol_vh_priv_get(
-				lws_get_vhost(wsi),
-				lws_get_protocol(wsi));
-
-		if (vc && !list_empty(&vc->origins)) {
-			struct str_list *origin_el, *origin_tmp;
-			list_for_each_entry_safe(origin_el, origin_tmp, &vc->origins, list) {
-				list_del(&origin_el->list);
-				free(origin_el);
-			}
-		}
-		if (vc && !list_empty(&vc->users)) {
-			struct str_list *user_el, *user_tmp;
-			list_for_each_entry_safe(user_el, user_tmp, &vc->users, list) {
-				list_del(&user_el->list);
-				free(user_el);
-			}
-		}
-
 		break;
 
 #if WSD_HAVE_UBUSPROXY

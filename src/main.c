@@ -386,7 +386,7 @@ ssl:
 	wwwmount.mountpoint_len = strlen(wwwmount.mountpoint);
 	wwwmount.origin_protocol = LWSMPRO_FILE;
 
-	for (struct vhinfo_list *c = currvh, *prev = NULL; c; prev = c, c = c->next, free(prev)) {
+	for (struct vhinfo_list *c = currvh; c; c = c->next) {
 		c->vh_info.protocols = ws_protocols;
 		c->vh_info.mounts = &wwwmount;
 
@@ -406,20 +406,10 @@ ssl:
 		}
 
 		// per-vhost storage is lws-allocated
-		struct vh_context *vh_context = lws_protocol_vh_priv_zalloc(vh, &c->vh_info.protocols[1] /* ubus */, sizeof *vh_context);
+		struct vh_context **pvh_context = lws_protocol_vh_priv_zalloc(vh, &c->vh_info.protocols[1] /* ubus */, sizeof pvh_context);
 
-		// copy all data to lws-allocated per-vhost storage
-		memcpy(vh_context, &c->vh_ctx, sizeof *vh_context);
-		// list needs separate copying becuase it references its own address
-		INIT_LIST_HEAD(&vh_context->origins);
-		list_splice(&c->vh_ctx.origins, &vh_context->origins);
-		INIT_LIST_HEAD(&vh_context->users);
-		list_splice(&c->vh_ctx.users, &vh_context->users);
-
-
-		if (list_empty(&vh_context->origins)) {
-			lwsl_warn("No origins whitelisted on port %d = reject all ws clients\n", c->vh_info.port);
-		}
+		// we allocate a pointer and point to per-vhost storage
+		*pvh_context = &c->vh_ctx;
 	}
 
 #if WSD_HAVE_UBUSPROXY
@@ -431,17 +421,18 @@ ssl:
 		}
 		struct lws_vhost *clvh = lws_create_vhost(lws_ctx, &clvh_info);
 		if (clvh) {
-			struct clvh_context *clvh_context = lws_protocol_vh_priv_zalloc(clvh, &clvh_info.protocols[0] /* protocols[0] handles reconnects */, sizeof *clvh_context);
-			memcpy(clvh_context, &connect_infos, sizeof *clvh_context);
-			INIT_LIST_HEAD(&clvh_context->clients);
-			list_splice(&connect_infos.clients, &clvh_context->clients);
+			// the fake vhost's protocols[0] will establish connections
+			struct clvh_context **clvh_context = lws_protocol_vh_priv_zalloc(clvh, &clvh_info.protocols[0] /* protocols[0] handles reconnects */, sizeof clvh_context);
 
+			// we just point it to our clvh which has list of urls to connect to as proxy
 			struct reconnect_info *c;
-			list_for_each_entry(c, &clvh_context->clients, list) {
+			list_for_each_entry(c, &connect_infos.clients, list) {
+				// but first we set up some missing members
 				c->cl_info.vhost = clvh;
 				c->cl_info.context = lws_ctx;
 				c->cl_info.protocol = ws_protocols[1].name;
 			}
+			*clvh_context = &connect_infos;
 		}
 	}
 #endif
@@ -452,6 +443,36 @@ ssl:
 
 	lwsl_info("running uloop...\n");
 	uloop_run();
+
+#if WSD_HAVE_UBUSPROXY
+	// free the info for connection as ubus proxy
+	if (!list_empty(&connect_infos.clients)) {
+		struct reconnect_info *c, *tmp;
+		list_for_each_entry_safe(c, tmp, &connect_infos.clients, list) {
+			uloop_timeout_cancel(&c->timer);
+			free(c);
+		}
+	}
+#endif
+
+	// free the per-vhost contexts
+	for (struct vhinfo_list *c = currvh, *prev = NULL; c; prev = c, c = c->next, free(prev)) {
+		struct vh_context *vc = &c->vh_ctx;
+		if (vc && !list_empty(&vc->origins)) {
+			struct str_list *origin_el, *origin_tmp;
+			list_for_each_entry_safe(origin_el, origin_tmp, &vc->origins, list) {
+				list_del(&origin_el->list);
+				free(origin_el);
+			}
+		}
+		if (vc && !list_empty(&vc->users)) {
+			struct str_list *user_el, *user_tmp;
+			list_for_each_entry_safe(user_el, user_tmp, &vc->users, list) {
+				list_del(&user_el->list);
+				free(user_el);
+			}
+		}
+	}
 
 error_ubus_ufds_ctx:
 	lws_context_destroy(lws_ctx);
