@@ -21,4 +21,5 @@
 
 #include <dbus/dbus.h>
 
+/** \brief call to integrate libdbus DBusConnection into the uloop poller */
 void wsd_dbus_add_to_uloop(DBusConnection *dbus_ctx);

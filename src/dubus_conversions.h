@@ -1,5 +1,6 @@
 #include <dbus/dbus.h>
 #include <libubox/blobmsg.h>
+/* header with functions used for converting between ubus and DBus names/arguments/types/signatures */
 
 /** convert dbus basic type signature to corresponding ubus blobmsg type */
 enum blobmsg_type duconv_type_dbus_to_ubus(int dbus_type, int dbus_elem_type);
@@ -14,8 +15,8 @@ struct duconv_convert {
 };
 
 /** initialize converter structure for name-value or name-type blobs
- * @param c converter structure to initialize
- * @param arg_fmt format string, with one %d, to use if we don't have a name
+ * \param c converter structure to initialize
+ * \param arg_fmt format string, with one %d, to use if we don't have a name
  */
 void duconv_convert_init(struct duconv_convert *c, const char *arg_fmt);
 

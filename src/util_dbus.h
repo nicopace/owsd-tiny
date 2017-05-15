@@ -23,4 +23,11 @@
 typedef struct DBusMessage DBusMessage;
 struct blob_buf;
 
+/**
+ * \brief check that the DBus message is a method return, optionally with expected signature
+ *
+ * \param reply message to check
+ * \param expected_signature expected signature, or NULL to skip signature check
+ * \param errordata if non-NULL, will be filled-in with a "DBus" string field with error text as value
+ */
 bool check_reply_and_make_error(DBusMessage *reply, const char *expected_signature, struct blob_buf *errordata);
