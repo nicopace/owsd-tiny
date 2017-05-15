@@ -106,8 +106,12 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 
 		json_object_put(adminadmin);
 #else
+		// we use a fake "session ID" which tells remote owsd server to check our cert
+		// instead of rpcd sessions
 		wsu_sid_update(peer, "X-tls-certificate");
 
+		// start listening for all events
+		// (do a `ubus listen *`)
 		char *d = jsonrpc__req_ubuslisten(++remote->call_id, peer->sid, "*");
 		remote->waiting_for.listen = 1;
 		wsu_queue_write_str(wsi, d);
@@ -119,6 +123,10 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 	case LWS_CALLBACK_CLIENT_RECEIVE: {
 		struct wsu_remote_bus *remote = wsi_to_remote(wsi);
 		struct wsu_peer *peer = wsi_to_peer(wsi);
+
+		// TODO maybe reuse tokener per client
+		// and/or support JSON messages across multiple RECEIVE callbacks ?
+		// If so, consider integrating this rx path + parsing logic with the wsubus rx path
 
 		struct json_tokener *jtok = json_tokener_new();
 		struct json_object *jobj = json_tokener_parse_ex(jtok, in, len);
@@ -136,6 +144,8 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 		json_object *tmp;
 		if (json_object_object_get_ex(jobj, "result", &tmp)) {
 			// result came back
+			// process it depending on what state we are in
+			// (what sort of reply we are waiting for)
 			if (remote->waiting_for.login) {
 				if (
 						json_object_is_type(tmp, json_type_array)
@@ -146,44 +156,52 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 					remote->waiting_for.login = 0;
 					wsu_sid_update(peer, json_object_get_string(tmp));
 				} else {
-					// TODO
+					// TODO maybe tear down, or try again. for now just skip
 					lwsl_err("response to login not valid\n");
 					goto out;
 				}
 
+				// valid response to login (contains ubus_rpc_session for us to use)
 				char *d = jsonrpc__req_ubuslisten(++remote->call_id, peer->sid, "*");
 				remote->waiting_for.listen = 1;
 				wsu_queue_write_str(wsi, d);
 			} else if (remote->waiting_for.listen) {
+				// we are expecting a response to `ubus listen`
 				if (
 						json_object_is_type(tmp, json_type_array)
 						&& !json_object_get_int(json_object_array_get_idx(tmp, 0))) {
 					remote->waiting_for.listen = 0;
 				} else {
-					// TODO
+					// TODO maybe tear down, or try agai.n for now just skip
 					lwsl_err("response to ubus listen not valid\n");
 					goto out;
 				}
 
+				// valid response to event came; now ask remote for ubus objects
+				// (do a `ubus list *`)
 				char *d = jsonrpc__req_ubuslist(++remote->call_id, peer->sid, "*");
 				remote->waiting_for.list_id = remote->call_id;
 				wsu_queue_write_str(wsi, d);
 			} else if (remote->waiting_for.list_id
 					&& json_object_is_type(id_jobj, json_type_int)
 					&& json_object_get_int(id_jobj) == remote->waiting_for.list_id) {
+				// we are expecting a response to `ubus list`
 				if (
 						json_object_is_type(tmp, json_type_array)
 						&& !json_object_get_int(json_object_array_get_idx(tmp, 0))
 						&& (tmp = json_object_array_get_idx(tmp, 1))
 						&& json_object_is_type(tmp, json_type_object)) {
+					// valid response to `ubus list` came back
+					// now we have to register local stub objects corresponding to those from ubus list
 
-					// iterate through our stubs as we iterate through listed objects,
+					// Result of ubus list is sorted by name, as is our stub collection (avl tree).
+					// We iterate through both collections and add what is missing from our stubs.
+				
 					int cmp_result = 1;
 					struct wsu_local_stub *cur = NULL, *last = avl_last_element(&remote->stubs, last, avl), *next;
 					{
 						json_object_object_foreach(tmp, obj_name, obj_methods) {
 							cur = avl_find_ge_element(&remote->stubs, obj_name, cur, avl);
-							//lwsl_notice("after find, cur is %p\n", cur);
 							if (cur)
 								cmp_result = remote->stubs.comp(cur->avl.key, obj_name, remote->stubs.cmp_ptr);
 							(void)obj_methods;
@@ -219,11 +237,12 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 					// FIXME when multiple object add events fire, only first one will be handled
 					remote->waiting_for.list_id = 0;
 				} else {
-					// TODO
+					// TODO maybe tear down, or try agai.n for now just skip
 					lwsl_err("response to ubus list not valid, ignorind\n");
 					goto out;
 				}
 			} else if (remote->waiting_for.call) {
+				// we are expecting response to a call we are proxying from our stub object to remote owsd server
 				int id;
 				struct wsu_proxied_call *p = NULL;
 				if (
@@ -231,6 +250,7 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 						&& (id = json_object_get_int(id_jobj), 1) ) {
 					lwsl_notice("got response to call %d \n", id);
 
+					// search for that ID in our remote's proxied_calls collection
 					wsu_proxied_call_foreach(remote, p) {
 						if (p->jsonrpc_id == id) {
 							break;
@@ -260,7 +280,7 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 					blob_buf_free(&b);
 				}
 
-				// send status code
+				// send status code to resolve the pending request
 				json_object *rc_jobj;
 				if (
 						json_object_is_type(tmp, json_type_array)
@@ -274,7 +294,7 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 				wsu_proxied_call_free(remote, p);
 			}
 		} else if (json_object_object_get_ex(jobj, "method", &tmp)) {
-			// call or event came in, we need to proxy it
+			// call or event happened on local bus, we need to proxy it to remote owsd server
 			json_object *type_jobj;
 			if (
 					!strcmp("event", json_object_get_string(tmp))
@@ -282,12 +302,14 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 					&& json_object_is_type(tmp, json_type_object)
 					&& json_object_object_get_ex(tmp, "type", &type_jobj)
 					&& json_object_is_type(type_jobj, json_type_string)) {
+				// event happened on local bus
+
 				json_object_object_get_ex(tmp, "data", &tmp);
 				if (
 						!strcmp("ubus.object.add", json_object_get_string(type_jobj))
 						&& json_object_object_get_ex(tmp, "path", &tmp)
 						&& json_object_is_type(tmp, json_type_string)) {
-					// object added, look it up, when done, we'll add it
+					// object was added on remote owsd's bus, look it up, when done, we'll add it
 
 					if (!remote->waiting_for.list_id) {
 						// FIXME: because we can't wait for multiple lists
@@ -301,13 +323,16 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 						!strcmp("ubus.object.remove", json_object_get_string(type_jobj))
 						&& json_object_object_get_ex(tmp, "path", &tmp)
 						&& json_object_is_type(tmp, json_type_string)) {
-					// object removed, lookup and remove
+					// object removed, find and remove the matching stub
+
 					struct wsu_local_stub *cur = avl_find_element(&remote->stubs, json_object_get_string(tmp), cur, avl);
 					if (cur) {
 						lwsl_notice("removing stub object for %s\n", (const char *)cur->avl.key);
 						wsu_local_stub_destroy(cur);
 					}
 				} else {
+					// plain old event happened, just replay / proxy it on local bus
+
 					const char *eventname = json_object_get_string(type_jobj);
 
 					struct wsu_local_proxied_event *event = wsu_local_proxied_event_create(remote, eventname, tmp);
