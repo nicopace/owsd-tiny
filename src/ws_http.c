@@ -28,10 +28,21 @@
 #include <errno.h>
 #include <assert.h>
 
+/*
+ * libwebsockets protocols[0] handler
+ *
+ * In libwebsockets the protocols[0] is special i.e. this callback receives
+ * some type of events unrelated to client connection/disconnection and actual
+ * websocket connection.
+ */
+
+
 static lws_callback_function ws_http_cb;
 
 struct lws_protocols ws_http_proto = {
-	/*  we don't want any subprotocol name to match this, and it won't */
+	/* because we only want to use this callback/protocol for poll integration,
+	 * management and pre-websocket stuff, we don't want any subprotocol name
+	 * to match this and negotiate a connection under this subprotocol */
 	",,,,,,,,",
 	ws_http_cb,
 	// following other fields we don't use:
@@ -41,6 +52,7 @@ struct lws_protocols ws_http_proto = {
 	NULL, // - user pointer
 };
 
+// {{{ event bitmask conversions
 static inline short
 eventmask_ufd_to_pollfd(unsigned int ufd_events)
 {
@@ -55,19 +67,35 @@ eventmask_pollfd_to_ufd(int pollfd_events)
 		(pollfd_events & POLLIN  ? ULOOP_READ  : 0) |
 		(pollfd_events & POLLOUT ? ULOOP_WRITE : 0);
 }
+// }}}
 
+/**
+ * \brief Called by uloop when read/writable events happen
+ *
+ * \param ufd poller structure describing fd that received the event
+ * \param revents bitmask of events that happened on the fd
+ */
 static void ufd_service_cb(struct uloop_fd *ufd, unsigned int revents)
 {
 	extern struct prog_context global;
 
 	lwsl_debug("servicing fd %d with ufd eventmask %x %s%s\n", ufd->fd, revents,
 			revents & ULOOP_READ ? "R" : "", revents & ULOOP_WRITE ? "W" : "");
+
+	// libwebsockets' poll integration expects to receive a 'struct pollfd'
+	// like from poll(2) . To integrate libwebsockets with uloop we thus need
+	// to convert uloop's polling structs and masks to pollfd
 	struct pollfd pfd;
 
+	// convert the polling mode flags
 	pfd.events = eventmask_ufd_to_pollfd(ufd->flags);
+	// convert the event that happened
 	pfd.revents = eventmask_ufd_to_pollfd(revents);
 	pfd.fd = ufd->fd;
 
+	// additionally uloop stores error and hangup condition outside the event
+	// mask, whereas pollfd has it in-band with the event mask. So, manually
+	// restore those bits as well.
 	if (ufd->eof) {
 		pfd.revents |= POLLHUP;
 		lwsl_debug("ufd HUP on %d\n", ufd->fd);
@@ -77,8 +105,15 @@ static void ufd_service_cb(struct uloop_fd *ufd, unsigned int revents)
 		lwsl_debug("ufd ERR on %d\n", ufd->fd);
 	}
 
+	// forward the struct to inform libwebsockets about the event
 	lws_service_fd(global.lws_ctx, &pfd);
 
+	// in case one read event resulted in multiple logical requests (e.g.
+	// multiple HTTP GET requests pipelined and received at once),
+	// libwebsockets will only process part of it (probably such a default
+	// gives more control to the external dispatching loop). Anyway, we want to
+	// re-service libwebosockets to drain the data until everything has been
+	// processed.
 	for (int count = 30; count && !lws_service_adjust_timeout(global.lws_ctx, 1, 0); --count) {
 		lwsl_notice("re-service pipelined data\n");
 		lws_plat_service_tsi(global.lws_ctx, -1, 0);
@@ -110,6 +145,7 @@ static int ws_http_cb(struct lws *wsi,
 	switch (reason) {
 		// fd handling
 	case LWS_CALLBACK_ADD_POLL_FD: {
+		// libwebsockets wants us to watch a new fd
 		lwsl_notice("add fd %d mask %x\n", in_pollargs->fd, in_pollargs->events);
 
 		assert(in_pollargs->fd >= 0 && in_pollargs->fd > 0 && (size_t)in_pollargs->fd < prog->num_ufds);
@@ -137,6 +173,7 @@ static int ws_http_cb(struct lws *wsi,
 	}
 
 	case LWS_CALLBACK_DEL_POLL_FD: {
+		// libwebsockets wants us to stop watching some fd
 		lwsl_notice("del fd %d\n", in_pollargs->fd);
 
 		assert(in_pollargs->fd >= 0 && in_pollargs->fd > 0 && (size_t)in_pollargs->fd < prog->num_ufds);
@@ -155,6 +192,7 @@ static int ws_http_cb(struct lws *wsi,
 	}
 
 	case LWS_CALLBACK_CHANGE_MODE_POLL_FD: {
+		// libwebsockets wants us to modify event flags on watched fd
 		lwsl_notice("modify fd %d to mask %x %s%s\n", in_pollargs->fd, in_pollargs->events,
 				in_pollargs->events & POLLIN ? "IN" : "", in_pollargs->events & POLLOUT ? "OUT" : "");
 
@@ -178,6 +216,8 @@ static int ws_http_cb(struct lws *wsi,
 #if WSD_HAVE_UBUSPROXY
 	case LWS_CALLBACK_PROTOCOL_INIT:
 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR: {
+		// (re) connect as ubusproxy client - this belongs to, but can't be in ubusproxy.c
+		// since protocols[0] must handle CONNECTION_ERROR ...
 		struct clvh_context **client_infos = lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
 		struct reconnect_info *c;
 		if (client_infos) list_for_each_entry(c, &(*client_infos)->clients, list) {
@@ -202,11 +242,14 @@ static int ws_http_cb(struct lws *wsi,
 	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS:
 		return 0;
 
+		// plain HTTP request received
 	case LWS_CALLBACK_HTTP:	 {
+		// we have custom HTTP serving logic called from here
 		return ws_http_serve_file(wsi, in);
 	}
 
 	case LWS_CALLBACK_HTTP_WRITEABLE:
+		// continue HTTP file transfer
 		lwsl_info("http request writable again %s\n", (char *)in);
 		rc = lws_serve_http_file_fragment(wsi);
 		return ws_http_serve_interpret_retcode(wsi, rc);
