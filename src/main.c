@@ -388,6 +388,9 @@ ssl:
 		{ }
 	};
 
+	// we tell lws to serve something that will always fail at
+	// libwebsockets-level, so we can run our own HTTP serving with tweaks
+	// TODO consider getting rid of our tweaks in favor of using lws ...
 	static struct lws_http_mount wwwmount = {
 		NULL,
 		"/",

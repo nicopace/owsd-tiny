@@ -37,14 +37,24 @@ int ws_http_serve_interpret_retcode(struct lws *wsi, int ret)
 {
 	if (ret < 0) {
 		lwsl_info("error %d serving file\n", ret);
+		// close unconditionally if return code from lws is bad
 		return -1;
 	} else if (ret > 0) {
+		// return code is okay, ask lws if transaction is done, and return
+		// accordingly. This will make us stay connected on HTTP/1.1 and close
+		// on HTTP/1.0 etc.
 		return lws_http_transaction_completed(wsi);
 	}
+	// return code is "neutral", keep connection alive
 	lwsl_debug("not closing connection\n");
 	return 0;
 }
 
+/**
+ * \brief concatenates base directory path with requested path. Note that we
+ * don't have to worry about ../ in requested path since lws itself bans this
+ * from requested path.
+ */
 static char *ws_http_construct_pathname(const char *base, const char *in)
 {
 	char *filepath = malloc(PATH_MAX);
@@ -61,6 +71,13 @@ static char *ws_http_construct_pathname(const char *base, const char *in)
 
 	return filepath;
 }
+
+/*
+ * Following structs and functions are to enable having and serving only
+ * gzipped content on disk to save space.  When client asks for file.ext.gx, we
+ * give him "file" with content-type corresponding to extension "ext", and
+ * content-encoding corresponding to extension "gx"
+ */
 
 struct fileext_map {
 	const char *ext;
@@ -118,6 +135,11 @@ static const char *determine_mimetype(const char *filepath, size_t n)
 	return NULL;
 }
 
+/**
+ * \brief holds information about content-type, encoding, real file path (in
+ * case we are serving a compressed file), as well as date/time info for cache
+ * headers
+ */
 struct file_meta {
 	int status;
 	struct stat filestat;
@@ -136,6 +158,9 @@ struct file_meta {
 			(cur = strtok_r(cur, delim, &ctx##cur)) != NULL; \
 			cur = NULL)
 
+/**
+ * \brief Fills in meta structure
+ */
 static void determine_file_meta(struct lws *wsi, struct file_meta *meta, char *filepath, size_t n)
 {
 	static const struct fileext_map enc_map[] = {
@@ -150,15 +175,24 @@ static void determine_file_meta(struct lws *wsi, struct file_meta *meta, char *f
 	strncpy(meta->real_filepath, filepath, n+1);
 	free(filepath);
 
+	// determine what would be the mimetype of the wanted file by extension
 	const char *mime = determine_mimetype(meta->real_filepath, n);
 	meta->mime = mime ? mime : "application/octet-stream";
 	meta->enc = NULL;
 
+	// add extensions from list until we find one that exists on disk
 	for (size_t i = 0; i < ARRAY_SIZE(enc_map); ++i) {
 		strcat(meta->real_filepath, ".");
 		strcat(meta->real_filepath, enc_map[i].ext);
 		if (0 == access(meta->real_filepath, R_OK)) {
-			// we don't consult accept_encoding header since we might not have non-encoded file
+			// success, we store encoding type in meta struct
+
+			// TODO we don't consult accept_encoding header since we might not have non-encoded file
+			// we should have some logic to uncompress the file, or look for a non-compressed file if client doesnt support that content encoding
+			// TODO even better, get rid of this whole file and use all generic mechanisms from libwebsockets itself
+			// - cache and tweaks are possible
+			// - redirection rule may or may not be possible
+			// - uncompression should definitely be possible since v2.2
 			meta->enc = enc_map[i].val;
 			break;
 		}
@@ -170,6 +204,9 @@ static void determine_file_meta(struct lws *wsi, struct file_meta *meta, char *f
 
 static const char *const http_timestr = "%a, %d %b %Y %H:%M:%S %Z";
 
+/**
+ * \brief add header using date time info from file's metadata
+ */
 static void add_last_modified_header(struct lws *wsi, struct file_meta *meta)
 {
 	char buf[256];
@@ -183,6 +220,10 @@ static void add_last_modified_header(struct lws *wsi, struct file_meta *meta)
 	}
 }
 
+/**
+ * \brief determine if file and client's cache-related headers are okay to just
+ * reply with 304 not modified
+ */
 static bool can_reply_notmodified(struct lws *wsi, struct file_meta *meta)
 {
 	if (meta->status) {
@@ -194,6 +235,7 @@ static bool can_reply_notmodified(struct lws *wsi, struct file_meta *meta)
 
 	lws_hdr_copy(wsi, buf, sizeof buf - 1, WSI_TOKEN_HTTP_CACHE_CONTROL);
 
+	// check cache-control header for mention of no-cache
 	foreach_strtoken (cur, buf, ",; ") {
 		if (!strcmp(cur, "no-cache") || cur == strstr(cur, "no-cache=")) {
 			lwsl_debug("no-cache found, don't do 304\n");
@@ -205,6 +247,7 @@ static bool can_reply_notmodified(struct lws *wsi, struct file_meta *meta)
 
 	lws_hdr_copy(wsi, buf, sizeof buf - 1, WSI_TOKEN_HTTP_IF_MODIFIED_SINCE);
 
+	// check file's date is after if-modified-since
 	struct tm tm = {};
 	char *p = strptime(buf, http_timestr, &tm);
 	if (!p || p < buf + strlen(buf) - 4) {
@@ -226,18 +269,24 @@ int ws_http_serve_file(struct lws *wsi, const char *in)
 
 	struct file_meta meta = { .status = -1 };
 	meta.headers_cur = meta.headers;
+
+	// read file datetime, mime, ...
 	determine_file_meta(wsi, &meta, filepath, len);
 	lwsl_info("http request for %s = file %s\n", in, meta.real_filepath);
 
 	int rc;
 	if (prog->redir_from && !strcmp(in, prog->redir_from)) {
-		// redirect
+		// request matches a url for which we have a redirect option
+
+		// in that case just do a redirect
 		if ((rc = lws_http_redirect(wsi, HTTP_STATUS_SEE_OTHER, (const unsigned char*)prog->redir_to, strlen(prog->redir_to), &meta.headers_cur, meta.headers + sizeof meta.headers)))
 			goto out;
 		if ((rc = lws_finalize_http_header(wsi, &meta.headers_cur, meta.headers + sizeof meta.headers)))
 			goto out;
 		rc = lws_write(wsi, meta.headers, (size_t)(meta.headers_cur - meta.headers), LWS_WRITE_HTTP_HEADERS);
 	} else if (can_reply_notmodified(wsi, &meta)) {
+		// otherwise check if we can tell client to get it from their cache
+
 		lwsl_debug("could reply 304...\n");
 		if ((rc = lws_add_http_header_status(wsi, 304, &meta.headers_cur, meta.headers + sizeof meta.headers)))
 			goto out;
@@ -247,6 +296,8 @@ int ws_http_serve_file(struct lws *wsi, const char *in)
 			goto out;
 		rc = lws_write(wsi, meta.headers, (size_t)(meta.headers_cur - meta.headers), LWS_WRITE_HTTP_HEADERS);
 	} else {
+		// default, just serve the file
+
 		if (meta.enc && (rc = lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_ENCODING, (const unsigned char*)meta.enc, (int)strlen(meta.enc), &meta.headers_cur, meta.headers + sizeof meta.headers)))
 			goto out;
 		if (meta.status) {

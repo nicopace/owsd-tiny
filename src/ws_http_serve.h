@@ -21,5 +21,20 @@
 
 struct lws;
 
+/**
+ * \brief respond to plain HTTP request by serving HTTP file
+ *
+ * \param wsi client
+ * \param in path component
+ */
 int ws_http_serve_file(struct lws *wsi, const char *in);
+
+/**
+ * \brief based on state of client, and return code from libwebsockets calls,
+ * determine what code to return to libwebsockets, i.e. whether we should close
+ * the connection or continue
+ *
+ * \param wsi client
+ * \param ret return code of libwebsockets functions
+ */
 int ws_http_serve_interpret_retcode(struct lws *wsi, int ret);
