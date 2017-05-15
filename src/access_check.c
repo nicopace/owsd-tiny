@@ -17,6 +17,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA
  */
+/* access checking functions */
 #include "access_check.h"
 #include "common.h"
 #include "wsubus.impl.h"
@@ -27,6 +28,12 @@
 
 #define SID_EXTENDED_PREFIX "X-"
 
+/*
+ * session ids that are hex chars are regular (rpcd) session IDs
+ *
+ * In some cases we don't want to ask rpcd session object for access. For these
+ * uses we make up a "extended" session id, which is one that starts with "X-".
+ */
 static inline const char* wsu_sid_extended(const char *sid)
 {
 	return strstr(sid, SID_EXTENDED_PREFIX) == sid ? sid+strlen(SID_EXTENDED_PREFIX) : NULL;
@@ -42,6 +49,9 @@ static enum wsu_ext_result wsu_ext_check_interface(struct lws *wsi)
 	return EXT_CHECK_NEXT;
 }
 
+/**
+ * \brief Idea behind this access checker is to make it possible to deny login to users on some vhost
+ */
 static enum wsu_ext_result wsu_ext_restrict_interface(struct lws *wsi,
 		const char *sid,
 		const char *scope,
@@ -72,6 +82,9 @@ static enum wsu_ext_result wsu_ext_restrict_interface(struct lws *wsi,
 
 
 #ifdef LWS_OPENSSL_SUPPORT
+/**
+ * \brief This access checker checks if the client is authenticated via TLS certificate. If so, access check is successful
+ */
 static enum wsu_ext_result wsu_ext_check_tls(struct lws *wsi)
 {
 	if (!lws_is_ssl(wsi)) {
@@ -98,6 +111,13 @@ static enum wsu_ext_result wsu_ext_check_tls(struct lws *wsi)
 }
 #endif
 
+/*
+ * the access check structure handle is implemented through a pending request,
+ * either through ubus (because we asked rpcd session object for the access
+ * decision) or through a defer-timeout, in case we have in-program logic to
+ * check the permission.  Defer-timeout is used to make both ubus and local
+ * in-program case asynchronous and avoid loop reentrancy.
+ */
 struct wsubus_access_check_req {
 	bool result;
 	wsubus_access_cb cb;
@@ -155,6 +175,10 @@ static void wsubus_access_check__cb(struct ubus_request *ureq, int status)
 	req->cb(req, req->ctx, req->result && status == UBUS_STATUS_OK);
 }
 
+/**
+ * \brief this access checker asks rpcd's session object on ubus for the
+ * decision. ACLs from rpcd will apply (i.e. it does `ubus call session access`
+ */
 static int wsubus_access_check_via_session(
 		struct wsubus_access_check_req *r,
 		struct ubus_context *ubus_ctx,
@@ -179,10 +203,12 @@ static int wsubus_access_check_via_session(
 	int ret;
 	uint32_t access_id;
 
+	// look up ubus object names "session"
 	if (ubus_lookup_id(ubus_ctx, "session", &access_id) != UBUS_STATUS_OK) {
 		goto fail;
 	}
 
+	// construct call
 	struct blob_buf blob_for_access = {};
 	blob_buf_init(&blob_for_access, 0);
 
@@ -194,6 +220,9 @@ static int wsubus_access_check_via_session(
 		blobmsg_add_string(&blob_for_access, "scope", scope);
 	if (args) {
 		blobmsg_add_string(args, "ubus_rpc_session", sid);
+		// we give the session object parameters "params" in hope some day
+		// session object will actually be able to check arguments and not just
+		// object/method names
 		blobmsg_add_field(&blob_for_access, BLOBMSG_TYPE_TABLE, "params", blobmsg_data(args->head), blobmsg_len(args->head));
 	}
 
@@ -230,6 +259,7 @@ static int defer_callback(
 		struct wsubus_access_check_req *req,
 		void *ctx, bool result)
 {
+	// write result and make a timeout to call callback on next iteration of event loop
 	req->tag = REQ_TAG_DEFER;
 	req->result = result;
 	req->defer_timer.cb = deferral_cb;
@@ -247,13 +277,15 @@ int wsubus_access_check_(
 		void *ctx,
 		wsubus_access_cb cb)
 {
+	// this is the top-level entrypoint to access check, everything goes through it
+
 	const char *esid = wsu_sid_extended(sid);
 
 	req->cb = cb;
 	req->ctx = ctx;
 
-	// for now ext_allow isnt async, so do everyhing here instead of cb,ctx,req wrapper
 	enum wsu_ext_result res = EXT_CHECK_NEXT;
+	// first, check if one of 2 checkers whitelists this call
 	if (esid) {
 		if (!strcmp("mgmt-interface", esid)) {
 			res = wsu_ext_check_interface(wsi);
@@ -265,18 +297,19 @@ int wsubus_access_check_(
 #endif
 	}
 
+	// see if checker made a decision or if it says to consult next one
 	if (res != EXT_CHECK_NEXT) {
-		// schedule firing of callback
+		// the checker made a decision, schedule firing of callback
 		return defer_callback(req, ctx, res == EXT_CHECK_ALLOW);
 	}
 
+	// restrict calls only to some network interfaces
 	res = wsu_ext_restrict_interface(wsi, sid, scope, object, method, args);
-
 	if (res != EXT_CHECK_NEXT) {
-		// schedule firing of callback
 		return defer_callback(req, ctx, res == EXT_CHECK_ALLOW);
 	}
 
+	// by default, if no checker has made decision until now, ask rpcd about it (or allow if no ubus support)
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 #if WSD_HAVE_UBUS
 	return wsubus_access_check_via_session(req, prog->ubus_ctx, sid, scope, object, method, args, ctx, cb);
