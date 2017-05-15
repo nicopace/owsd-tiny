@@ -48,6 +48,7 @@ static int wsu_local_stub_handle_call(struct ubus_context *ubus_ctx, struct ubus
 	struct wsu_proxied_call *p = wsu_proxied_call_new(stub->remote);
 
 	if (!p) {
+		free(d);
 		lwsl_err("Can't find slot to proxy call, max num calls %d", MAX_PROXIED_CALLS);
 		return UBUS_STATUS_NOT_SUPPORTED;
 	}
