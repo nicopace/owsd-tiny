@@ -94,18 +94,6 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 		memset(&remote->waiting_for, 0, sizeof remote->waiting_for);
 		avl_init(&remote->stubs, avl_strcmp, false, NULL);
 
-#if 0
-		remote->waiting_for.login = 1;
-
-		json_object *adminadmin = json_object_new_object();
-		json_object_object_add(adminadmin, "username", json_object_new_string("admin"));
-		json_object_object_add(adminadmin, "password", json_object_new_string("admin"));
-
-		char *d = jsonrpc__req_login(++remote->call_id, NULL, "tls-certificate");
-		wsu_queue_write_str(wsi, d);
-
-		json_object_put(adminadmin);
-#else
 		// we use a fake "session ID" which tells remote owsd server to check our cert
 		// instead of rpcd sessions
 		wsu_sid_update(peer, "X-tls-certificate");
@@ -115,7 +103,6 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 		char *d = jsonrpc__req_ubuslisten(++remote->call_id, peer->sid, "*");
 		remote->waiting_for.listen = 1;
 		wsu_queue_write_str(wsi, d);
-#endif
 
 		return 0;
 	}

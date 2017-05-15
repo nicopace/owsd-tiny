@@ -43,5 +43,3 @@ char *jsonrpc__req_ubuslist(int id, const char *sid, const char *pattern);
 char *jsonrpc__req_ubuslisten(int id, const char *sid, const char *pattern);
 
 char *jsonrpc__req_ubuscall(int id, const char *sid, const char *obj, const char *method, json_object *arg);
-
-char *jsonrpc__req_login(int id, const char *sid, const char *type);

@@ -121,17 +121,3 @@ char *jsonrpc__req_ubuscall(int id, const char *sid, const char *obj, const char
 			obj, method, arg ? json_object_to_json_string(arg) : "{}");
 	return buf;
 }
-
-char *jsonrpc__req_login(int id, const char *sid, const char *type)
-{
-	static char buf[2048];
-	snprintf(buf, sizeof buf, "{"
-			"\"jsonrpc\":\"2.0\",\"id\":%d,"
-			"\"method\":\"login\","
-			"\"params\":[\"%s\", \"%s\"]"
-			"}",
-			id,
-			sid ? sid : "00000000000000000000000000000000",
-			type);
-	return buf;
-}
