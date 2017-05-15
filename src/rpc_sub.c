@@ -45,8 +45,16 @@
 
 #include <assert.h>
 
+/**
+ * \brief subscriptions are kept in this list
+ */
 static LIST_HEAD(listen_list);
 
+/**
+ * \brief When event happens, we find this struct. For ubus events, we find it
+ * via container_of (1 handler per 1 subscription), while for DBus we find it
+ * manually
+ */
 struct ws_sub_info_ubus {
 	union {
 		struct ws_request_base;
@@ -186,6 +194,7 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct bl
 	struct wsu_client_session *client = wsi_to_client(wsi);
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 
+	// create entry
 	struct ws_sub_info_ubus *subinfo = malloc(sizeof *subinfo);
 	if (!subinfo) {
 		lwsl_err("alloc subinfo error\n");
@@ -194,6 +203,7 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct bl
 	}
 
 #if WSD_HAVE_UBUS
+	// register handler on ubus
 	subinfo->ubus_handler = (struct ubus_event_handler){};
 	ret = ubus_register_event_handler(prog->ubus_ctx, &subinfo->ubus_handler, ubusrpc->pattern);
 
@@ -212,12 +222,14 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct bl
 	subinfo->wsi = wsi;
 
 #if WSD_HAVE_DBUS
+	// turn on the global signal handler if this is first time we watch for events
 	if (list_empty(&listen_list)) {
 		dbus_bus_add_match(prog->dbus_ctx, "type='signal'", NULL);
 		dbus_connection_add_filter(prog->dbus_ctx, ws_sub_cb_dbus, NULL, NULL);
 	}
 #endif
 
+	// add entry to list
 	list_add_tail(&subinfo->list, &listen_list);
 	list_add_tail(&subinfo->cq, &client->rpc_call_q);
 	subinfo->cancel_and_destroy = wsubus_unsub_elem;
@@ -245,6 +257,9 @@ static void blobmsg_add_sub_info(struct blob_buf *buf, const char *name, const s
 }
 
 #if WSD_HAVE_DBUS
+/**
+ * \brief called by libdbus when DBus signal (=event) happens
+ */
 DBusHandlerResult ws_sub_cb_dbus(DBusConnection *bus, DBusMessage *msg, void *data)
 {
 	(void)data;
@@ -256,12 +271,14 @@ DBusHandlerResult ws_sub_cb_dbus(DBusConnection *bus, DBusMessage *msg, void *da
 	const char *type = dbus_message_get_member(msg);
 	lwsl_notice("dbus event %s happened\n", type);
 
+	// find matching entry in list
 	{
 		struct ws_sub_info_ubus *elem, *tmp;
 		list_for_each_entry_safe(elem, tmp, &listen_list, list) {
 			if (fnmatch(elem->sub->pattern, type, 0))
 				continue;
 
+			// prepare RPC event notification
 			struct blob_buf resp_buf = {};
 			blob_buf_init(&resp_buf, 0);
 			blobmsg_add_string(&resp_buf, "jsonrpc", "2.0");
@@ -272,6 +289,7 @@ DBusHandlerResult ws_sub_cb_dbus(DBusConnection *bus, DBusMessage *msg, void *da
 			void *tkt = blobmsg_open_table(&resp_buf, "params");
 			blobmsg_add_string(&resp_buf, "type", type);
 
+			// convert event name/data
 			struct duconv_convert c;
 			duconv_convert_init(&c, "arg%d");
 			DBusMessageIter iter;

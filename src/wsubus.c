@@ -42,6 +42,7 @@
 
 static lws_callback_function wsubus_cb;
 
+/** protocol + callback for RPC server */
 struct lws_protocols wsubus_proto = {
 	WSUBUS_PROTO_NAME,
 	wsubus_cb,
@@ -51,6 +52,19 @@ struct lws_protocols wsubus_proto = {
 	NULL, // - user pointer
 };
 
+/*
+ * WebSocket connections coming in from browser are not subject to same origin
+ * policy, which means any site's JS can connect to any websocket Since we are
+ * a websocket server most likely operating at a known address, we want to
+ * block access to our websocket from irrelevant origins.
+ *
+ * Fortunately Web Browsers will include origin header in WebSocket upgrade
+ * request, so we can block them using this.
+ */
+
+/**
+ * \brief return true if the origin is in list of allowed origins
+ */
 static bool origin_allowed(struct list_head *origin_list, char *origin)
 {
 	struct str_list *str;
@@ -63,6 +77,10 @@ static bool origin_allowed(struct list_head *origin_list, char *origin)
 	return false;
 }
 
+/**
+ * \brief return nonzero if the given wsi is allowed to upgrade to WebSocket on
+ * grounds of the HTTP origin
+ */
 static int wsubus_filter(struct lws *wsi)
 {
 	int len = lws_hdr_total_length(wsi, WSI_TOKEN_ORIGIN);
@@ -101,6 +119,9 @@ static int wsubus_filter(struct lws *wsi)
 	return rc;
 }
 
+/**
+ * \brief process one complete JSON RPC message (in blob) from client
+ */
 static void wsu_on_msg_from_client(struct lws *wsi,
 		struct blob_attr *blob)
 {
@@ -118,12 +139,14 @@ static void wsu_on_msg_from_client(struct lws *wsi,
 		goto out;
 	}
 
+	// parse the JSON-RPC part of message
 	if (jsonrpc_blob_req_parse(jsonrpc_req, blob) != 0) {
 		lwsl_info("blobmsg not valid jsonrpc\n");
 		e = JSONRPC_ERRORCODE__INVALID_REQUEST;
 		goto out;
 	}
 
+	// parse the RPC method-specific arguments and other data
 	ubusrpc_req = ubusrpc_blob_parse(jsonrpc_req->method, jsonrpc_req->params, &e);
 	if (!ubusrpc_req) {
 		lwsl_info("not valid ubus rpc in jsonrpc %d\n", e);
@@ -132,6 +155,7 @@ static void wsu_on_msg_from_client(struct lws *wsi,
 
 	wsu_sid_update(wsi_to_peer(wsi), ubusrpc_req->sid);
 
+	// call handler which was set by parse function
 	if (ubusrpc_req->handler(wsi, ubusrpc_req, jsonrpc_req->id) != 0) {
 		lwsl_info("ubusrpc method handler failed\n");
 		e = JSONRPC_ERRORCODE__OTHER;
@@ -140,6 +164,7 @@ static void wsu_on_msg_from_client(struct lws *wsi,
 
 out:
 	// send jsonrpc error code if we failed...
+	// otherwise handler itself is in charge of sending reply
 	if (e) {
 		char *json_str = jsonrpc__resp_error(jsonrpc_req ? jsonrpc_req->id : NULL, e, NULL);
 		wsu_queue_write_str(wsi, json_str);
@@ -163,6 +188,9 @@ static void wsu_read_reset(struct wsu_peer *peer)
 	json_tokener_reset(peer->curr_msg.jtok);
 }
 
+/**
+ * \brief receive a textual message part from websocket
+ */
 static void wsubus_rx_json(struct lws *wsi,
 		const char *in,
 		size_t len)
@@ -174,6 +202,7 @@ static void wsubus_rx_json(struct lws *wsi,
 	assert(len < INT32_MAX);
 	peer->curr_msg.len += len;
 
+	// feed in the newly-received text into json parser
 	struct json_object *jobj = json_tokener_parse_ex(peer->curr_msg.jtok, in, (int)len);
 
 	enum json_tokener_error tok_error = json_tokener_get_error(peer->curr_msg.jtok);
@@ -181,6 +210,7 @@ static void wsubus_rx_json(struct lws *wsi,
 
 	if (!remaining_bytes_in_frame && is_final_frame) {
 		if (parsed_to == (int)len && jobj && json_object_is_type(jobj, json_type_object)) {
+			// message is finished and parser has successfully parsed everything
 			struct blob_buf blob = {};
 			blob_buf_init(&blob, 0);
 			blobmsg_add_object(&blob, jobj);

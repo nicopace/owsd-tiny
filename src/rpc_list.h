@@ -38,6 +38,9 @@ struct ubusrpc_blob_list {
 struct ubusrpc_blob;
 struct lws;
 
+/**
+ * \brief parses json blob as list RPC and returns allocated parsed structure
+ */
 struct ubusrpc_blob* ubusrpc_blob_list_parse(struct blob_attr *blob);
 
 int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id);

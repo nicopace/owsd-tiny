@@ -145,8 +145,10 @@ int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, stru
 #if WSD_HAVE_DBUS
 	ret = handle_call_dbus(wsi, ubusrpc_blob, id);
 #endif
+	// handle_call_dbus will return 1 if it can't find object on DBus. In that case we try ubus
 
 	if (!ret) {
+		// dbus found the object, dont go to ubus
 		return ret;
 	}
 

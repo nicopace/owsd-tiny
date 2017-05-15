@@ -256,12 +256,16 @@ static inline int wsu_sid_update(struct wsu_peer *peer, const char *sid)
 	return 0;
 }
 
+/**
+ * \brief initializes the peer struct
+ */
 static inline int wsu_peer_init(struct wsu_peer *peer, enum wsu_role role)
 {
 	if (role == WSUBUS_ROLE_CLIENT) {
 		static unsigned int clientid = 1;
 
 		peer->u.client.id = clientid++;
+		// these lists will keep track of async calls in progress
 		INIT_LIST_HEAD(&peer->u.client.rpc_call_q);
 		INIT_LIST_HEAD(&peer->u.client.access_check_q);
 #if WSD_HAVE_UBUSPROXY
@@ -278,6 +282,7 @@ static inline int wsu_peer_init(struct wsu_peer *peer, enum wsu_role role)
 	if (!jtok)
 		return 1;
 
+	// initialize the parser
 	peer->curr_msg.len = 0;
 	peer->curr_msg.jtok = jtok;
 	INIT_LIST_HEAD(&peer->write_q);
@@ -292,6 +297,7 @@ static inline void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
 	peer->curr_msg.jtok = NULL;
 
 	{
+		// free everything from write queue
 		struct wsu_writereq *p, *n;
 		list_for_each_entry_safe(p, n, &peer->write_q, wq) {
 			lwsl_info("free write in progress %p\n", p);
@@ -303,6 +309,13 @@ static inline void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
 	if (peer->role == WSUBUS_ROLE_CLIENT) {
 		struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 
+		// cancel each access check in progress
+		//
+		// NOTE:
+		// it is important that first we cancel access checks in progress
+		// (before cancelling calls in progress), since access check may
+		// reference a pending call in progress (namely a call to ubus session
+		// object)
 		{
 			struct wsubus_client_access_check_ctx *p, *n;
 			list_for_each_entry_safe(p, n, &peer->u.client.access_check_q, acq) {
@@ -322,6 +335,7 @@ static inline void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
 
 		{
 			struct list_head *p, *n;
+			// cancel all calls in progress
 			list_for_each_safe(p, n, &peer->u.client.rpc_call_q) {
 				list_del(p);
 				struct ws_request_base *base = container_of(p, struct ws_request_base, cq);
@@ -342,6 +356,10 @@ static inline void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
 #endif
 }
 
+/**
+ * \brief when lws calls writable callback, this function drains the write
+ * queue using lws_write until we can't write anymore
+ */
 static inline int wsubus_tx_text(struct lws *wsi)
 {
 	struct wsu_peer *peer = wsi_to_peer(wsi);

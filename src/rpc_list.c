@@ -39,6 +39,9 @@
 
 #include <assert.h>
 
+/**
+ * \brief fills in allocated struct
+ */
 static int ubusrpc_blob_list_parse_(struct ubusrpc_blob_list *ubusrpc, struct blob_attr *blob)
 {
 	if (blob_id(blob) != BLOBMSG_TYPE_ARRAY) {
@@ -92,12 +95,18 @@ struct ubusrpc_blob* ubusrpc_blob_list_parse(struct blob_attr *blob)
 
 int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct blob_attr *id)
 {
+	// in short:
+	// ubus list can only be done synchronously, so if we have ubus, then we do it first.
+	// After that create a dbus list and complete it asynchronously, appending to the results buffer
+
+
 #if WSD_HAVE_DBUS
 	struct ws_request_base *req = calloc(1, sizeof(struct wsd_list_ctx));
 #else
 	struct ws_request_base *req = calloc(1, sizeof(struct ws_request_base));
 #endif
 
+	// set up result blob buffer
 	req->id = blob_memdup(id);
 	req->wsi = wsi;
 	blob_buf_init(&req->retbuf, 0);
@@ -105,10 +114,14 @@ int ubusrpc_handle_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc, struct bl
 #if WSD_HAVE_DBUS
 	req->cancel_and_destroy = wsd_list_ctx_cancel_and_destroy;
 #if WSD_HAVE_UBUS
+	// false tells it to just write result, not output it to client
 	handle_list_ubus(req, wsi, ubusrpc, id, false);
 #endif
+	// dbus will add its own data and then send result
 	handle_list_dbus(req, wsi, ubusrpc, id);
 #elif WSD_HAVE_UBUS && !WSD_HAVE_DBUS
+
+	// otherwise let ubus send the reply
 	handle_list_ubus(req, wsi, ubusrpc, id, true);
 	ubusrpc_blob_destroy_default(ubusrpc);
 	blob_buf_free(&req->retbuf);

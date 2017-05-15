@@ -24,7 +24,8 @@
 #include "rpc.h"
 #include "util_jsonrpc.h"
 
-// FIXME
+// FIXME RPCs should add themselves to list via macro / constructor magic,
+// instead of explicitly listing them to add them in list of supported RPCs
 #include "rpc_call.h"
 #include "rpc_list.h"
 #include "rpc_sub.h"
