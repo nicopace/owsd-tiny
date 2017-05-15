@@ -83,6 +83,7 @@ char* jsonrpc__resp_ubus(struct blob_attr *id, int ubus_rc, struct blob_attr *re
 char *jsonrpc__req_ubuslist(int id, const char *sid, const char *pattern)
 {
 	static char buf[2048];
+	// TODO use json_object, blobmsg or handle (malicions) escapes in the printf
 	snprintf(buf, sizeof buf, "{"
 			"\"jsonrpc\":\"2.0\",\"id\":%d,"
 			"\"method\":\"list\","
@@ -97,6 +98,7 @@ char *jsonrpc__req_ubuslist(int id, const char *sid, const char *pattern)
 char *jsonrpc__req_ubuslisten(int id, const char *sid, const char *pattern)
 {
 	static char buf[2048];
+	// TODO use json_object, blobmsg or handle (malicions) escapes in the printf
 	snprintf(buf, sizeof buf, "{"
 			"\"jsonrpc\":\"2.0\",\"id\":%d,"
 			"\"method\":\"subscribe\","
@@ -111,6 +113,8 @@ char *jsonrpc__req_ubuslisten(int id, const char *sid, const char *pattern)
 char *jsonrpc__req_ubuscall(int id, const char *sid, const char *obj, const char *method, json_object *arg)
 {
 	static char buf[2048];
+	// TODO use json_object, blobmsg or handle (malicions) escapes in the printf
+	// XXX FIXME
 	snprintf(buf, sizeof buf, "{"
 			"\"jsonrpc\":\"2.0\",\"id\":%d,"
 			"\"method\":\"call\","

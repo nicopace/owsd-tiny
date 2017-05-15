@@ -21,6 +21,9 @@
 #include <libubox/blobmsg.h>
 #include <assert.h>
 
+/**
+ * \brief convert text representation (from JSON) to enum
+ */
 static inline enum blobmsg_type blobmsg_type_from_str(const char *c)
 {
 	return
@@ -32,6 +35,9 @@ static inline enum blobmsg_type blobmsg_type_from_str(const char *c)
 		*c == 'b' ? BLOBMSG_TYPE_INT8   : BLOBMSG_TYPE_UNSPEC;
 }
 
+/**
+ * \brief convert enum blobmsg type to textual representation for JSON
+ */
 static inline const char *blobmsg_type_to_str(enum blobmsg_type t)
 {
 	static const char *const lookup[] = {
