@@ -237,7 +237,7 @@ static inline int wsu_queue_write_str(struct lws *wsi, const char *response_str)
 
 	list_add_tail(&w->wq, &peer->write_q);
 
-	lwsl_debug("sending reply: %.*s ... %p, %d\n", len > 50 ? 50 : len, response_str, w);
+	lwsl_debug("sending reply: %.*s ... %p\n", len > 50 ? 50 : (int)len, response_str, w);
 	int r = lws_callback_on_writable(wsi);
 
 	if (r < 0) {

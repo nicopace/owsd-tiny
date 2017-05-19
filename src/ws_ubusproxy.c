@@ -120,7 +120,7 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 
 		struct prog_context *prog = lws_context_user(lws_get_context(remote->wsi));
 
-		lwsl_notice("received, len %d < %.*s > \n", len, len > 200 ? 200 : len, (char *)in);
+		lwsl_notice("received, len %zu < %.*s > \n", len, len > 200 ? 200 : (int)len, (char *)in);
 
 		if (!jobj)
 			goto out;

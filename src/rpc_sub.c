@@ -284,7 +284,7 @@ DBusHandlerResult ws_sub_cb_dbus(DBusConnection *bus, DBusMessage *msg, void *da
 			blobmsg_add_string(&resp_buf, "jsonrpc", "2.0");
 			blobmsg_add_string(&resp_buf, "method", "event");
 
-			lwsl_notice("notifying wsi %p \n");
+			lwsl_notice("notifying wsi %p \n", elem->wsi);
 
 			void *tkt = blobmsg_open_table(&resp_buf, "params");
 			blobmsg_add_string(&resp_buf, "type", type);
@@ -355,7 +355,7 @@ int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct 
 	char *response;
 	int ret = 0;
 
-	lwsl_debug("unsub by id %u ret = %d\n", ubusrpc->pattern, ret);
+	lwsl_debug("unsub %s ret = %d\n", ubusrpc->pattern, ret);
 
 	{
 		ret = 1;
@@ -440,7 +440,7 @@ static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *e
 {
 	__attribute__((unused)) int mtype = blobmsg_type(msg);
 	(void)ctx;
-	lwsl_debug("sub cb called, ev type %s, blob of len %lu thpe %s\n", type, blobmsg_len(msg),
+	lwsl_debug("sub cb called, ev type %s, blob of len %d thpe %s\n", type, blobmsg_len(msg),
 			mtype == BLOBMSG_TYPE_STRING ? "\"\"" :
 			mtype == BLOBMSG_TYPE_TABLE ? "{}" :
 			mtype == BLOBMSG_TYPE_ARRAY ? "[]" : "<>");

@@ -100,7 +100,9 @@ int main(int argc, char *argv[])
 {
 	int rc = 0;
 
+#if WSD_HAVE_UBUS
 	const char *ubus_sock_path = WSD_DEF_UBUS_PATH;
+#endif
 	const char *www_dirpath = WSD_DEF_WWW_PATH;
 	int www_maxage = WSD_DEF_WWW_MAXAGE;
 	char *redir_from = NULL;
@@ -127,7 +129,10 @@ int main(int argc, char *argv[])
 	int c;
 	while ((c = getopt(argc, argv,
 					/* global */
-					"s:w:t:r:h"
+#if WSD_HAVE_UBUS
+					"s:"
+#endif
+					"w:t:r:h"
 
 					/* per-client */
 					"P:"
@@ -144,9 +149,11 @@ int main(int argc, char *argv[])
 #endif // LWS_OPENSSL_SUPPORT
 					)) != -1) {
 		switch (c) {
+#if WSD_HAVE_UBUS
 		case 's':
 			ubus_sock_path = optarg;
 			break;
+#endif
 		case 'w':
 			www_dirpath = optarg;
 			break;

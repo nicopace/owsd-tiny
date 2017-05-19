@@ -26,6 +26,7 @@
 #include <libwebsockets.h>
 
 #include <errno.h>
+#include <string.h>
 #include <assert.h>
 
 /*

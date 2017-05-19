@@ -310,8 +310,8 @@ int wsubus_access_check_(
 	}
 
 	// by default, if no checker has made decision until now, ask rpcd about it (or allow if no ubus support)
-	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 #if WSD_HAVE_UBUS
+	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 	return wsubus_access_check_via_session(req, prog->ubus_ctx, sid, scope, object, method, args, ctx, cb);
 #else
 	return EXT_CHECK_ALLOW;

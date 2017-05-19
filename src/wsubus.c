@@ -218,7 +218,7 @@ static void wsubus_rx_json(struct lws *wsi,
 			blob_buf_free(&blob);
 		} else {
 			// parse error -> we just ignore the message
-			lwsl_err("json parsing error %s, at char %d of %u, dropping msg\n",
+			lwsl_err("json parsing error %s, at char %d of %zu, dropping msg\n",
 					json_tokener_error_desc(tok_error), parsed_to, len);
 			char *resp = jsonrpc__resp_error(NULL, JSONRPC_ERRORCODE__PARSE_ERROR, NULL);
 			wsu_queue_write_str(wsi, resp);
