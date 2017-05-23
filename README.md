@@ -22,7 +22,6 @@
 - "unsubscribe"
   * stop listening
 
-
 ## ubus support
 - methods on ubus objects can be called via the "call" rpc
 - events sent via ubus\_send\_event can be received
@@ -48,3 +47,23 @@
 ## SSL options
 - if SSL support is available at compile-time in libwebsockets, SSL can be used
 - server can be configured to allow all operations (skipping ubus session ACL checking) if clients provide a client certificate under CA trusted by server
+
+## Manual test run
+
+If you run the owsd as RPC server to listen on some port (e.g. 1234)
+
+`owsd -p 1234`
+
+then it is easiest to test/connect with a tool like `wscat`:
+
+`wscat -c 'ws://127.0.0.1' -s ubus-json`
+
+The established web socket can be used to send RPCs in the JSON format.
+
+## Tests
+
+In the test/ subdirectory, there is a very simple test runner made in nodejs. It is configured by editing parameters `config.js`, and running:
+
+`node client.js [session-id]`
+
+The `config.js` file specifies the text file containing test input and expected output. See existing text files for examples of RPC commands.
