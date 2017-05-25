@@ -144,6 +144,13 @@ static int ws_http_cb(struct lws *wsi,
 	(void)len;
 
 	switch (reason) {
+
+#ifdef LWS_WITH_CGI
+	case LWS_CALLBACK_CGI_STDIN_DATA:	 /* POST body for stdin */
+	case LWS_CALLBACK_CGI_TERMINATED:
+	case LWS_CALLBACK_CGI:
+		return lws_callback_http_dummy(wsi, reason, user, in, len);
+#endif
 		// fd handling
 	case LWS_CALLBACK_ADD_POLL_FD: {
 		// libwebsockets wants us to watch a new fd
@@ -250,6 +257,12 @@ static int ws_http_cb(struct lws *wsi,
 	}
 
 	case LWS_CALLBACK_HTTP_WRITEABLE:
+
+#ifdef LWS_WITH_CGI
+		lws_callback_http_dummy(wsi, reason, user, in, len);
+		return ws_http_serve_interpret_retcode(wsi, 1);
+#endif
+
 		// continue HTTP file transfer
 		lwsl_info("http request writable again %s\n", (char *)in);
 		rc = lws_serve_http_file_fragment(wsi);
