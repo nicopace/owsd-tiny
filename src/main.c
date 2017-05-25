@@ -410,10 +410,45 @@ ssl:
 	wwwmount.mountpoint_len = strlen(wwwmount.mountpoint);
 	wwwmount.origin_protocol = LWSMPRO_FILE;
 
+  // cgi environment variables
+  const static struct lws_protocol_vhost_options cgienv3 = {
+    .name = "SCRIPT_NAME",
+    .value = "/cgi-bin/luci",
+  };
+
+  const static struct lws_protocol_vhost_options cgienv2 = {
+    .next = &cgienv3,
+    .name = "SCRIPT_FILENAME",
+    .value = "/www/cgi-bin/luci",
+  };
+
+  const static struct lws_protocol_vhost_options cgienv1 = {
+    .next = &cgienv2,
+    .name = "DOCUMENT_ROOT",
+    .value = "/www",
+  };
+
+	// create mount for the CGI
+	const static struct lws_http_mount cgimount = {
+		.mount_next = &wwwmount,
+		.mountpoint = "/cgi-bin/luci",
+		.origin = "/www/cgi-bin/luci",
+		.cgienv = &cgienv1,
+		.cgi_timeout = 5000,
+		.origin_protocol = LWSMPRO_CGI,
+		.mountpoint_len = 13,
+	};
+
 	// create all listening vhosts
 	for (struct vhinfo_list *c = currvh; c; c = c->next) {
 		c->vh_info.protocols = ws_protocols;
-		c->vh_info.mounts = &wwwmount;
+
+		c->vh_info.mounts = &cgimount;
+
+		// This is so that server closes connection as soon as possible
+		// when CGI script does not return "Content-length" or "Transfer-encoding".
+		// Otherwise, client waits for more data...
+		c->vh_info.keepalive_timeout = -1;
 
 		// tell SSL clients to include their certificate but don't fail if they don't
 		if (c->vh_info.ssl_ca_filepath) {
