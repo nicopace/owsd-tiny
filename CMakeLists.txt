@@ -40,9 +40,11 @@ set(SOURCES
 	src/util_jsonrpc.c
 	)
 
-find_library(JSON_LIBRARIES NAMES json-c)
 find_package(libwebsockets REQUIRED)
-set(WSD_LINK ubox blobmsg_json ${JSON_LIBRARIES} ${LIBWEBSOCKETS_LIBRARIES})
+find_package(LIBUBOX REQUIRED)
+find_library(JSON_LIBRARIES NAMES json-c)
+
+set(WSD_LINK ${LIBWEBSOCKETS_LIBRARIES} ${LIBUBOX_LIBRARIES} ${JSON_LIBRARIES})
 set(WSD_INCLUDE ${LIBWEBSOCKETS_INCLUDE_DIRS})
 
 if (WSD_HAVE_UBUS)
