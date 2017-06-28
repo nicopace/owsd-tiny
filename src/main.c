@@ -445,11 +445,6 @@ ssl:
 
 		c->vh_info.mounts = &cgimount;
 
-		// This is so that server closes connection as soon as possible
-		// when CGI script does not return "Content-length" or "Transfer-encoding".
-		// Otherwise, client waits for more data...
-		c->vh_info.keepalive_timeout = -1;
-
 		// tell SSL clients to include their certificate but don't fail if they don't
 		if (c->vh_info.ssl_ca_filepath) {
 			c->vh_info.options |= LWS_SERVER_OPTION_PEER_CERT_NOT_REQUIRED | LWS_SERVER_OPTION_REQUIRE_VALID_OPENSSL_CLIENT_CERT;
