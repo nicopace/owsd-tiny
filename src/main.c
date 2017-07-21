@@ -96,6 +96,23 @@ void utimer_service(struct uloop_timeout *utimer)
 	uloop_timeout_set(utimer, 1000);
 }
 
+static void sigchld_handler(int signo)
+{
+	return;
+}
+
+static bool install_handler(int signum, void (*handler)(int))
+{
+	struct sigaction sa = {0};
+	sa.sa_handler = handler;
+	sa.sa_flags = 0;
+	if (sigaction(signum, &sa, NULL) == -1) {
+		lwsl_err("signal handler install: %s\n", strerror(errno));
+		return false;
+	}
+	return true;
+}
+
 int main(int argc, char *argv[])
 {
 	int rc = 0;
@@ -314,6 +331,9 @@ ssl:
 	argv += optind;
 
 	lws_set_log_level(-1, NULL);
+
+	if (!install_handler(SIGCHLD, sigchld_handler))
+		goto error;
 
 	uloop_init();
 
