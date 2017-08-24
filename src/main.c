@@ -431,7 +431,13 @@ ssl:
 	wwwmount.origin_protocol = LWSMPRO_FILE;
 
   // cgi environment variables
+  const static struct lws_protocol_vhost_options cgienv4 = {
+    .name = "PATH",
+    .value = "/bin:/usr/bin:/usr/local/bin:/usr/sbin:/sbin:/var/www/cgi-bin",
+  };
+
   const static struct lws_protocol_vhost_options cgienv3 = {
+    .next = &cgienv4,
     .name = "SCRIPT_NAME",
     .value = "/cgi-bin/luci",
   };
