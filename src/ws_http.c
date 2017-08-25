@@ -103,7 +103,7 @@ static void ufd_service_cb(struct uloop_fd *ufd, unsigned int revents)
 		lwsl_debug("ufd HUP on %d\n", ufd->fd);
 	}
 	if (ufd->error) {
-		pfd.revents |= POLLERR;
+		pfd.revents |= LWS_POLLHUP;
 		lwsl_debug("ufd ERR on %d\n", ufd->fd);
 	}
 
