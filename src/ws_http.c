@@ -66,7 +66,8 @@ eventmask_pollfd_to_ufd(int pollfd_events)
 {
 	return
 		(pollfd_events & POLLIN  ? ULOOP_READ  : 0) |
-		(pollfd_events & POLLOUT ? ULOOP_WRITE : 0);
+		(pollfd_events & POLLOUT ? ULOOP_WRITE : 0) |
+		ULOOP_ERROR_CB;
 }
 // }}}
 
