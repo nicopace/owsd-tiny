@@ -271,11 +271,12 @@ static int ws_http_cb(struct lws *wsi,
 
 	case LWS_CALLBACK_FILTER_HTTP_CONNECTION:
 	case LWS_CALLBACK_HTTP_BODY:
-	case LWS_CALLBACK_HTTP_BODY_COMPLETION:
-	case LWS_CALLBACK_HTTP_FILE_COMPLETION:
 	case LWS_CALLBACK_CLOSED_HTTP:
 		lwsl_info("http callback %d\n", reason);
 		return 0;
+	case LWS_CALLBACK_HTTP_BODY_COMPLETION:
+	case LWS_CALLBACK_HTTP_FILE_COMPLETION:
+		return lws_http_transaction_completed(wsi);
 
 	case LWS_CALLBACK_RECEIVE_PONG:
 		break;
