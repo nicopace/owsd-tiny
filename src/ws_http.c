@@ -140,7 +140,6 @@ static int ws_http_cb(struct lws *wsi,
 	struct lws_pollargs *in_pollargs = (struct lws_pollargs*)in;
 
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
-	int rc;
 
 	(void)len;
 
@@ -150,6 +149,7 @@ static int ws_http_cb(struct lws *wsi,
 	case LWS_CALLBACK_CGI_STDIN_DATA:	 /* POST body for stdin */
 	case LWS_CALLBACK_CGI_TERMINATED:
 	case LWS_CALLBACK_CGI:
+	case LWS_CALLBACK_HTTP_WRITEABLE:
 		return lws_callback_http_dummy(wsi, reason, user, in, len);
 #endif
 		// fd handling
@@ -256,19 +256,6 @@ static int ws_http_cb(struct lws *wsi,
 		// we have custom HTTP serving logic called from here
 		return ws_http_serve_file(wsi, in);
 	}
-
-	case LWS_CALLBACK_HTTP_WRITEABLE:
-
-#ifdef LWS_WITH_CGI
-		lws_callback_http_dummy(wsi, reason, user, in, len);
-		return ws_http_serve_interpret_retcode(wsi, 1);
-#endif
-
-		// continue HTTP file transfer
-		lwsl_info("http request writable again %s\n", (char *)in);
-		rc = lws_serve_http_file_fragment(wsi);
-		return ws_http_serve_interpret_retcode(wsi, rc);
-
 	case LWS_CALLBACK_FILTER_HTTP_CONNECTION:
 	case LWS_CALLBACK_HTTP_BODY:
 	case LWS_CALLBACK_CLOSED_HTTP:
