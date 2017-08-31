@@ -61,6 +61,7 @@ static void usage(char *name)
 			"  -w <www_path>    HTTP resources path [" WSD_DEF_WWW_PATH "]\n"
 			"  -t <www_maxage>  enable HTTP caching with specified max_age in seconds\n"
 			"  -r <from>:<to>   HTTP path redirect pair\n"
+			"  -m <from>:<to>   CGI mount point\n"
 #if WSD_HAVE_UBUSPROXY
 			"  -P <url> ...     URL of remote WS ubus to proxy as client\n"
 #ifdef LWS_OPENSSL_SUPPORT
@@ -124,6 +125,8 @@ int main(int argc, char *argv[])
 	int www_maxage = WSD_DEF_WWW_MAXAGE;
 	char *redir_from = NULL;
 	char *redir_to = NULL;
+	char *cgi_from = NULL;
+	char *cgi_to = NULL;
 	bool any_ssl = false;
 
 	// list of per-vhost creation_info structs, with custom per-vhost storage
@@ -149,7 +152,7 @@ int main(int argc, char *argv[])
 #if WSD_HAVE_UBUS
 					"s:"
 #endif
-					"w:t:r:h"
+					"w:t:r:m:h"
 
 					/* per-client */
 					"P:"
@@ -192,6 +195,15 @@ int main(int argc, char *argv[])
 			}
 			*redir_to++ = '\0';
 			redir_from = optarg;
+			break;
+		case 'm':
+			cgi_to = strchr(optarg, ':');
+			if (!cgi_to) {
+				lwsl_err("invalid cgi origin specified");
+				goto error;
+			}
+			*cgi_to++ = '\0';
+			cgi_from = optarg;
 			break;
 
 			// client
@@ -455,7 +467,7 @@ ssl:
   };
 
 	// create mount for the CGI
-	const static struct lws_http_mount cgimount = {
+	static struct lws_http_mount cgimount = {
 		.mount_next = &wwwmount,
 		.mountpoint = "/cgi-bin/luci",
 		.origin = "/www/cgi-bin/luci",
@@ -464,6 +476,12 @@ ssl:
 		.origin_protocol = LWSMPRO_CGI,
 		.mountpoint_len = 13,
 	};
+
+	if (cgi_from && cgi_to) {
+		cgimount.mountpoint = cgi_from;
+		cgimount.mountpoint_len = strlen(cgimount.mountpoint);
+		cgimount.origin = cgi_to;
+	}
 
 	// create all listening vhosts
 	for (struct vhinfo_list *c = currvh; c; c = c->next) {
