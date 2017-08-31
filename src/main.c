@@ -474,8 +474,8 @@ ssl:
 		.cgienv = &cgienv1,
 		.cgi_timeout = 5000,
 		.origin_protocol = LWSMPRO_CGI,
-		.mountpoint_len = 13,
 	};
+	cgimount.mountpoint_len = strlen(cgimount.mountpoint);
 
 	if (cgi_from && cgi_to) {
 		cgimount.mountpoint = cgi_from;
