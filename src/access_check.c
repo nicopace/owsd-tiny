@@ -87,27 +87,35 @@ static enum wsu_ext_result wsu_ext_restrict_interface(struct lws *wsi,
  */
 static enum wsu_ext_result wsu_ext_check_tls(struct lws *wsi)
 {
-	if (!lws_is_ssl(wsi)) {
-		return EXT_CHECK_NEXT;
-	}
+	// return DEFAULT since next auth check may allow this session
+	enum wsu_ext_result res = EXT_CHECK_DENY;
 
-	SSL *ssl = lws_get_ssl(wsi);
-	X509 *x = SSL_get_peer_certificate(ssl);
-	int have_cert = !!x;
-	X509_free(x);
-	if (have_cert && SSL_get_verify_result(ssl) == X509_V_OK) {
-#ifdef _DEBUG
-		char cert_subj[80] = "";
-		X509_NAME *xname = X509_get_subject_name(x);
-		X509_NAME_get_text_by_NID(xname, NID_commonName, cert_subj, sizeof cert_subj);
-		lwsl_notice("wsi %p was TLS authenticated with cert CN= %s\n", wsi, cert_subj);
-#endif
-		return EXT_CHECK_ALLOW;
-	} else {
-		lwsl_notice("wsi %p was not TLS authenticated\n", wsi);
-		// return DEFAULT since next auth check may allow this session
-		return EXT_CHECK_DENY;
+	if (!lws_is_ssl(wsi)) {
+		res = EXT_CHECK_NEXT;
+		goto exit;
 	}
+	union lws_tls_cert_info_results info = {0};
+	size_t len = 64;
+
+	int rc = lws_tls_peer_cert_info(wsi, LWS_TLS_CERT_INFO_VERIFIED, &info, len);
+	if (rc) {
+		lwsl_notice("wsi %p TLS cert does not exist\n", wsi);
+		goto exit;
+	}
+	if (!info.verified) {
+		lwsl_notice("wsi %p TLS cert verification failure\n", wsi);
+		goto exit;
+	}
+	res = EXT_CHECK_ALLOW;
+
+#ifdef _DEBUG
+	lws_tls_peer_cert_info(wsi, LWS_TLS_CERT_INFO_COMMON_NAME, &info, len);
+	lwsl_notice("wsi %p was TLS authenticated with cert CN = %s\n",
+							wsi, info.ns.name);
+#endif
+
+exit:
+	return res;
 }
 #endif
 

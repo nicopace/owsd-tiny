@@ -78,23 +78,8 @@ if (WSD_HAVE_DBUS)
 	)
 endif()
 
-include(CheckSymbolExists)
-check_symbol_exists(LWS_OPENSSL_SUPPORT "lws_config.h" LWS_HAS_SSL)
-if (LWS_HAS_SSL)
-	set(WSD_HAVE_SSL BOOL ON)
-	find_package(OpenSSL REQUIRED)
-	list(APPEND WSD_LINK ${OPENSSL_LIBRARIES})
-	list(APPEND WSD_INCLUDE ${OPENSSL_INCLUDE_DIRS})
-else()
-	if (WSD_REQUIRE_SSL)
-		message (FATAL_ERROR "Didn't find SSL support in lws!")
-	endif()
-	set(WSD_HAVE_SSL BOOL OFF)
-endif()
-
 configure_file(src/owsd-config.in.h owsd-config.h ESCAPE_QUOTES)
 list(APPEND WSD_INCLUDE ${CMAKE_BINARY_DIR})
-
 
 add_executable(owsd ${SOURCES})
 target_link_libraries(owsd ${WSD_LINK})
