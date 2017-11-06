@@ -77,9 +77,9 @@ static void usage(char *name)
 			"  -i <interface>   interface to bind to \n"
 			"  -o <origin> ...  origin url address to whitelist\n"
 			"  -u <user> ...    restrict login to this rpcd user\n"
-#ifdef LWS_USE_IPV6
+#ifdef LWS_WITH_IPV6
 			"  -6               enable IPv6, repeat to disable IPv4 [off]\n"
-#endif // LWS_USE_IPV6
+#endif // LWS_WITH_IPV6
 #ifdef LWS_OPENSSL_SUPPORT
 			"  -c <cert_path>   SSL cert path if SSL wanted\n"
 			"  -k <key_path>    SSL key path if SSL wanted\n"
@@ -161,9 +161,9 @@ int main(int argc, char *argv[])
 #endif
 					/* per-vhost */
 					"p:i:o:L:u:"
-#ifdef LWS_USE_IPV6
+#ifdef LWS_WITH_IPV6
 					"6"
-#endif // LWS_USE_IPV6
+#endif // LWS_WITH_IPV6
 #ifdef LWS_OPENSSL_SUPPORT
 					"c:k:a:"
 #endif // LWS_OPENSSL_SUPPORT
@@ -306,7 +306,7 @@ int main(int argc, char *argv[])
 		case 'L':
 			currvh->vh_ctx.name = optarg;
 			break;
-#ifdef LWS_USE_IPV6
+#ifdef LWS_WITH_IPV6
 		case '6':
 			if (currvh->vh_info.options & LWS_SERVER_OPTION_DISABLE_IPV6) {
 				currvh->vh_info.options &= ~LWS_SERVER_OPTION_DISABLE_IPV6;
@@ -314,7 +314,7 @@ int main(int argc, char *argv[])
 				currvh->vh_info.options |= LWS_SERVER_OPTION_IPV6_V6ONLY_MODIFY | LWS_SERVER_OPTION_IPV6_V6ONLY_VALUE;
 			}
 			break;
-#endif // LWS_USE_IPV6
+#endif // LWS_WITH_IPV6
 #ifdef LWS_OPENSSL_SUPPORT
 		case 'c':
 			currvh->vh_info.ssl_cert_filepath = optarg;
