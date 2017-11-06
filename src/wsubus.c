@@ -23,9 +23,9 @@
  */
 #include "common.h"
 
-#include "ws_http.h"
 #include "wsubus.h"
 #include "wsubus.impl.h"
+#include "wsubus_client.h"
 #include "rpc.h"
 #include "access_check.h"
 #include "util_jsonrpc.h"
@@ -321,23 +321,8 @@ static int wsubus_cb(struct lws *wsi,
 		int role = peer->role;
 		wsu_peer_deinit(wsi, peer);
 
-		if (role == WSUBUS_ROLE_CLIENT)
-			break;
-		struct clvh_context *client_infos = lws_protocol_vh_priv_get(lws_get_vhost(wsi), &ws_http_proto);
-		struct reconnect_info *c;
-		if (client_infos) {
-			if (list_empty(&client_infos->clients))
-				lwsl_notice(WSUBUS_PROTO_NAME ": No clients in list\n");
-			list_for_each_entry(c, &client_infos->clients, list) {
-				if (c->wsi == wsi) {
-					loop_timeout_set(&c->timer, 2000);
-					c->reconnect_count = 0;
-				}
-			}
-		} else {
-			lwsl_notice(WSUBUS_PROTO_NAME ": client list is EMPTY\n");
-		}
-
+		if (role != WSUBUS_ROLE_CLIENT)
+			wsubus_client_reconnect(wsi);
 		break;
 
 	case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE:

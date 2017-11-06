@@ -21,6 +21,7 @@
 
 #include "ws_http.h"
 #include "wsubus.h"
+#include "wsubus_client.h"
 #include "rpc.h"
 
 #if WSD_HAVE_DBUS
@@ -63,7 +64,9 @@ static void usage(char *name)
 			"  -r <from>:<to>   HTTP path redirect pair\n"
 			"  -m <from>:<to>   CGI mount point\n"
 #if WSD_HAVE_UBUSPROXY
+			"  -U               Enable WS ubus proxying\n"
 			"  -P <url> ...     URL of remote WS ubus to proxy as client\n"
+			"                   (also activates -U )"
 #ifdef LWS_OPENSSL_SUPPORT
 			"  -C <cert_path>   SSL client cert path\n"
 			"  -K <cert_path>   SSL client key path\n"
@@ -136,29 +139,22 @@ int main(int argc, char *argv[])
 		struct vh_context vh_ctx;
 	} *currvh = NULL;
 
-#if WSD_HAVE_UBUSPROXY
-	bool any_ssl_client = false;
-	struct clvh_context connect_infos;
-	INIT_LIST_HEAD(&connect_infos.clients);
-
-	// contains list of urls where to connect as ubus proxy
-	struct lws_context_creation_info clvh_info = {};
-	// FIXME to support different certs per different client, this becomes per-client
-#endif
-
 	int c;
 	while ((c = getopt(argc, argv,
 					/* global */
 #if WSD_HAVE_UBUS
 					"s:"
-#endif
+#endif /* WSD_HAVE_UBUSPROXY */
 					"w:t:r:m:h"
 
+#if WSD_HAVE_UBUSPROXY
+					"U"
 					/* per-client */
 					"P:"
 #ifdef LWS_OPENSSL_SUPPORT
 					"C:K:A:"
-#endif
+#endif /* LWS_OPENSSL_SUPPORT */
+#endif /* WSD_HAVE_UBUSPROXY */
 					/* per-vhost */
 					"p:i:o:L:u:"
 #ifdef LWS_WITH_IPV6
@@ -173,7 +169,7 @@ int main(int argc, char *argv[])
 		case 's':
 			ubus_sock_path = optarg;
 			break;
-#endif
+#endif /* WSD_HAVE_UBUS */
 		case 'w':
 			www_dirpath = optarg;
 			break;
@@ -208,15 +204,10 @@ int main(int argc, char *argv[])
 
 			// client
 #if WSD_HAVE_UBUSPROXY
+		case 'U':
+			wsubus_client_enable_proxy();
+			break;
 		case 'P': {
-			struct reconnect_info *newcl = malloc(sizeof *newcl);
-			newcl->wsi = NULL;
-			newcl->timer = (struct uloop_timeout){};
-			newcl->cl_info = (struct lws_client_connect_info){};
-			if (!newcl) {
-				lwsl_err("OOM clinfo init\n");
-				goto error;
-			}
 
 			const char *proto, *addr, *path;
 			int port;
@@ -224,32 +215,24 @@ int main(int argc, char *argv[])
 				lwsl_err("invalid connect URL for client\n");
 				goto error;
 			}
-			newcl->cl_info.port = port;
-			newcl->cl_info.address = addr;
-			newcl->cl_info.host = addr;
-			newcl->cl_info.path = path;
-			if (!strcmp("wss", proto) || !strcmp("https", proto))  {
-				newcl->cl_info.ssl_connection = LCCSCF_USE_SSL | LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
-				any_ssl = true;
-				any_ssl_client = true;
+			if (strncmp(proto, "wss", 4) != 0) {
+				lwsl_err("only wss protocol for WS proxy client\n");
+				goto error;
 			}
-			newcl->cl_info.pwsi = &newcl->wsi;
-			newcl->reconnect_count = 0;
-
-			// push the connect url info into our list
-			list_add_tail(&newcl->list, &connect_infos.clients);
+			any_ssl = true;
+			wsubus_client_create(addr, port, path, CLIENT_FROM_PROGARG);
 			break;
 		}
 #ifdef LWS_OPENSSL_SUPPORT
 			// following options tweak options for connecting as proxy
 		case 'C':
-			clvh_info.ssl_cert_filepath = optarg;
+			wsubus_client_set_cert_filepath(optarg);
 			break;
 		case 'K':
-			clvh_info.ssl_private_key_filepath = optarg;
+			wsubus_client_set_private_key_filepath(optarg);
 			break;
 		case 'A':
-			clvh_info.ssl_ca_filepath = optarg;
+			wsubus_client_set_ca_filepath(optarg);
 			break;
 #endif
 #endif // WSD_HAVE_UBUSPROXY
@@ -513,34 +496,7 @@ ssl:
 	}
 
 #if WSD_HAVE_UBUSPROXY
-	struct lws_protocols ws_ubusproxy_protocols[] = {
-		ws_http_proto,
-		ws_ubusproxy_proto,
-		{ }
-	};
-	if (!list_empty(&connect_infos.clients)) {
-		// create fake "vhost" under which ubusproxy will connect as client
-		clvh_info.port = CONTEXT_PORT_NO_LISTEN;
-		clvh_info.protocols = ws_ubusproxy_protocols;
-		if (any_ssl_client) {
-			clvh_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT | LWS_SERVER_OPTION_DISABLE_OS_CA_CERTS;
-		}
-		struct lws_vhost *clvh = lws_create_vhost(lws_ctx, &clvh_info);
-		if (clvh) {
-			// the fake vhost's protocols[0] will establish connections
-			struct clvh_context **clvh_context = lws_protocol_vh_priv_zalloc(clvh, &clvh_info.protocols[0] /* protocols[0] handles reconnects */, sizeof clvh_context);
-
-			// we just point it to our clvh which has list of urls to connect to as proxy
-			struct reconnect_info *c;
-			list_for_each_entry(c, &connect_infos.clients, list) {
-				// but first we set up some missing members
-				c->cl_info.vhost = clvh;
-				c->cl_info.context = lws_ctx;
-				c->cl_info.protocol = ws_ubusproxy_protocols[1].name;
-			}
-			*clvh_context = &connect_infos;
-		}
-	}
+	wsubus_client_start_proxying(lws_ctx);
 #endif
 
 	global.utimer.cb = utimer_service;
@@ -551,14 +507,7 @@ ssl:
 	uloop_run();
 
 #if WSD_HAVE_UBUSPROXY
-	// free the info for connection as ubus proxy
-	if (!list_empty(&connect_infos.clients)) {
-		struct reconnect_info *c, *tmp;
-		list_for_each_entry_safe(c, tmp, &connect_infos.clients, list) {
-			uloop_timeout_cancel(&c->timer);
-			free(c);
-		}
-	}
+	wsubus_client_clean();
 #endif
 
 	// free the per-vhost contexts

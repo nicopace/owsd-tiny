@@ -28,6 +28,7 @@
 #include "ws_http.h"
 #include "common.h"
 
+// contains list of urls where to connect as ubus proxy
 static struct lws_context_creation_info clvh_info = {};
 // FIXME to support different certs per different client, this becomes per-client
 
@@ -172,4 +173,21 @@ void wsubus_client_set_private_key_filepath(const char *filepath)
 void wsubus_client_set_ca_filepath(const char *filepath)
 {
 	clvh_info.ssl_ca_filepath = filepath;
+}
+
+/* delete one client */
+void wsubus_client_del(struct reconnect_info *c)
+{
+	uloop_timeout_cancel(&c->timer);
+	list_del(&c->list);
+	free(c);
+}
+
+/* free the info for connection as ubus proxy / delete all clients */
+void wsubus_client_clean()
+{
+	struct reconnect_info *c, *tmp;
+
+	list_for_each_entry_safe(c, tmp, &connect_infos.clients, list)
+		wsubus_client_del(c);
 }
