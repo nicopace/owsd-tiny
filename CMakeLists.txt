@@ -32,6 +32,7 @@ set(SOURCES
 	src/ws_http.c
 	src/ws_http_serve.c
 	src/wsubus.c
+	src/wsubus_client.c
 	src/rpc.c
 	src/rpc_call.c
 	src/rpc_list.c
