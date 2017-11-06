@@ -139,7 +139,7 @@ int wsubus_client_start_proxying(struct lws_context *lws_ctx)
 
 	struct lws_protocols ws_protocols[] = {
 		ws_http_proto,
-		wsubus_proto,
+		ws_ubusproxy_proto,
 		{ }
 	};
 

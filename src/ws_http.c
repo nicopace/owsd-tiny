@@ -217,7 +217,16 @@ static int ws_http_cb(struct lws *wsi,
 #if WSD_HAVE_UBUSPROXY
 	case LWS_CALLBACK_PROTOCOL_INIT: {
 		lwsl_notice("%s init\n", lws_get_protocol(wsi)->name);
-		wsubus_client_connect_all();
+		struct lws_vhost *vhost = lws_get_vhost(wsi);
+		if (!vhost) {
+			lwsl_err(" ERROR, no vhost found\n");
+			break;
+		}
+		int port = lws_get_vhost_port(vhost);
+		if ( port == CONTEXT_PORT_NO_LISTEN) {
+			lwsl_notice("%s initializing clients\n", lws_get_protocol(wsi)->name);
+			wsubus_client_connect_all();
+		}
 		break;
 	}
 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR: {

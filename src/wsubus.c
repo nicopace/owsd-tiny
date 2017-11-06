@@ -318,11 +318,7 @@ static int wsubus_cb(struct lws *wsi,
 		// client is leaving
 	case LWS_CALLBACK_CLOSED:
 		lwsl_notice(WSUBUS_PROTO_NAME ": closed\n");
-		int role = peer->role;
 		wsu_peer_deinit(wsi, peer);
-
-		if (role != WSUBUS_ROLE_CLIENT)
-			wsubus_client_reconnect(wsi);
 		break;
 
 	case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE:
