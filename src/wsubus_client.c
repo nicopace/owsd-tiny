@@ -282,6 +282,11 @@ int wsubus_client_start_proxying(struct lws_context *lws_ctx, struct ubus_contex
 	struct reconnect_info *c;
 	connect_infos.pclvh = clvh;
 	connect_infos.plws_ctx = lws_ctx;
+	list_for_each_entry(c, &connect_infos.clients, list) {
+		c->cl_info.vhost = clvh;
+		c->cl_info.context = lws_ctx;
+		c->cl_info.protocol = ws_protocols[1].name;
+	}
 
 	// Setup ubus object
 	ubus_add_object(ubus_ctx, &object);
