@@ -205,6 +205,7 @@ int main(int argc, char *argv[])
 			// client
 #if WSD_HAVE_UBUSPROXY
 		case 'U':
+			any_ssl = true;
 			wsubus_client_enable_proxy();
 			break;
 		case 'P': {
