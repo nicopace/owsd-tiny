@@ -496,7 +496,7 @@ ssl:
 	}
 
 #if WSD_HAVE_UBUSPROXY
-	wsubus_client_start_proxying(lws_ctx);
+	wsubus_client_start_proxying(lws_ctx, ubus_ctx);
 #endif
 
 	global.utimer.cb = utimer_service;

@@ -24,6 +24,17 @@
  */
 
 #include <libwebsockets.h>
+#include <libubus.h>
+
+
+#define CREATE_UBUS_OBJECT(_name, _methods) \
+	{ \
+		.name = _name, \
+		.type = &(struct ubus_object_type) \
+			UBUS_OBJECT_TYPE(_name, _methods), \
+		.methods = _methods, \
+		.n_methods = ARRAY_SIZE(_methods) \
+	}
 
 enum client_type {
 	CLIENT_TYPE_UNKNOWN = 0,
@@ -33,12 +44,13 @@ enum client_type {
 
 int wsubus_client_create(const char *addr, const int port, const char *path, enum client_type type);
 void wsubus_client_enable_proxy(void);
-int wsubus_client_start_proxying(struct lws_context *lws_ctx);
+int wsubus_client_start_proxying(struct lws_context *lws_ctx, struct ubus_context *ubus_ctx);
 void wsubus_client_set_cert_filepath(const char *filepath);
 void wsubus_client_set_private_key_filepath(const char *filepath);
 void wsubus_client_set_ca_filepath(const char *filepath);
 void wsubus_client_connect_all(void);
 void wsubus_client_connect_retry(struct lws *wsi);
 void wsubus_client_reconnect(struct lws *wsi);
+void wsubus_client_clean(void);
 
 #endif /* WSUBUS_CLIENT_H */
