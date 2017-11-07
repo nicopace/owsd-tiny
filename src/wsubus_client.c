@@ -274,8 +274,10 @@ int wsubus_client_start_proxying(struct lws_context *lws_ctx, struct ubus_contex
 	clvh_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT | LWS_SERVER_OPTION_DISABLE_OS_CA_CERTS;
 
 	struct lws_vhost *clvh = lws_create_vhost(lws_ctx, &clvh_info);
-	if (!clvh)
+	if (!clvh) {
+		lwsl_err("lws_create_vhost failed\n");
 		return -3;
+	}
 
 	struct reconnect_info *c;
 	connect_infos.pclvh = clvh;
