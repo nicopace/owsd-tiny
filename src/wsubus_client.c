@@ -65,6 +65,13 @@ int wsubus_client_create(const char *addr, int port, const char *path, enum clie
 		lwsl_err("OOM clinfo init\n");
 		return -1;
 	}
+
+	struct lws_protocols ws_protocols[] = {
+		ws_http_proto,
+		ws_ubusproxy_proto,
+		{ }
+	};
+
 	newcl->wsi = NULL;
 	newcl->timer = (struct uloop_timeout){};
 	newcl->timer.cb = utimer_reconnect_cb;
@@ -78,6 +85,10 @@ int wsubus_client_create(const char *addr, int port, const char *path, enum clie
 	newcl->cl_info.pwsi = &newcl->wsi;
 	newcl->type = type;
 	newcl->reconnect_count = 0;
+
+	newcl->cl_info.vhost = connect_infos.pclvh;
+	newcl->cl_info.context = connect_infos.plws_ctx;
+	newcl->cl_info.protocol = ws_protocols[1].name;
 
 	list_add_tail(&newcl->list, &connect_infos.clients);
 
@@ -267,6 +278,8 @@ int wsubus_client_start_proxying(struct lws_context *lws_ctx, struct ubus_contex
 		return -3;
 
 	struct reconnect_info *c;
+	connect_infos.pclvh = clvh;
+	connect_infos.plws_ctx = lws_ctx;
 	list_for_each_entry(c, &connect_infos.clients, list) {
 		c->cl_info.vhost = clvh;
 		c->cl_info.context = lws_ctx;

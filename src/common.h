@@ -62,6 +62,8 @@ struct str_list {
 struct clvh_context {
 	bool enabled; /* enable WS ubus client proxy functionality */
 	struct list_head clients; /* list of clients to proxy */
+	struct lws_context *plws_ctx;
+	struct lws_vhost *pclvh;
 };
 
 struct reconnect_info {
