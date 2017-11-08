@@ -41,6 +41,13 @@ enum client_type {
 	CLIENT_FROM_PROGARG,
 	CLIENT_FROM_UBUS
 };
+/* wsubus connection states */
+enum connection_state {
+	CONNECTION_STATE_DISCONNECTED,
+	CONNECTION_STATE_CONNECTING,
+	CONNECTION_STATE_CONNECTED,
+	CONNECTION_STATE_TEARINGDOWN
+};
 
 int wsubus_client_create(const char *addr, const int port, const char *path, enum client_type type);
 void wsubus_client_enable_proxy(void);
@@ -52,6 +59,7 @@ void wsubus_client_connect_all(void);
 void wsubus_client_connect_retry(struct lws *wsi);
 void wsubus_client_reconnect(struct lws *wsi);
 void wsubus_client_clean(void);
+void wsubus_client_set_state(struct lws *wsi, enum connection_state state);
 bool wsubus_client_should_destroy(struct lws *wsi);
 void wsubus_client_destroy(struct lws *wsi);
 

@@ -68,11 +68,15 @@ void wsubus_client_enable_proxy(void)
 
 static void utimer_reconnect_cb(struct uloop_timeout *timer)
 {
+	struct lws *wsi = NULL;
 	struct reconnect_info *c = container_of(timer, struct reconnect_info, timer);
 	if(!c)
 		lwsl_err("no client owning this timer\n");
 	lwsl_notice("connecting as client too to %s %d\n", c->cl_info.address, c->cl_info.port);
-	lws_client_connect_via_info(&c->cl_info);
+	wsi = lws_client_connect_via_info(&c->cl_info);
+	if (!wsi)
+		return;
+	wsubus_client_set_state(wsi, CONNECTION_STATE_CONNECTING);
 }
 
 static bool validate_ip_port_path(const char *addr, int *port, const char *path)
@@ -152,7 +156,7 @@ int wsubus_client_create(const char *addr, int port, const char *path, enum clie
 	newcl->timer.cb = utimer_reconnect_cb;
 	newcl->type = type;
 	newcl->reconnect_count = 0;
-	newcl->destroy = false;
+	newcl->state = CONNECTION_STATE_DISCONNECTED;
 
 	newcl->cl_info = (struct lws_client_connect_info){};
 
@@ -327,14 +331,28 @@ int remove_client(struct ubus_context *ctx, struct ubus_object *obj,
 	list_for_each_entry(client, &connect_infos.clients, list) {
 		if (id == (long)client->index) {
 			found = true;
-			client->destroy = true;
-			lws_callback_on_writable(client->wsi);
 			break;
 		}
 	}
 
 	if (!found)
 		return UBUS_STATUS_INVALID_ARGUMENT;
+
+	switch (client->state) {
+		case CONNECTION_STATE_DISCONNECTED:
+			wsubus_client_destroy(client->wsi);
+			break;
+		case CONNECTION_STATE_CONNECTING:
+			client->state = CONNECTION_STATE_TEARINGDOWN;
+			break;
+		case CONNECTION_STATE_CONNECTED:
+			client->state = CONNECTION_STATE_TEARINGDOWN;
+			lws_callback_on_writable(client->wsi);
+			break;
+		case CONNECTION_STATE_TEARINGDOWN:
+		default:
+			break;
+	}
 
 	return UBUS_STATUS_OK;
 }
@@ -359,6 +377,7 @@ static void dump_client(struct blob_buf *bb, struct reconnect_info *client)
 	blobmsg_add_u8(bb, "SSL", has_ssl);
 	blobmsg_add_string(bb, "type", (client->type == CLIENT_FROM_UBUS ? "ubus" : "uci"));
 	/* blobmsg_add_u8(bb, "connected", client->connected); */
+	blobmsg_add_u32(bb, "state", client->state);
 	blobmsg_close_table(bb, t);
 }
 
@@ -483,13 +502,22 @@ void wsubus_client_clean(void)
 		wsubus_client_del(c);
 }
 
+void wsubus_client_set_state(struct lws *wsi, enum connection_state state)
+{
+	struct reconnect_info *client;
+
+	list_for_each_entry(client, &connect_infos.clients, list)
+		if (wsi == client->wsi)
+			client->state = state;
+}
+
 bool wsubus_client_should_destroy(struct lws *wsi)
 {
 	struct reconnect_info *client;
 
 	list_for_each_entry(client, &connect_infos.clients, list)
 		if (wsi == client->wsi)
-			return client->destroy;
+			return client->state == CONNECTION_STATE_TEARINGDOWN;
 	/* couldn't find the client??? this is wrong so close the connection */
 	return true;
 }

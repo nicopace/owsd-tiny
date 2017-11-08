@@ -77,11 +77,12 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 		if (role == WSUBUS_ROLE_CLIENT)
 			break;
 
-		if (wsubus_client_should_destroy(wsi))
+		if (wsubus_client_should_destroy(wsi)) {
 			wsubus_client_destroy(wsi);
-		else
+		} else {
+			wsubus_client_set_state(wsi, CONNECTION_STATE_DISCONNECTED);
 			wsubus_client_reconnect(wsi);
-
+		}
 		break;
 
 	case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE:
@@ -97,10 +98,14 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 		break;
 
 	case LWS_CALLBACK_CLIENT_ESTABLISHED: {
+		if (wsubus_client_should_destroy(wsi))
+			return -1;
 		lwsl_info("connected as proxy\n");
 		int rc = wsu_peer_init(peer, WSUBUS_ROLE_REMOTE);
 		if (rc)
 			return -1;
+
+		wsubus_client_set_state(wsi, CONNECTION_STATE_CONNECTED);
 
 		struct wsu_remote_bus *remote = &peer->u.remote;
 

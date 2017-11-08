@@ -231,7 +231,12 @@ static int ws_http_cb(struct lws *wsi,
 	}
 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR: {
 		lwsl_err("CCE ERROR, reason %s\n", in ? (char *)in : "");
-		wsubus_client_connect_retry(wsi);
+		if (wsubus_client_should_destroy(wsi)) {
+			wsubus_client_destroy(wsi);
+		} else {
+			wsubus_client_set_state(wsi, CONNECTION_STATE_DISCONNECTED);
+			wsubus_client_connect_retry(wsi);
+		}
 		break;
 	}
 #endif
