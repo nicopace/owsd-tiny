@@ -52,5 +52,7 @@ void wsubus_client_connect_all(void);
 void wsubus_client_connect_retry(struct lws *wsi);
 void wsubus_client_reconnect(struct lws *wsi);
 void wsubus_client_clean(void);
+bool wsubus_client_should_destroy(struct lws *wsi);
+void wsubus_client_destroy(struct lws *wsi);
 
 #endif /* WSUBUS_CLIENT_H */

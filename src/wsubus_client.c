@@ -104,6 +104,7 @@ int wsubus_client_create(const char *addr, int port, const char *path, enum clie
 	newcl->timer.cb = utimer_reconnect_cb;
 	newcl->type = type;
 	newcl->reconnect_count = 0;
+	newcl->destroy = false;
 
 	newcl->cl_info = (struct lws_client_connect_info){};
 
@@ -433,4 +434,24 @@ void wsubus_client_clean(void)
 
 	list_for_each_entry_safe(c, tmp, &connect_infos.clients, list)
 		wsubus_client_del(c);
+}
+
+bool wsubus_client_should_destroy(struct lws *wsi)
+{
+	struct reconnect_info *client;
+
+	list_for_each_entry(client, &connect_infos.clients, list)
+		if (wsi == client->wsi)
+			return client->destroy;
+	/* couldn't find the client??? this is wrong so close the connection */
+	return true;
+}
+
+void wsubus_client_destroy(struct lws *wsi)
+{
+	struct reconnect_info *client, *tmp;
+
+	list_for_each_entry_safe(client, tmp, &connect_infos.clients, list)
+		if (wsi == client->wsi)
+			wsubus_client_del(client);
 }

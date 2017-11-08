@@ -74,5 +74,6 @@ struct reconnect_info {
 	struct uloop_timeout timer;
 	struct lws_client_connect_info cl_info;
 	enum client_type type;
+	bool destroy;
 };
 #endif

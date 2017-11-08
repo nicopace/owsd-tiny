@@ -62,6 +62,9 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 
 	switch (reason) {
 	case LWS_CALLBACK_CLIENT_WRITEABLE:
+		if (wsubus_client_should_destroy(wsi))
+			return -1;
+
 		lwsl_notice(WSUBUS_PROTO_NAME ": wsi %p writable now\n", wsi);
 		return wsubus_tx_text(wsi);
 
@@ -71,7 +74,12 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 		int role = peer->role;
 		wsu_peer_deinit(wsi, peer);
 
-		if (role != WSUBUS_ROLE_CLIENT)
+		if (role == WSUBUS_ROLE_CLIENT)
+			break;
+
+		if (wsubus_client_should_destroy(wsi))
+			wsubus_client_destroy(wsi);
+		else
 			wsubus_client_reconnect(wsi);
 
 		break;
