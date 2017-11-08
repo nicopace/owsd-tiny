@@ -121,8 +121,9 @@ int wsubus_client_create(const char *addr, int port, const char *path, enum clie
 
 	wsubus_client_enable_proxy();
 
-	/* if client is added from ubus the vhost is already running */
-	/* so the connection can be started here */
+	/** if client is added from ubus the vhost is already running
+	 * so the connection can be started here
+	 */
 	if (type == CLIENT_FROM_UBUS)
 		uloop_timeout_set(&newcl->timer, 100);
 
@@ -207,7 +208,7 @@ enum {
 };
 
 static const struct blobmsg_policy client_id_policy[__CLIENT_ID_MAX] = {
-	[CLIENT_ID] = { .name = "ip", .type = BLOBMSG_TYPE_INT32 },
+	[CLIENT_ID] = { .name = "id", .type = BLOBMSG_TYPE_INT32 },
 };
 
 int    add_client(struct ubus_context *ctx, struct ubus_object *obj, struct ubus_request_data *req, const char *method, struct blob_attr *msg);
@@ -255,14 +256,62 @@ int add_client(struct ubus_context *ctx, struct ubus_object *obj,
 	return UBUS_STATUS_OK;
 }
 
+/** To delete a client you need to wait until it is writeable. That's done
+ * by triggering the lws_callback_on_writeable and then in the callback
+ * figure out if the callback was triggered to send data or to get destroyed
+ */
 int remove_client(struct ubus_context *ctx, struct ubus_object *obj,
 		struct ubus_request_data *req, const char *method,
 		struct blob_attr *msg)
 {
 	struct blob_attr *tb[__CLIENT_ID_MAX];
+	unsigned int id;
+	bool found = false;
+	struct reconnect_info *client;
 
-	blobmsg_parse(add_client_policy, __CLIENT_ID_MAX, tb, blob_data(msg), blob_len(msg));
+	blobmsg_parse(client_id_policy, __CLIENT_ID_MAX, tb, blob_data(msg), blob_len(msg));
+
+	if(!(tb[CLIENT_ID]))
+		return UBUS_STATUS_INVALID_ARGUMENT;
+
+	id = blobmsg_get_u32(tb[CLIENT_ID]);
+
+	list_for_each_entry(client, &connect_infos.clients, list) {
+		if (id == (long)client->index) {
+			found = true;
+			client->destroy = true;
+			lws_callback_on_writable(client->wsi);
+			break;
+		}
+	}
+
+	if (!found)
+		return UBUS_STATUS_INVALID_ARGUMENT;
+
 	return UBUS_STATUS_OK;
+}
+
+static void dump_client(struct blob_buf *bb, struct reconnect_info *client)
+{
+	char clname[16];
+	void *t;
+	bool has_ssl;
+
+	snprintf(clname, 16, "proxy-%d", client->index);
+	has_ssl = client->cl_info.ssl_connection &
+		(LCCSCF_USE_SSL | LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK) ?
+		true : false;
+
+	t = blobmsg_open_table(bb, clname);
+	blobmsg_add_u32(bb, "index", client->index);
+	blobmsg_add_string(bb, "ip", client->cl_info.address);
+	blobmsg_add_u32(bb, "port", client->cl_info.port);
+	blobmsg_add_string(bb, "path", client->cl_info.path);
+	blobmsg_add_string(bb, "protocol", client->cl_info.protocol);
+	blobmsg_add_u8(bb, "SSL", has_ssl);
+	blobmsg_add_string(bb, "type", (client->type == CLIENT_FROM_UBUS ? "ubus" : "uci"));
+	/* blobmsg_add_u8(bb, "connected", client->connected); */
+	blobmsg_close_table(bb, t);
 }
 
 int list_client(struct ubus_context *ctx, struct ubus_object *obj,
@@ -270,8 +319,28 @@ int list_client(struct ubus_context *ctx, struct ubus_object *obj,
 		struct blob_attr *msg)
 {
 	struct blob_attr *tb[__CLIENT_ID_MAX];
+	struct reconnect_info *client;
+	struct blob_buf bb = {};
+	long id = -1;
 
-	blobmsg_parse(add_client_policy, __CLIENT_ID_MAX, tb, blob_data(msg), blob_len(msg));
+	blobmsg_parse(client_id_policy, __CLIENT_ID_MAX, tb, blob_data(msg), blob_len(msg));
+
+	blob_buf_init(&bb, 0);
+
+	if(tb[CLIENT_ID])
+		id = blobmsg_get_u32(tb[CLIENT_ID]);
+
+	list_for_each_entry(client, &connect_infos.clients, list) {
+		if (id == -1)
+			dump_client(&bb, client);
+		else if (id == (long)client->index) {
+			dump_client(&bb, client);
+			break;
+		}
+	}
+
+	ubus_send_reply(ctx, req, bb.head);
+
 	return UBUS_STATUS_OK;
 }
 
