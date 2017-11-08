@@ -42,6 +42,23 @@ static struct clvh_context connect_infos = {
 	.clients = LIST_HEAD_INIT(connect_infos.clients)
 };
 
+void insert_at_lowest_free_index(struct reconnect_info *client, struct list_head *head)
+{
+	struct reconnect_info *tmp;
+	int i = 0;
+
+	list_for_each_entry(tmp, head, list) {
+		if (tmp->index > i) {
+			client->index = i;
+			list_add_tail(&client->list, &tmp->list);
+			return;
+		}
+		i++;
+	}
+	client->index = i;
+	list_add_tail(&client->list, &tmp->list);
+}
+
 void wsubus_client_enable_proxy(void)
 {
 	connect_infos.enabled = true;
@@ -90,7 +107,7 @@ int wsubus_client_create(const char *addr, int port, const char *path, enum clie
 	newcl->cl_info.context = connect_infos.plws_ctx;
 	newcl->cl_info.protocol = ws_protocols[1].name;
 
-	list_add_tail(&newcl->list, &connect_infos.clients);
+	insert_at_lowest_free_index(newcl, &connect_infos.clients);
 
 	wsubus_client_enable_proxy();
 

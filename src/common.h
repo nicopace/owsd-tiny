@@ -67,6 +67,7 @@ struct clvh_context {
 };
 
 struct reconnect_info {
+	int index;
 	struct list_head list;
 	struct lws *wsi;
 	int reconnect_count;
