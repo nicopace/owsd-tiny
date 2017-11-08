@@ -30,6 +30,7 @@
 
 #include <libubox/blobmsg.h>
 #include <libubus.h>
+#include <arpa/inet.h>
 
 #define MAX_IP_LEN 128
 #define MAX_PATH_LEN 128
@@ -74,24 +75,71 @@ static void utimer_reconnect_cb(struct uloop_timeout *timer)
 	lws_client_connect_via_info(&c->cl_info);
 }
 
+static bool validate_ip_port_path(const char *addr, int *port, const char *path)
+{
+	int rv;
+	struct in_addr in_addr_dummy;
+	struct in6_addr in6_addr_dummy;
+
+	if (!addr || !path) {
+		lwsl_err("invalid arguments\n");
+		return false;
+	}
+
+	rv = inet_pton(AF_INET, addr, &in_addr_dummy); /* returns 1 on success */
+	if (!rv)
+		rv = inet_pton(AF_INET6, addr, &in6_addr_dummy);
+	if (!rv) {
+		lwsl_err("invalid ip address\n");
+		return false;
+	}
+
+	if (*port <= 0 || *port >= 1<<16) {
+		lwsl_err("invalid port (%d), using 443\n", *port);
+		*port = 443;
+	}
+
+	return true;
+}
+
+static bool unique_ip(const char *addr)
+{
+	struct reconnect_info *client;
+
+	list_for_each_entry(client, &connect_infos.clients, list)
+		if (strcmp(client->cl_info.address, addr) == 0)
+			return false;
+
+	return true;
+}
+
 int wsubus_client_create(const char *addr, int port, const char *path, enum client_type type)
 {
-	struct reconnect_info *newcl = malloc(sizeof *newcl);
-	char *_addr = (char *)calloc(MAX_IP_LEN, sizeof(char));
+	struct reconnect_info *newcl;
+	char *_addr, *_path;
 
+	if (!validate_ip_port_path(addr, &port, path))
+		goto invalid_argument;
+
+	if (!unique_ip(addr))
+		goto invalid_argument;
+
+	newcl = malloc(sizeof *newcl);
+	if (!newcl) {
+		lwsl_err("OOM clinfo init\n");
+		goto error_cl;
+	}
+
+	_addr = (char *)calloc(MAX_IP_LEN, sizeof(char));
 	if (!_addr)
 		goto error_addr;
-	char *_path = (char *)calloc(MAX_PATH_LEN, sizeof(char));
+
+	_path = (char *)calloc(MAX_PATH_LEN, sizeof(char));
 	if (!_path)
 		goto error_path;
 
 	strncpy(_addr, addr, MAX_IP_LEN);
 	strncpy(_path, path, MAX_PATH_LEN);
-
-	if (!newcl) {
-		lwsl_err("OOM clinfo init\n");
-		goto error_cl;
-	}
 
 	struct lws_protocols ws_protocols[] = {
 		ws_http_proto,
@@ -136,7 +184,9 @@ error_path:
 error_addr:
 	free(newcl);
 error_cl:
-	return -1;
+	return UBUS_STATUS_UNKNOWN_ERROR;
+invalid_argument:
+	return UBUS_STATUS_INVALID_ARGUMENT;
 }
 
 static void _wsubus_client_connect(struct lws *wsi, int timeout)
@@ -251,10 +301,7 @@ int add_client(struct ubus_context *ctx, struct ubus_object *obj,
 	ret = wsubus_client_create(blobmsg_get_string(tb[CLIENT_ADD_IP]),
 			port, "/", CLIENT_FROM_UBUS);
 
-	if(ret)
-		return UBUS_STATUS_UNKNOWN_ERROR;
-
-	return UBUS_STATUS_OK;
+	return ret;
 }
 
 /** To delete a client you need to wait until it is writeable. That's done
