@@ -31,8 +31,9 @@
 #include <libubox/blobmsg.h>
 #include <libubus.h>
 
-// id counter to give all clients a unique id
-/* static unsigned long id; */
+#define MAX_IP_LEN 128
+#define MAX_PATH_LEN 128
+
 // contains list of urls where to connect as ubus proxy
 static struct lws_context_creation_info clvh_info = {};
 // FIXME to support different certs per different client, this becomes per-client
@@ -75,12 +76,21 @@ static void utimer_reconnect_cb(struct uloop_timeout *timer)
 
 int wsubus_client_create(const char *addr, int port, const char *path, enum client_type type)
 {
-	lwsl_notice("addr = %s, port = %d, path = %s\n", addr, port, path);
 	struct reconnect_info *newcl = malloc(sizeof *newcl);
+	char *_addr = (char *)calloc(MAX_IP_LEN, sizeof(char));
+
+	if (!_addr)
+		goto error_addr;
+	char *_path = (char *)calloc(MAX_PATH_LEN, sizeof(char));
+	if (!_path)
+		goto error_path;
+
+	strncpy(_addr, addr, MAX_IP_LEN);
+	strncpy(_path, path, MAX_PATH_LEN);
 
 	if (!newcl) {
 		lwsl_err("OOM clinfo init\n");
-		return -1;
+		goto error_cl;
 	}
 
 	struct lws_protocols ws_protocols[] = {
@@ -92,17 +102,17 @@ int wsubus_client_create(const char *addr, int port, const char *path, enum clie
 	newcl->wsi = NULL;
 	newcl->timer = (struct uloop_timeout){};
 	newcl->timer.cb = utimer_reconnect_cb;
-	newcl->cl_info = (struct lws_client_connect_info){};
-
-	newcl->cl_info.port = port;
-	newcl->cl_info.address = addr;
-	newcl->cl_info.host = addr;
-	newcl->cl_info.path = path;
-	newcl->cl_info.ssl_connection = LCCSCF_USE_SSL | LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
-	newcl->cl_info.pwsi = &newcl->wsi;
 	newcl->type = type;
 	newcl->reconnect_count = 0;
 
+	newcl->cl_info = (struct lws_client_connect_info){};
+
+	newcl->cl_info.path = _path;
+	newcl->cl_info.address = _addr;
+	newcl->cl_info.host = _addr;
+	newcl->cl_info.port = port;
+	newcl->cl_info.ssl_connection = LCCSCF_USE_SSL | LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
+	newcl->cl_info.pwsi = &newcl->wsi;
 	newcl->cl_info.vhost = connect_infos.pclvh;
 	newcl->cl_info.context = connect_infos.plws_ctx;
 	newcl->cl_info.protocol = ws_protocols[1].name;
@@ -118,6 +128,13 @@ int wsubus_client_create(const char *addr, int port, const char *path, enum clie
 
 	lwsl_notice("done adding client\n");
 	return 0;
+
+error_path:
+	free(_addr);
+error_addr:
+	free(newcl);
+error_cl:
+	return -1;
 }
 
 static void _wsubus_client_connect(struct lws *wsi, int timeout)
@@ -145,7 +162,7 @@ static void _wsubus_client_connect(struct lws *wsi, int timeout)
 void wsubus_client_connect_all(void)
 {
 	_wsubus_client_connect(NULL, 0);
-}	
+}
 
 /* retry connection on error */
 void wsubus_client_connect_retry(struct lws *wsi)
@@ -334,6 +351,8 @@ void wsubus_client_set_ca_filepath(const char *filepath)
 void wsubus_client_del(struct reconnect_info *c)
 {
 	uloop_timeout_cancel(&c->timer);
+	free((char *)c->cl_info.address);
+	free((char *)c->cl_info.path);
 	list_del(&c->list);
 	free(c);
 }
