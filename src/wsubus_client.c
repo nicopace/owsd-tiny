@@ -44,9 +44,9 @@ static struct clvh_context connect_infos = {
 	.clients = LIST_HEAD_INIT(connect_infos.clients)
 };
 
-void insert_at_lowest_free_index(struct reconnect_info *client, struct list_head *head)
+void insert_at_lowest_free_index(struct client_connection_info *client, struct list_head *head)
 {
-	struct reconnect_info *tmp;
+	struct client_connection_info *tmp;
 	int i = 0;
 
 	list_for_each_entry(tmp, head, list) {
@@ -69,11 +69,13 @@ void wsubus_client_enable_proxy(void)
 static void utimer_reconnect_cb(struct uloop_timeout *timer)
 {
 	struct lws *wsi = NULL;
-	struct reconnect_info *c = container_of(timer, struct reconnect_info, timer);
+	struct client_connection_info *c = container_of(timer, struct client_connection_info
+ , timer);
 	if(!c)
 		lwsl_err("no client owning this timer\n");
-	lwsl_notice("connecting as client too to %s %d\n", c->cl_info.address, c->cl_info.port);
-	wsi = lws_client_connect_via_info(&c->cl_info);
+	lwsl_notice("connecting as client too to %s %d\n",
+			c->connection_info.address, c->connection_info.port);
+	wsi = lws_client_connect_via_info(&c->connection_info);
 	if (!wsi)
 		return;
 	wsubus_client_set_state(wsi, CONNECTION_STATE_CONNECTING);
@@ -108,10 +110,10 @@ static bool validate_ip_port_path(const char *addr, int *port, const char *path)
 
 static bool unique_ip(const char *addr)
 {
-	struct reconnect_info *client;
+	struct client_connection_info *client;
 
 	list_for_each_entry(client, &connect_infos.clients, list)
-		if (strcmp(client->cl_info.address, addr) == 0)
+		if (strcmp(client->connection_info.address, addr) == 0)
 			return false;
 
 	return true;
@@ -119,7 +121,7 @@ static bool unique_ip(const char *addr)
 
 int wsubus_client_create(const char *addr, int port, const char *path, enum client_type type)
 {
-	struct reconnect_info *newcl;
+	struct client_connection_info *newcl;
 	char *_addr, *_path;
 
 	if (!validate_ip_port_path(addr, &port, path))
@@ -158,17 +160,17 @@ int wsubus_client_create(const char *addr, int port, const char *path, enum clie
 	newcl->reconnect_count = 0;
 	newcl->state = CONNECTION_STATE_DISCONNECTED;
 
-	newcl->cl_info = (struct lws_client_connect_info){};
+	newcl->connection_info = (struct lws_client_connect_info){};
 
-	newcl->cl_info.path = _path;
-	newcl->cl_info.address = _addr;
-	newcl->cl_info.host = _addr;
-	newcl->cl_info.port = port;
-	newcl->cl_info.ssl_connection = LCCSCF_USE_SSL | LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
-	newcl->cl_info.pwsi = &newcl->wsi;
-	newcl->cl_info.vhost = connect_infos.pclvh;
-	newcl->cl_info.context = connect_infos.plws_ctx;
-	newcl->cl_info.protocol = ws_protocols[1].name;
+	newcl->connection_info.path = _path;
+	newcl->connection_info.address = _addr;
+	newcl->connection_info.host = _addr;
+	newcl->connection_info.port = port;
+	newcl->connection_info.ssl_connection = LCCSCF_USE_SSL | LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
+	newcl->connection_info.pwsi = &newcl->wsi;
+	newcl->connection_info.vhost = connect_infos.pclvh;
+	newcl->connection_info.context = connect_infos.plws_ctx;
+	newcl->connection_info.protocol = ws_protocols[1].name;
 
 	insert_at_lowest_free_index(newcl, &connect_infos.clients);
 
@@ -195,11 +197,11 @@ invalid_argument:
 
 static void _wsubus_client_connect(struct lws *wsi, int timeout)
 {
-	struct reconnect_info *client;
+	struct client_connection_info *client;
 
 	if(!wsi) {
 		list_for_each_entry(client, &connect_infos.clients, list) {
-			lwsl_notice("test connect client %s\n", client->cl_info.address);
+			lwsl_notice("test connect client %s\n", client->connection_info.address);
 			client->reconnect_count = 0;
 			uloop_timeout_set(&client->timer, timeout);
 		}
@@ -223,7 +225,7 @@ void wsubus_client_connect_all(void)
 /* retry connection on error */
 void wsubus_client_connect_retry(struct lws *wsi)
 {
-	struct reconnect_info *client;
+	struct client_connection_info *client;
 
 	if(!wsi)
 		return;
@@ -258,12 +260,12 @@ static const struct blobmsg_policy add_client_policy[__CLIENT_ADD_MAX] = {
 };
 
 enum {
-	CLIENT_ID,
-	__CLIENT_ID_MAX
+	CLIENT_INDEX,
+	__CLIENT_INDEX_MAX
 };
 
-static const struct blobmsg_policy client_id_policy[__CLIENT_ID_MAX] = {
-	[CLIENT_ID] = { .name = "id", .type = BLOBMSG_TYPE_INT32 },
+static const struct blobmsg_policy client_index_policy[__CLIENT_INDEX_MAX] = {
+	[CLIENT_INDEX] = { .name = "index", .type = BLOBMSG_TYPE_INT32 },
 };
 
 int    add_client(struct ubus_context *ctx, struct ubus_object *obj, struct ubus_request_data *req, const char *method, struct blob_attr *msg);
@@ -276,8 +278,8 @@ int clear_clients(struct ubus_context *ctx, struct ubus_object *obj, struct ubus
 
 struct ubus_method ubus_methods[] = {
 	UBUS_METHOD("add", add_client, add_client_policy),
-	UBUS_METHOD("remove", remove_client, client_id_policy),
-	UBUS_METHOD("list", list_client, client_id_policy),
+	UBUS_METHOD("remove", remove_client, client_index_policy),
+	UBUS_METHOD("list", list_client, client_index_policy),
 	UBUS_METHOD_NOARG("clear", clear_clients),
 };
 
@@ -316,20 +318,20 @@ int remove_client(struct ubus_context *ctx, struct ubus_object *obj,
 		struct ubus_request_data *req, const char *method,
 		struct blob_attr *msg)
 {
-	struct blob_attr *tb[__CLIENT_ID_MAX];
-	unsigned int id;
+	struct blob_attr *tb[__CLIENT_INDEX_MAX];
+	unsigned int index;
 	bool found = false;
-	struct reconnect_info *client;
+	struct client_connection_info *client;
 
-	blobmsg_parse(client_id_policy, __CLIENT_ID_MAX, tb, blob_data(msg), blob_len(msg));
+	blobmsg_parse(client_index_policy, __CLIENT_INDEX_MAX, tb, blob_data(msg), blob_len(msg));
 
-	if(!(tb[CLIENT_ID]))
+	if(!(tb[CLIENT_INDEX]))
 		return UBUS_STATUS_INVALID_ARGUMENT;
 
-	id = blobmsg_get_u32(tb[CLIENT_ID]);
+	index = blobmsg_get_u32(tb[CLIENT_INDEX]);
 
 	list_for_each_entry(client, &connect_infos.clients, list) {
-		if (id == (long)client->index) {
+		if (index == (long)client->index) {
 			found = true;
 			break;
 		}
@@ -357,23 +359,23 @@ int remove_client(struct ubus_context *ctx, struct ubus_object *obj,
 	return UBUS_STATUS_OK;
 }
 
-static void dump_client(struct blob_buf *bb, struct reconnect_info *client)
+static void dump_client(struct blob_buf *bb, struct client_connection_info *client)
 {
 	char clname[16];
 	void *t;
 	bool has_ssl;
 
 	snprintf(clname, 16, "proxy-%d", client->index);
-	has_ssl = client->cl_info.ssl_connection &
+	has_ssl = client->connection_info.ssl_connection &
 		(LCCSCF_USE_SSL | LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK) ?
 		true : false;
 
 	t = blobmsg_open_table(bb, clname);
 	blobmsg_add_u32(bb, "index", client->index);
-	blobmsg_add_string(bb, "ip", client->cl_info.address);
-	blobmsg_add_u32(bb, "port", client->cl_info.port);
-	blobmsg_add_string(bb, "path", client->cl_info.path);
-	blobmsg_add_string(bb, "protocol", client->cl_info.protocol);
+	blobmsg_add_string(bb, "ip", client->connection_info.address);
+	blobmsg_add_u32(bb, "port", client->connection_info.port);
+	blobmsg_add_string(bb, "path", client->connection_info.path);
+	blobmsg_add_string(bb, "protocol", client->connection_info.protocol);
 	blobmsg_add_u8(bb, "SSL", has_ssl);
 	blobmsg_add_string(bb, "type", (client->type == CLIENT_FROM_UBUS ? "ubus" : "uci"));
 	/* blobmsg_add_u8(bb, "connected", client->connected); */
@@ -385,22 +387,22 @@ int list_client(struct ubus_context *ctx, struct ubus_object *obj,
 		struct ubus_request_data *req, const char *method,
 		struct blob_attr *msg)
 {
-	struct blob_attr *tb[__CLIENT_ID_MAX];
-	struct reconnect_info *client;
+	struct blob_attr *tb[__CLIENT_INDEX_MAX];
+	struct client_connection_info *client;
 	struct blob_buf bb = {};
-	long id = -1;
+	long index = -1;
 
-	blobmsg_parse(client_id_policy, __CLIENT_ID_MAX, tb, blob_data(msg), blob_len(msg));
+	blobmsg_parse(client_index_policy, __CLIENT_INDEX_MAX, tb, blob_data(msg), blob_len(msg));
 
 	blob_buf_init(&bb, 0);
 
-	if(tb[CLIENT_ID])
-		id = blobmsg_get_u32(tb[CLIENT_ID]);
+	if(tb[CLIENT_INDEX])
+		index = blobmsg_get_u32(tb[CLIENT_INDEX]);
 
 	list_for_each_entry(client, &connect_infos.clients, list) {
-		if (id == -1)
+		if (index == -1)
 			dump_client(&bb, client);
-		else if (id == (long)client->index) {
+		else if (index == (long)client->index) {
 			dump_client(&bb, client);
 			break;
 		}
@@ -449,7 +451,7 @@ int wsubus_client_start_proxying(struct lws_context *lws_ctx, struct ubus_contex
 		return -3;
 	}
 
-	struct reconnect_info *c;
+	struct client_connection_info *c;
 	connect_infos.pclvh = clvh;
 	connect_infos.plws_ctx = lws_ctx;
 
@@ -458,8 +460,8 @@ int wsubus_client_start_proxying(struct lws_context *lws_ctx, struct ubus_contex
 	 * context are not yet created.
 	 */
 	list_for_each_entry(c, &connect_infos.clients, list) {
-		c->cl_info.vhost = clvh;
-		c->cl_info.context = lws_ctx;
+		c->connection_info.vhost = clvh;
+		c->connection_info.context = lws_ctx;
 	}
 
 	// Setup ubus object
@@ -484,11 +486,11 @@ void wsubus_client_set_ca_filepath(const char *filepath)
 }
 
 /* delete one client */
-void wsubus_client_del(struct reconnect_info *c)
+void wsubus_client_del(struct client_connection_info *c)
 {
 	uloop_timeout_cancel(&c->timer);
-	free((char *)c->cl_info.address);
-	free((char *)c->cl_info.path);
+	free((char *)c->connection_info.address);
+	free((char *)c->connection_info.path);
 	list_del(&c->list);
 	free(c);
 }
@@ -496,7 +498,7 @@ void wsubus_client_del(struct reconnect_info *c)
 /* free the info for connection as ubus proxy / delete all clients */
 void wsubus_client_clean(void)
 {
-	struct reconnect_info *c, *tmp;
+	struct client_connection_info *c, *tmp;
 
 	list_for_each_entry_safe(c, tmp, &connect_infos.clients, list)
 		wsubus_client_del(c);
@@ -504,7 +506,7 @@ void wsubus_client_clean(void)
 
 void wsubus_client_set_state(struct lws *wsi, enum connection_state state)
 {
-	struct reconnect_info *client;
+	struct client_connection_info *client;
 
 	list_for_each_entry(client, &connect_infos.clients, list)
 		if (wsi == client->wsi)
@@ -513,7 +515,7 @@ void wsubus_client_set_state(struct lws *wsi, enum connection_state state)
 
 bool wsubus_client_should_destroy(struct lws *wsi)
 {
-	struct reconnect_info *client;
+	struct client_connection_info *client;
 
 	list_for_each_entry(client, &connect_infos.clients, list)
 		if (wsi == client->wsi)
@@ -524,7 +526,7 @@ bool wsubus_client_should_destroy(struct lws *wsi)
 
 void wsubus_client_destroy(struct lws *wsi)
 {
-	struct reconnect_info *client, *tmp;
+	struct client_connection_info *client, *tmp;
 
 	list_for_each_entry_safe(client, tmp, &connect_infos.clients, list)
 		if (wsi == client->wsi)

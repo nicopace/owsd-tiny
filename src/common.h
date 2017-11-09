@@ -66,13 +66,13 @@ struct clvh_context {
 	struct lws_vhost *pclvh;
 };
 
-struct reconnect_info {
+struct client_connection_info {
 	int index;
 	struct list_head list;
 	struct lws *wsi;
 	int reconnect_count;
 	struct uloop_timeout timer;
-	struct lws_client_connect_info cl_info;
+	struct lws_client_connect_info connection_info;
 	enum client_type type;
 	enum connection_state state;
 };
