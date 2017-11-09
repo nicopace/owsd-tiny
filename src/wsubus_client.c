@@ -44,6 +44,13 @@ static struct clvh_context connect_infos = {
 	.clients = LIST_HEAD_INIT(connect_infos.clients)
 };
 
+static const char *state_names[] = {
+	[CONNECTION_STATE_DISCONNECTED] = "Disconnected",
+	[CONNECTION_STATE_CONNECTING] = "Connecting",
+	[CONNECTION_STATE_CONNECTED] = "Connected",
+	[CONNECTION_STATE_TEARINGDOWN] = "Teardown"
+};
+
 static struct client_connection_info *get_client_by_index (int index)
 {
 	struct client_connection_info *client;
@@ -391,8 +398,7 @@ static void dump_client(struct blob_buf *bb, struct client_connection_info *clie
 	blobmsg_add_string(bb, "protocol", client->connection_info.protocol);
 	blobmsg_add_u8(bb, "SSL", has_ssl);
 	blobmsg_add_string(bb, "type", (client->type == CLIENT_FROM_UBUS ? "ubus" : "uci"));
-	/* blobmsg_add_u8(bb, "connected", client->connected); */
-	blobmsg_add_u32(bb, "state", client->state);
+	blobmsg_add_string(bb, "state", state_names[client->state]);
 	blobmsg_close_table(bb, t);
 }
 
