@@ -44,6 +44,28 @@ static struct clvh_context connect_infos = {
 	.clients = LIST_HEAD_INIT(connect_infos.clients)
 };
 
+static struct client_connection_info *get_client_by_index (int index)
+{
+	struct client_connection_info *client;
+
+	list_for_each_entry(client, &connect_infos.clients, list)
+		if (index == client->index)
+			return client;
+
+	return NULL;
+}
+
+static struct client_connection_info *get_client_by_wsi (struct lws *wsi)
+{
+	struct client_connection_info *client;
+
+	list_for_each_entry(client, &connect_infos.clients, list)
+		if (wsi == client->wsi)
+			return client;
+
+	return NULL;
+}
+
 void insert_at_lowest_free_index(struct client_connection_info *client, struct list_head *head)
 {
 	struct client_connection_info *tmp;
@@ -206,13 +228,11 @@ static void _wsubus_client_connect(struct lws *wsi, int timeout)
 			uloop_timeout_set(&client->timer, timeout);
 		}
 	} else {
-		list_for_each_entry(client, &connect_infos.clients, list) {
-			if(client->wsi == wsi) {
-				client->reconnect_count = 0;
-				uloop_timeout_set(&client->timer, timeout);
-				break;
-			}
-		}
+		client = get_client_by_wsi(wsi);
+		if (!client)
+			return;
+		client->reconnect_count = 0;
+		uloop_timeout_set(&client->timer, timeout);
 	}
 }
 
@@ -229,12 +249,12 @@ void wsubus_client_connect_retry(struct lws *wsi)
 
 	if(!wsi)
 		return;
-	list_for_each_entry(client, &connect_infos.clients, list) {
-		if(client->wsi == wsi) {
-			uloop_timeout_set(&client->timer, (++client->reconnect_count * 2000));
-			break;
-		}
-	}
+
+	client = get_client_by_wsi(wsi);
+	if (!client)
+		return;
+
+	uloop_timeout_set(&client->timer, (++client->reconnect_count * 2000));
 }
 
 /* retry connection on disconnect */
@@ -320,7 +340,6 @@ int remove_client(struct ubus_context *ctx, struct ubus_object *obj,
 {
 	struct blob_attr *tb[__CLIENT_INDEX_MAX];
 	unsigned int index;
-	bool found = false;
 	struct client_connection_info *client;
 
 	blobmsg_parse(client_index_policy, __CLIENT_INDEX_MAX, tb, blob_data(msg), blob_len(msg));
@@ -330,14 +349,8 @@ int remove_client(struct ubus_context *ctx, struct ubus_object *obj,
 
 	index = blobmsg_get_u32(tb[CLIENT_INDEX]);
 
-	list_for_each_entry(client, &connect_infos.clients, list) {
-		if (index == (long)client->index) {
-			found = true;
-			break;
-		}
-	}
-
-	if (!found)
+	client = get_client_by_index(index);
+	if (!client)
 		return UBUS_STATUS_INVALID_ARGUMENT;
 
 	switch (client->state) {
@@ -488,6 +501,9 @@ void wsubus_client_set_ca_filepath(const char *filepath)
 /* delete one client */
 void wsubus_client_del(struct client_connection_info *c)
 {
+	if (!c)
+		return;
+
 	uloop_timeout_cancel(&c->timer);
 	free((char *)c->connection_info.address);
 	free((char *)c->connection_info.path);
@@ -508,27 +524,32 @@ void wsubus_client_set_state(struct lws *wsi, enum connection_state state)
 {
 	struct client_connection_info *client;
 
-	list_for_each_entry(client, &connect_infos.clients, list)
-		if (wsi == client->wsi)
-			client->state = state;
+	client = get_client_by_wsi(wsi);
+	if (!client)
+		return;
+
+	client->state = state;
 }
 
 bool wsubus_client_should_destroy(struct lws *wsi)
 {
 	struct client_connection_info *client;
 
-	list_for_each_entry(client, &connect_infos.clients, list)
-		if (wsi == client->wsi)
-			return client->state == CONNECTION_STATE_TEARINGDOWN;
+	client = get_client_by_wsi(wsi);
+	if (!client)
 	/* couldn't find the client??? this is wrong so close the connection */
-	return true;
+		return true;
+
+	return client->state == CONNECTION_STATE_TEARINGDOWN;
 }
 
 void wsubus_client_destroy(struct lws *wsi)
 {
 	struct client_connection_info *client, *tmp;
 
-	list_for_each_entry_safe(client, tmp, &connect_infos.clients, list)
-		if (wsi == client->wsi)
-			wsubus_client_del(client);
+	client = get_client_by_wsi(wsi);
+	if (!client)
+		return;
+
+	wsubus_client_del(client);
 }
