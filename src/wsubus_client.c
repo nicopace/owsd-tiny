@@ -555,7 +555,7 @@ bool wsubus_client_should_destroy(struct lws *wsi)
 
 void wsubus_client_destroy(struct lws *wsi)
 {
-	struct client_connection_info *client, *tmp;
+	struct client_connection_info *client;
 
 	client = get_client_by_wsi(wsi);
 	if (!client)
