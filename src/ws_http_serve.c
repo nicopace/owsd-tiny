@@ -302,7 +302,7 @@ int ws_http_serve_file(struct lws *wsi, const char *in)
 			goto out;
 		if (meta.status) {
 			lwsl_debug("file doesn't exist, not putting timestamp in header: %d\n", meta.status);
-			rc = lws_return_http_status(wsi, HTTP_STATUS_NOT_FOUND, NULL);
+			rc = !lws_return_http_status(wsi, HTTP_STATUS_NOT_FOUND, NULL) ? 1 : -1;
 			goto out;
 		}
 
