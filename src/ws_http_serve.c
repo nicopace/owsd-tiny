@@ -43,7 +43,7 @@ int ws_http_serve_interpret_retcode(struct lws *wsi, int ret)
 		// return code is okay, ask lws if transaction is done, and return
 		// accordingly. This will make us stay connected on HTTP/1.1 and close
 		// on HTTP/1.0 etc.
-		return lws_http_transaction_completed(wsi);
+		return lws_http_transaction_completed(wsi) ? -1 : 0;
 	}
 	// return code is "neutral", keep connection alive
 	lwsl_debug("not closing connection\n");

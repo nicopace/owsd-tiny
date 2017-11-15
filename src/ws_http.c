@@ -264,7 +264,7 @@ static int ws_http_cb(struct lws *wsi,
 		return 0;
 	case LWS_CALLBACK_HTTP_BODY_COMPLETION:
 	case LWS_CALLBACK_HTTP_FILE_COMPLETION:
-		return lws_http_transaction_completed(wsi);
+		return lws_http_transaction_completed(wsi) ? -1 : 0;
 
 	case LWS_CALLBACK_RECEIVE_PONG:
 		break;
