@@ -399,6 +399,7 @@ static void dump_client(struct blob_buf *bb, struct client_connection_info *clie
 	blobmsg_add_u8(bb, "SSL", has_ssl);
 	blobmsg_add_string(bb, "type", (client->type == CLIENT_FROM_UBUS ? "ubus" : "uci"));
 	blobmsg_add_string(bb, "state", state_names[client->state]);
+	blobmsg_add_u32(bb, "reconnect_count", client->reconnect_count);
 	blobmsg_close_table(bb, t);
 }
 
@@ -539,6 +540,9 @@ void wsubus_client_set_state(struct lws *wsi, enum connection_state state)
 		return;
 
 	client->state = state;
+
+	if (state == CONNECTION_STATE_CONNECTED)
+		client->reconnect_count = 0;
 }
 
 bool wsubus_client_should_destroy(struct lws *wsi)
