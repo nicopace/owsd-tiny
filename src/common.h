@@ -64,6 +64,7 @@ struct clvh_context {
 	struct list_head clients; /* list of clients to proxy */
 	struct lws_context *plws_ctx;
 	struct lws_vhost *pclvh;
+	struct avl_tree paths;
 };
 
 struct client_connection_info {

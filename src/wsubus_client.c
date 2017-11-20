@@ -29,6 +29,7 @@
 #include "common.h"
 
 #include <libubox/blobmsg.h>
+#include <libubox/avl-cmp.h>
 #include <libubus.h>
 #include <arpa/inet.h>
 
@@ -43,7 +44,8 @@ static struct lws_context_creation_info clvh_info = {};
 
 static struct clvh_context connect_infos = {
 	.enabled = false,
-	.clients = LIST_HEAD_INIT(connect_infos.clients)
+	.clients = LIST_HEAD_INIT(connect_infos.clients),
+	.paths = {0} //= AVL_TREE_INIT(connect_infos.paths, avl_strcmp, false, NULL)
 };
 
 static const char * const state_names[] = {
@@ -52,6 +54,22 @@ static const char * const state_names[] = {
 	[CONNECTION_STATE_CONNECTED] = "Connected",
 	[CONNECTION_STATE_TEARINGDOWN] = "Teardown"
 };
+
+
+void wsubus_client_path_pattern_add(const char *pattern)
+{
+	struct path_pattern *path;
+
+	path = calloc(1, sizeof(*path));
+	if (!path)
+		return;
+
+	lwsl_notice("pattern : %s\n", pattern);
+	path->pattern = strdup(pattern);
+	avl_insert(&connect_infos.paths, &path->avl);
+	lwsl_notice("path.pattern : %s\n", path->pattern);
+}
+
 
 static struct client_connection_info *get_client_by_ip(const char *ip)
 {
@@ -107,6 +125,9 @@ void insert_at_lowest_free_index(struct client_connection_info *client,
 void wsubus_client_enable_proxy(void)
 {
 	connect_infos.enabled = true;
+	//if(avl_is_empty(&connect_infos.paths))
+	if (!connect_infos.paths.comp)
+		avl_init(&connect_infos.paths, avl_strcmp, false, NULL);
 }
 
 static void utimer_reconnect_cb(struct uloop_timeout *timer)

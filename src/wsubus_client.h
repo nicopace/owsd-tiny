@@ -49,6 +49,11 @@ enum connection_state {
 	CONNECTION_STATE_TEARINGDOWN
 };
 
+struct path_pattern {
+	char *pattern;
+	struct avl_node avl;
+};
+
 int wsubus_client_create(const char *addr, const int port, const char *path, enum client_type type);
 void wsubus_client_enable_proxy(void);
 int wsubus_client_start_proxying(struct lws_context *lws_ctx, struct ubus_context *ubus_ctx);
@@ -62,5 +67,6 @@ void wsubus_client_clean(void);
 void wsubus_client_set_state(struct lws *wsi, enum connection_state state);
 bool wsubus_client_should_destroy(struct lws *wsi);
 void wsubus_client_destroy(struct lws *wsi);
+void wsubus_client_path_pattern_add(const char *pattern);
 
 #endif /* WSUBUS_CLIENT_H */

@@ -64,7 +64,7 @@ static void usage(char *name)
 			"  -r <from>:<to>   HTTP path redirect pair\n"
 			"  -m <from>:<to>   CGI mount point\n"
 #if WSD_HAVE_UBUSPROXY
-			"  -U               Enable WS ubus proxying\n"
+			"  -U [<path>] ...  Enable WS ubus proxying [for ubus path]\n"
 			"  -P <url> ...     URL of remote WS ubus to proxy as client\n"
 			"                   (also activates -U )"
 #ifdef LWS_OPENSSL_SUPPORT
@@ -148,7 +148,7 @@ int main(int argc, char *argv[])
 					"w:t:r:m:h"
 
 #if WSD_HAVE_UBUSPROXY
-					"U"
+					"U::"
 					/* per-client */
 					"P:"
 #ifdef LWS_OPENSSL_SUPPORT
@@ -205,8 +205,14 @@ int main(int argc, char *argv[])
 			// client
 #if WSD_HAVE_UBUSPROXY
 		case 'U':
+			lwsl_notice("PARSING OPTION U\n");
 			any_ssl = true;
 			wsubus_client_enable_proxy();
+			wsubus_client_enable_proxy();
+			wsubus_client_enable_proxy();
+			wsubus_client_enable_proxy();
+			if (optarg)
+				wsubus_client_path_pattern_add(optarg);
 			break;
 		case 'P': {
 
