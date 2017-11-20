@@ -51,6 +51,18 @@ static const char *state_names[] = {
 	[CONNECTION_STATE_TEARINGDOWN] = "Teardown"
 };
 
+static struct client_connection_info *get_client_by_ip (const char *ip)
+{
+	struct client_connection_info *client;
+
+	list_for_each_entry(client, &connect_infos.clients, list)
+		lwsl_notice("ip = %s, client ip = %s\n", ip, client->connection_info.address);
+		if (strcmp(ip, client->connection_info.address) == 0)
+			return client;
+
+	return NULL;
+}
+
 static struct client_connection_info *get_client_by_index (int index)
 {
 	struct client_connection_info *client;
@@ -282,8 +294,8 @@ enum {
 };
 
 static const struct blobmsg_policy add_client_policy[__CLIENT_ADD_MAX] = {
-	[CLIENT_ADD_IP] = { .name = "ip", .type = BLOBMSG_TYPE_STRING },
-	[CLIENT_ADD_PORT] = { .name = "port", .type = BLOBMSG_TYPE_INT32 },
+	[CLIENT_ADD_IP] =	{ .name = "ip", .type = BLOBMSG_TYPE_STRING },
+	[CLIENT_ADD_PORT] =	{ .name = "port", .type = BLOBMSG_TYPE_INT32 },
 };
 
 enum {
@@ -292,7 +304,18 @@ enum {
 };
 
 static const struct blobmsg_policy client_index_policy[__CLIENT_INDEX_MAX] = {
-	[CLIENT_INDEX] = { .name = "index", .type = BLOBMSG_TYPE_INT32 },
+	[CLIENT_INDEX] =	{ .name = "index", .type = BLOBMSG_TYPE_INT32 },
+};
+
+enum {
+	CLIENT_REM_INDEX,
+	CLIENT_REM_IP,
+	__CLIENT_REM_MAX
+};
+
+static const struct blobmsg_policy client_remove_policy[__CLIENT_REM_MAX] = {
+	[CLIENT_REM_INDEX] =	{ .name = "index", .type = BLOBMSG_TYPE_INT32 },
+	[CLIENT_REM_IP] =	{ .name = "ip", .type = BLOBMSG_TYPE_STRING },
 };
 
 int    add_client(struct ubus_context *ctx, struct ubus_object *obj, struct ubus_request_data *req, const char *method, struct blob_attr *msg);
@@ -305,7 +328,7 @@ int clear_clients(struct ubus_context *ctx, struct ubus_object *obj, struct ubus
 
 struct ubus_method ubus_methods[] = {
 	UBUS_METHOD("add", add_client, add_client_policy),
-	UBUS_METHOD("remove", remove_client, client_index_policy),
+	UBUS_METHOD("remove", remove_client, client_remove_policy),
 	UBUS_METHOD("list", list_client, client_index_policy),
 	UBUS_METHOD_NOARG("clear", clear_clients),
 };
@@ -345,18 +368,23 @@ int remove_client(struct ubus_context *ctx, struct ubus_object *obj,
 		struct ubus_request_data *req, const char *method,
 		struct blob_attr *msg)
 {
-	struct blob_attr *tb[__CLIENT_INDEX_MAX];
+	struct blob_attr *tb[__CLIENT_REM_MAX];
 	unsigned int index;
 	struct client_connection_info *client;
+	const char *ip;
 
-	blobmsg_parse(client_index_policy, __CLIENT_INDEX_MAX, tb, blob_data(msg), blob_len(msg));
+	lwsl_notice("remove client\n");
+	blobmsg_parse(client_remove_policy, __CLIENT_REM_MAX, tb, blob_data(msg), blob_len(msg));
 
-	if(!(tb[CLIENT_INDEX]))
+	if(tb[CLIENT_REM_INDEX]) {
+		index = blobmsg_get_u32(tb[CLIENT_REM_INDEX]);
+		client = get_client_by_index(index);
+	} else if (tb[CLIENT_REM_IP]) {
+		ip = blobmsg_get_string(tb[CLIENT_REM_IP]);
+		client = get_client_by_ip(ip);
+	} else
 		return UBUS_STATUS_INVALID_ARGUMENT;
 
-	index = blobmsg_get_u32(tb[CLIENT_INDEX]);
-
-	client = get_client_by_index(index);
 	if (!client)
 		return UBUS_STATUS_INVALID_ARGUMENT;
 
