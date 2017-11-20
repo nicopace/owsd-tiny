@@ -154,13 +154,7 @@ static bool validate_ip_port_path(const char *addr, int *port, const char *path)
 
 static bool unique_ip(const char *addr)
 {
-	struct client_connection_info *client;
-
-	list_for_each_entry(client, &connect_infos.clients, list)
-		if (strcmp(client->connection_info.address, addr) == 0)
-			return false;
-
-	return true;
+	return !get_client_by_ip(addr);
 }
 
 int wsubus_client_create(const char *addr, int port,
