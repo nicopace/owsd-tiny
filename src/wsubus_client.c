@@ -34,36 +34,37 @@
 
 #define MAX_IP_LEN 128
 #define MAX_PATH_LEN 128
+#define WSUBUS_UBUS_OBJECT_NAME "owsd.ubusproxy"
+#define WSS_PORT 443
 
-// contains list of urls where to connect as ubus proxy
+/* contains list of urls where to connect as ubus proxy */
 static struct lws_context_creation_info clvh_info = {};
-// FIXME to support different certs per different client, this becomes per-client
+/* FIXME: to support different certs per client, this must be per client */
 
 static struct clvh_context connect_infos = {
 	.enabled = false,
 	.clients = LIST_HEAD_INIT(connect_infos.clients)
 };
 
-static const char *state_names[] = {
+static const char * const state_names[] = {
 	[CONNECTION_STATE_DISCONNECTED] = "Disconnected",
 	[CONNECTION_STATE_CONNECTING] = "Connecting",
 	[CONNECTION_STATE_CONNECTED] = "Connected",
 	[CONNECTION_STATE_TEARINGDOWN] = "Teardown"
 };
 
-static struct client_connection_info *get_client_by_ip (const char *ip)
+static struct client_connection_info *get_client_by_ip(const char *ip)
 {
 	struct client_connection_info *client;
 
 	list_for_each_entry(client, &connect_infos.clients, list)
-		lwsl_notice("ip = %s, client ip = %s\n", ip, client->connection_info.address);
 		if (strcmp(ip, client->connection_info.address) == 0)
 			return client;
 
 	return NULL;
 }
 
-static struct client_connection_info *get_client_by_index (int index)
+static struct client_connection_info *get_client_by_index(int index)
 {
 	struct client_connection_info *client;
 
@@ -74,7 +75,7 @@ static struct client_connection_info *get_client_by_index (int index)
 	return NULL;
 }
 
-static struct client_connection_info *get_client_by_wsi (struct lws *wsi)
+static struct client_connection_info *get_client_by_wsi(struct lws *wsi)
 {
 	struct client_connection_info *client;
 
@@ -85,7 +86,8 @@ static struct client_connection_info *get_client_by_wsi (struct lws *wsi)
 	return NULL;
 }
 
-void insert_at_lowest_free_index(struct client_connection_info *client, struct list_head *head)
+void insert_at_lowest_free_index(struct client_connection_info *client,
+		struct list_head *head)
 {
 	struct client_connection_info *tmp;
 	int i = 0;
@@ -110,9 +112,10 @@ void wsubus_client_enable_proxy(void)
 static void utimer_reconnect_cb(struct uloop_timeout *timer)
 {
 	struct lws *wsi = NULL;
-	struct client_connection_info *c = container_of(timer, struct client_connection_info
- , timer);
-	if(!c)
+	struct client_connection_info *c;
+
+	c = container_of(timer, struct client_connection_info, timer);
+	if (!c)
 		lwsl_err("no client owning this timer\n");
 	lwsl_notice("connecting as client too to %s %d\n",
 			c->connection_info.address, c->connection_info.port);
@@ -132,8 +135,8 @@ static bool validate_ip_port_path(const char *addr, int *port, const char *path)
 		lwsl_err("invalid arguments\n");
 		return false;
 	}
-
-	rv = inet_pton(AF_INET, addr, &in_addr_dummy); /* returns 1 on success */
+	/* returns 1 on success */
+	rv = inet_pton(AF_INET, addr, &in_addr_dummy);
 	if (!rv)
 		rv = inet_pton(AF_INET6, addr, &in6_addr_dummy);
 	if (!rv) {
@@ -160,7 +163,8 @@ static bool unique_ip(const char *addr)
 	return true;
 }
 
-int wsubus_client_create(const char *addr, int port, const char *path, enum client_type type)
+int wsubus_client_create(const char *addr, int port,
+		const char *path, enum client_type type)
 {
 	struct client_connection_info *newcl;
 	char *_addr, *_path;
@@ -171,7 +175,7 @@ int wsubus_client_create(const char *addr, int port, const char *path, enum clie
 	if (!unique_ip(addr))
 		goto invalid_argument;
 
-	newcl = malloc(sizeof *newcl);
+	newcl = malloc(sizeof(*newcl));
 	if (!newcl) {
 		lwsl_err("OOM clinfo init\n");
 		goto error_cl;
@@ -207,7 +211,8 @@ int wsubus_client_create(const char *addr, int port, const char *path, enum clie
 	newcl->connection_info.address = _addr;
 	newcl->connection_info.host = _addr;
 	newcl->connection_info.port = port;
-	newcl->connection_info.ssl_connection = LCCSCF_USE_SSL | LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
+	newcl->connection_info.ssl_connection = LCCSCF_USE_SSL |
+		LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
 	newcl->connection_info.pwsi = &newcl->wsi;
 	newcl->connection_info.vhost = connect_infos.pclvh;
 	newcl->connection_info.context = connect_infos.plws_ctx;
@@ -240,9 +245,10 @@ static void _wsubus_client_connect(struct lws *wsi, int timeout)
 {
 	struct client_connection_info *client;
 
-	if(!wsi) {
+	if (!wsi) {
 		list_for_each_entry(client, &connect_infos.clients, list) {
-			lwsl_notice("test connect client %s\n", client->connection_info.address);
+			lwsl_notice("test connect client %s\n",
+					client->connection_info.address);
 			client->reconnect_count = 0;
 			uloop_timeout_set(&client->timer, timeout);
 		}
@@ -266,7 +272,7 @@ void wsubus_client_connect_retry(struct lws *wsi)
 {
 	struct client_connection_info *client;
 
-	if(!wsi)
+	if (!wsi)
 		return;
 
 	client = get_client_by_wsi(wsi);
@@ -318,23 +324,6 @@ static const struct blobmsg_policy client_remove_policy[__CLIENT_REM_MAX] = {
 	[CLIENT_REM_IP] =	{ .name = "ip", .type = BLOBMSG_TYPE_STRING },
 };
 
-int    add_client(struct ubus_context *ctx, struct ubus_object *obj, struct ubus_request_data *req, const char *method, struct blob_attr *msg);
-int remove_client(struct ubus_context *ctx, struct ubus_object *obj, struct ubus_request_data *req, const char *method, struct blob_attr *msg);
-int   list_client(struct ubus_context *ctx, struct ubus_object *obj, struct ubus_request_data *req, const char *method, struct blob_attr *msg);
-int clear_clients(struct ubus_context *ctx, struct ubus_object *obj, struct ubus_request_data *req, const char *method, struct blob_attr *msg);
-
-#define WSUBUS_UBUS_OBJECT_NAME "owsd.ubusproxy"
-#define WSS_PORT 443
-
-struct ubus_method ubus_methods[] = {
-	UBUS_METHOD("add", add_client, add_client_policy),
-	UBUS_METHOD("remove", remove_client, client_remove_policy),
-	UBUS_METHOD("list", list_client, client_index_policy),
-	UBUS_METHOD_NOARG("clear", clear_clients),
-};
-
-struct ubus_object object = CREATE_UBUS_OBJECT(WSUBUS_UBUS_OBJECT_NAME, ubus_methods);
-
 int add_client(struct ubus_context *ctx, struct ubus_object *obj,
 	struct ubus_request_data *req, const char *method,
 	struct blob_attr *msg)
@@ -342,7 +331,8 @@ int add_client(struct ubus_context *ctx, struct ubus_object *obj,
 	struct blob_attr *tb[__CLIENT_ADD_MAX];
 	int port = WSS_PORT, ret;
 
-	blobmsg_parse(add_client_policy, __CLIENT_ADD_MAX, tb, blob_data(msg), blob_len(msg));
+	blobmsg_parse(add_client_policy, __CLIENT_ADD_MAX, tb,
+			blob_data(msg), blob_len(msg));
 
 	if (!(tb[CLIENT_ADD_IP]))
 		return UBUS_STATUS_INVALID_ARGUMENT;
@@ -374,9 +364,10 @@ int remove_client(struct ubus_context *ctx, struct ubus_object *obj,
 	const char *ip;
 
 	lwsl_notice("remove client\n");
-	blobmsg_parse(client_remove_policy, __CLIENT_REM_MAX, tb, blob_data(msg), blob_len(msg));
+	blobmsg_parse(client_remove_policy, __CLIENT_REM_MAX, tb,
+			blob_data(msg), blob_len(msg));
 
-	if(tb[CLIENT_REM_INDEX]) {
+	if (tb[CLIENT_REM_INDEX]) {
 		index = blobmsg_get_u32(tb[CLIENT_REM_INDEX]);
 		client = get_client_by_index(index);
 	} else if (tb[CLIENT_REM_IP]) {
@@ -407,7 +398,8 @@ int remove_client(struct ubus_context *ctx, struct ubus_object *obj,
 	return UBUS_STATUS_OK;
 }
 
-static void dump_client(struct blob_buf *bb, struct client_connection_info *client)
+static void dump_client(struct blob_buf *bb,
+		struct client_connection_info *client)
 {
 	char clname[16];
 	void *t;
@@ -425,7 +417,8 @@ static void dump_client(struct blob_buf *bb, struct client_connection_info *clie
 	blobmsg_add_string(bb, "path", client->connection_info.path);
 	blobmsg_add_string(bb, "protocol", client->connection_info.protocol);
 	blobmsg_add_u8(bb, "SSL", has_ssl);
-	blobmsg_add_string(bb, "type", (client->type == CLIENT_FROM_UBUS ? "ubus" : "uci"));
+	blobmsg_add_string(bb, "type", (client->type == CLIENT_FROM_UBUS ?
+				"ubus" : "uci"));
 	blobmsg_add_string(bb, "state", state_names[client->state]);
 	blobmsg_add_u32(bb, "reconnect_count", client->reconnect_count);
 	blobmsg_close_table(bb, t);
@@ -440,11 +433,12 @@ int list_client(struct ubus_context *ctx, struct ubus_object *obj,
 	struct blob_buf bb = {};
 	long index = -1;
 
-	blobmsg_parse(client_index_policy, __CLIENT_INDEX_MAX, tb, blob_data(msg), blob_len(msg));
+	blobmsg_parse(client_index_policy, __CLIENT_INDEX_MAX, tb,
+			blob_data(msg), blob_len(msg));
 
 	blob_buf_init(&bb, 0);
 
-	if(tb[CLIENT_INDEX])
+	if (tb[CLIENT_INDEX])
 		index = blobmsg_get_u32(tb[CLIENT_INDEX]);
 
 	list_for_each_entry(client, &connect_infos.clients, list) {
@@ -461,49 +455,56 @@ int list_client(struct ubus_context *ctx, struct ubus_object *obj,
 	return UBUS_STATUS_OK;
 }
 
-int clear_clients(struct ubus_context *ctx, struct ubus_object *obj,
-		struct ubus_request_data *req, const char *method,
-		struct blob_attr *msg)
-{
-	return UBUS_STATUS_OK;
-}
+struct ubus_method ubus_methods[] = {
+	UBUS_METHOD("add", add_client, add_client_policy),
+	UBUS_METHOD("remove", remove_client, client_remove_policy),
+	UBUS_METHOD("list", list_client, client_index_policy),
+};
+
+struct ubus_object object = CREATE_UBUS_OBJECT(WSUBUS_UBUS_OBJECT_NAME,
+		ubus_methods);
 
 /* ####################################### */
 /* ######## END UBUS RELATED CODE ######## */
 /* ####################################### */
 
 
-int wsubus_client_start_proxying(struct lws_context *lws_ctx, struct ubus_context *ubus_ctx)
+int wsubus_client_start_proxying(struct lws_context *lws_ctx,
+		struct ubus_context *ubus_ctx)
 {
-	if (!connect_infos.enabled)
-		return -1;
-
-	if(	!clvh_info.ssl_cert_filepath ||
-		!clvh_info.ssl_private_key_filepath ||
-		!clvh_info.ssl_ca_filepath)
-		return -2;
-
+	struct lws_vhost *clvh;
 	struct lws_protocols ws_protocols[] = {
 		ws_http_proto,
 		ws_ubusproxy_proto,
 		{ }
 	};
+	struct client_connection_info *c;
+
+	if (!connect_infos.enabled)
+		return -1;
+
+	if (!clvh_info.ssl_cert_filepath ||
+		!clvh_info.ssl_private_key_filepath ||
+		!clvh_info.ssl_ca_filepath)
+		return -2;
+
 
 	clvh_info.port = CONTEXT_PORT_NO_LISTEN;
 	clvh_info.protocols = ws_protocols;
-	clvh_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT | LWS_SERVER_OPTION_DISABLE_OS_CA_CERTS;
+	clvh_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT |
+		LWS_SERVER_OPTION_DISABLE_OS_CA_CERTS;
 
 	clvh_info.ka_time = 5;
 	clvh_info.ka_probes = 5;
 	clvh_info.ka_interval = 1;
 
-	struct lws_vhost *clvh = lws_create_vhost(lws_ctx, &clvh_info);
+	clvh = lws_create_vhost(lws_ctx, &clvh_info);
+
 	if (!clvh) {
 		lwsl_err("lws_create_vhost failed\n");
 		return -3;
 	}
 
-	struct client_connection_info *c;
 	connect_infos.pclvh = clvh;
 	connect_infos.plws_ctx = lws_ctx;
 
