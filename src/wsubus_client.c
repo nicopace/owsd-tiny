@@ -102,6 +102,12 @@ static struct client_connection_info *get_client_by_wsi(struct lws *wsi)
 {
 	struct client_connection_info *client;
 
+	/* the clients in the list can have NULL wsi,
+	 * for the clients that are reconnecting
+	 */
+	if (!wsi)
+		return NULL;
+
 	list_for_each_entry(client, &connect_infos.clients, list)
 		if (wsi == client->wsi)
 			return client;
@@ -145,6 +151,8 @@ static void utimer_reconnect_cb(struct uloop_timeout *timer)
 	wsi = lws_client_connect_via_info(&c->connection_info);
 	if (!wsi)
 		return;
+
+	c->wsi = wsi;
 	wsubus_client_set_state(wsi, CONNECTION_STATE_CONNECTING);
 }
 
@@ -296,6 +304,7 @@ void wsubus_client_connect_retry(struct lws *wsi)
 	if (!client)
 		return;
 
+	client->wsi = NULL;
 	uloop_timeout_set(&client->timer, (++client->reconnect_count * 2000));
 }
 
