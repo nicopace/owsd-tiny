@@ -45,7 +45,7 @@ static struct lws_context_creation_info clvh_info = {};
 static struct clvh_context connect_infos = {
 	.enabled = false,
 	.clients = LIST_HEAD_INIT(connect_infos.clients),
-	.paths = {0} //= AVL_TREE_INIT(connect_infos.paths, avl_strcmp, false, NULL)
+	.paths = LIST_HEAD_INIT(connect_infos.paths)
 };
 
 static const char * const state_names[] = {
@@ -64,9 +64,14 @@ void wsubus_client_path_pattern_add(const char *pattern)
 	if (!path)
 		return;
 
-	lwsl_notice("pattern : %s\n", pattern);
 	path->pattern = strdup(pattern);
-	avl_insert(&connect_infos.paths, &path->avl);
+	if (!path->pattern) {
+		lwsl_err("wsubus_client_path_pattern_add strdup failed\n");
+		return;
+	}
+	// TODO: do not add duplicate strings here
+	// TODO: chage to avl tree
+	list_add(&path->list, &connect_infos.paths);
 	lwsl_notice("path.pattern : %s\n", path->pattern);
 }
 
@@ -125,9 +130,6 @@ void insert_at_lowest_free_index(struct client_connection_info *client,
 void wsubus_client_enable_proxy(void)
 {
 	connect_infos.enabled = true;
-	//if(avl_is_empty(&connect_infos.paths))
-	if (!connect_infos.paths.comp)
-		avl_init(&connect_infos.paths, avl_strcmp, false, NULL);
 }
 
 static void utimer_reconnect_cb(struct uloop_timeout *timer)
@@ -610,4 +612,26 @@ void wsubus_client_destroy(struct lws *wsi)
 		return;
 
 	wsubus_client_del(client);
+}
+
+static bool match(const char *pattern, const char *name, size_t len)
+{
+	if (pattern[len - 1] == '*')
+		return strncmp(pattern, name, len - 1) == 0;
+	return strncmp(pattern, name, len) == 0;
+}
+
+bool wsubus_client_match_pattern(const char *name)
+{
+	struct path_pattern *path;
+
+	/* no patterns == show all */
+	if (list_empty(&connect_infos.paths))
+		return true;
+
+	list_for_each_entry(path, &connect_infos.paths, list)
+		if (match(path->pattern, name, strlen(path->pattern)))
+			return true;
+
+	return false;
 }

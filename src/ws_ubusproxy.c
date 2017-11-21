@@ -229,6 +229,10 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 
 						if (cmp_result) {
 							// we don't have that object proxied, create new
+							// check filters in wsubus_client
+							// add the object only if it has a match
+							if (!wsubus_client_match_pattern(obj_name))
+								continue;
 							lwsl_notice("create stub object for %s\n", obj_name);
 							wsu_local_stub_create(remote, obj_name, obj_methods);
 						} else if (!wsu_local_stub_is_same_signature(cur, obj_methods)) {
@@ -237,6 +241,10 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 							wsu_local_stub_destroy(cur);
 							cur = next;
 							// TODO could avoid realloc here if wsu_local_stub_create is converted to caller-allocated
+							// check filters in wsubus_client
+							// add the object only if it has a match
+							if (!wsubus_client_match_pattern(obj_name))
+								continue;
 							lwsl_notice("create NEW stub object for %s\n", obj_name);
 							wsu_local_stub_create(remote, obj_name, obj_methods);
 						}

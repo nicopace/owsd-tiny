@@ -50,8 +50,8 @@ enum connection_state {
 };
 
 struct path_pattern {
-	char *pattern;
-	struct avl_node avl;
+	const char *pattern;
+	struct list_head list;
 };
 
 int wsubus_client_create(const char *addr, const int port, const char *path, enum client_type type);

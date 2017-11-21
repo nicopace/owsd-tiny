@@ -208,9 +208,6 @@ int main(int argc, char *argv[])
 			lwsl_notice("PARSING OPTION U\n");
 			any_ssl = true;
 			wsubus_client_enable_proxy();
-			wsubus_client_enable_proxy();
-			wsubus_client_enable_proxy();
-			wsubus_client_enable_proxy();
 			if (optarg)
 				wsubus_client_path_pattern_add(optarg);
 			break;
