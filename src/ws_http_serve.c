@@ -43,7 +43,7 @@ int ws_http_serve_interpret_retcode(struct lws *wsi, int ret)
 		// return code is okay, ask lws if transaction is done, and return
 		// accordingly. This will make us stay connected on HTTP/1.1 and close
 		// on HTTP/1.0 etc.
-		return lws_http_transaction_completed(wsi);
+		return lws_http_transaction_completed(wsi) ? -1 : 0;
 	}
 	// return code is "neutral", keep connection alive
 	lwsl_debug("not closing connection\n");
@@ -302,7 +302,7 @@ int ws_http_serve_file(struct lws *wsi, const char *in)
 			goto out;
 		if (meta.status) {
 			lwsl_debug("file doesn't exist, not putting timestamp in header: %d\n", meta.status);
-			rc = lws_return_http_status(wsi, HTTP_STATUS_NOT_FOUND, NULL);
+			rc = !lws_return_http_status(wsi, HTTP_STATUS_NOT_FOUND, NULL) ? 1 : -1;
 			goto out;
 		}
 
