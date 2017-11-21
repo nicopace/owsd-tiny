@@ -266,6 +266,19 @@ invalid_argument:
 	return UBUS_STATUS_INVALID_ARGUMENT;
 }
 
+/* delete one client */
+static void wsubus_client_del(struct client_connection_info *c)
+{
+	if (!c)
+		return;
+
+	uloop_timeout_cancel(&c->timer);
+	free((char *)c->connection_info.address);
+	free((char *)c->connection_info.path);
+	list_del(&c->list);
+	free(c);
+}
+
 static void _wsubus_client_connect(struct lws *wsi, int timeout)
 {
 	struct client_connection_info *client;
@@ -389,16 +402,17 @@ int remove_client(struct ubus_context *ctx, struct ubus_object *obj,
 	struct client_connection_info *client;
 	const char *ip;
 
-	lwsl_notice("remove client\n");
 	blobmsg_parse(client_remove_policy, __CLIENT_REM_MAX, tb,
 			blob_data(msg), blob_len(msg));
 
 	if (tb[CLIENT_REM_INDEX]) {
 		index = blobmsg_get_u32(tb[CLIENT_REM_INDEX]);
 		client = get_client_by_index(index);
+		lwsl_notice("remove client index %d\n", index);
 	} else if (tb[CLIENT_REM_IP]) {
 		ip = blobmsg_get_string(tb[CLIENT_REM_IP]);
 		client = get_client_by_ip(ip);
+		lwsl_notice("remove client ip %s\n", ip);
 	} else
 		return UBUS_STATUS_INVALID_ARGUMENT;
 
@@ -407,7 +421,7 @@ int remove_client(struct ubus_context *ctx, struct ubus_object *obj,
 
 	switch (client->state) {
 		case CONNECTION_STATE_DISCONNECTED:
-			wsubus_client_destroy(client->wsi);
+			wsubus_client_del(client);
 			break;
 		case CONNECTION_STATE_CONNECTING:
 			client->state = CONNECTION_STATE_TEARINGDOWN;
@@ -562,19 +576,6 @@ void wsubus_client_set_private_key_filepath(const char *filepath)
 void wsubus_client_set_ca_filepath(const char *filepath)
 {
 	clvh_info.ssl_ca_filepath = filepath;
-}
-
-/* delete one client */
-void wsubus_client_del(struct client_connection_info *c)
-{
-	if (!c)
-		return;
-
-	uloop_timeout_cancel(&c->timer);
-	free((char *)c->connection_info.address);
-	free((char *)c->connection_info.path);
-	list_del(&c->list);
-	free(c);
 }
 
 /* free the info for connection as ubus proxy / delete all clients */
