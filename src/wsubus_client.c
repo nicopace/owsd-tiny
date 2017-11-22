@@ -492,6 +492,7 @@ int list_client(struct ubus_context *ctx, struct ubus_object *obj,
 
 	ubus_send_reply(ctx, req, bb.head);
 
+	blob_buf_free(&bb);
 	return UBUS_STATUS_OK;
 }
 
