@@ -42,10 +42,13 @@
 static struct lws_context_creation_info clvh_info = {};
 /* FIXME: to support different certs per client, this must be per client */
 
+static int client_path_comp(const void *k1, const void *k2, void *ptr);
+
 static struct clvh_context connect_infos = {
 	.enabled = false,
 	.clients = LIST_HEAD_INIT(connect_infos.clients),
-	.paths = LIST_HEAD_INIT(connect_infos.paths)
+	.paths_tree = AVL_TREE_INIT(connect_infos.paths_tree, client_path_comp,
+			false, NULL)
 };
 
 static const char * const state_names[] = {
@@ -55,26 +58,104 @@ static const char * const state_names[] = {
 	[CONNECTION_STATE_TEARINGDOWN] = "Teardown"
 };
 
+static int client_path_comp(const void *k1, const void *k2, void *ptr)
+{
+	const char *pattern1 = (char *)k1;
+	const char *pattern2 = (char *)k2;
+	int len1 = strlen(pattern1);
+	int len2 = strlen(pattern2);
+	bool p1_wildcard = (pattern1[len1-1] == '*');
+	bool p2_wildcard = (pattern2[len2-1] == '*');
+
+	lwsl_notice("(1) pattern1: \"%s\" pattern2: \"%s\"\n",
+		pattern1, pattern2);
+
+	/* none has wildcard */
+	if (!p1_wildcard && !p2_wildcard) {
+		lwsl_notice("(2) no wildcard\n");
+		return strcmp(pattern1, pattern2);
+	}
+
+	/* only one pattern has wildcard */
+	if (p1_wildcard != p2_wildcard) {
+		lwsl_notice("(3) one wildcard\n");
+		return strncmp(pattern1, pattern2,
+				(p1_wildcard ? len1 : len2) - 1);
+	}
+
+	/* both have wildcard */
+	lwsl_notice("(4) two wildcards\n");
+	return strncmp(pattern1, pattern2, (len1 < len2 ? len1 : len2) - 1);
+}
+
+/* return true if p1 contains (is broader than or equal to) pattern p2 */
+/* p1 and p2 are already two patterns that match eachother */
+static bool broader_pattern(char *p1, char *p2)
+{
+	int len1 = strlen(p1);
+	int len2 = strlen(p2);
+	bool p1_wildcard = (p1[len1-1] == '*');
+	bool p2_wildcard = (p2[len2-1] == '*');
+
+	/* none has wildcard */
+	if (!p1_wildcard && !p2_wildcard)
+		return true;
+
+	/* only one has wildcard, return that */
+	if (p1_wildcard != p2_wildcard)
+		return p1_wildcard;
+
+	/* both have wildcard, return the shortest one */
+	return len1 <= len2;
+}
 
 void wsubus_client_path_pattern_add(const char *pattern)
 {
-	struct path_pattern *path;
+	int rv;
+	struct avl_path_node *new, *found;
 
-	path = calloc(1, sizeof(*path));
-	if (!path)
+	new = calloc(1, sizeof(*new));
+	if (!new)
 		return;
 
-	path->pattern = strdup(pattern);
-	if (!path->pattern) {
-		lwsl_err("wsubus_client_path_pattern_add strdup failed\n");
+	new->node.key = strdup(pattern);
+	if (!new->node.key) {
+		lwsl_err("strdup failed\n");
+		free(new);
 		return;
 	}
-	// TODO: do not add duplicate strings here
-	// TODO: chage to avl tree
-	list_add(&path->list, &connect_infos.paths);
-	lwsl_notice("path.pattern : %s\n", path->pattern);
-}
 
+	/* remove the existing patterns that are muted by the new pattern */
+	while ((found = avl_find_element(&connect_infos.paths_tree,
+				new->node.key, found, node))) {
+
+		/* found a broader pattern, skip the new pattern */
+		if (broader_pattern((char *)found->node.key, (char *)new->node.key)) {
+			lwsl_notice("avl_insert skip key:\"%s\"\n", (char *)new->node.key);
+			free((void *)new->node.key);
+			free(new);
+			return;
+		}
+
+		/* the new pattern is broader, delete the found one */
+		lwsl_notice("avl_delete key:\"%s\"\n", (char *)found->node.key);
+		avl_delete(&connect_infos.paths_tree, &found->node);
+	}
+
+	rv = avl_insert(&connect_infos.paths_tree, &new->node);
+	if (rv) {
+		lwsl_err("avl_insert fail: key:\"%s\"\n", (char *)new->node.key);
+		free((void *)new->node.key);
+		free(new);
+		return;
+	}
+
+	lwsl_notice("avl_insert: key:\"%s\"\n", (char *)new->node.key);
+
+	avl_for_each_element(&connect_infos.paths_tree, new, node) {
+		lwsl_notice("print avl_node: %s\n", (char *)new->node.key);
+	}
+}
 
 static struct client_connection_info *get_client_by_ip(const char *ip)
 {
@@ -625,24 +706,14 @@ void wsubus_client_destroy(struct lws *wsi)
 	wsubus_client_del(client);
 }
 
-static bool match(const char *pattern, const char *name, size_t len)
-{
-	if (pattern[len - 1] == '*')
-		return strncmp(pattern, name, len - 1) == 0;
-	return strncmp(pattern, name, len) == 0;
-}
-
 bool wsubus_client_match_pattern(const char *name)
 {
-	struct path_pattern *path;
-
 	/* no patterns == show all */
-	if (list_empty(&connect_infos.paths))
+	if (avl_is_empty(&connect_infos.paths_tree))
 		return true;
 
-	list_for_each_entry(path, &connect_infos.paths, list)
-		if (match(path->pattern, name, strlen(path->pattern)))
-			return true;
+	if (avl_find(&connect_infos.paths_tree, name))
+		return true;
 
 	return false;
 }

@@ -54,6 +54,9 @@ struct path_pattern {
 	const char *pattern;
 	struct list_head list;
 };
+struct avl_path_node {
+	struct avl_node node;
+};
 
 // the vhost for clients has list of client infos so they can be reconnected
 struct clvh_context {
@@ -62,6 +65,7 @@ struct clvh_context {
 	struct lws_context *plws_ctx;
 	struct lws_vhost *pclvh;
 	struct list_head paths;
+	struct avl_tree paths_tree;
 };
 
 struct client_connection_info {
