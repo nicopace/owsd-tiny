@@ -1,3 +1,4 @@
+#if WSD_HAVE_UBUSPROXY
 #ifndef WSUBUS_CLIENT_H
 #define WSUBUS_CLIENT_H
 
@@ -54,6 +55,26 @@ struct path_pattern {
 	struct list_head list;
 };
 
+// the vhost for clients has list of client infos so they can be reconnected
+struct clvh_context {
+	bool enabled; /* enable WS ubus client proxy functionality */
+	struct list_head clients; /* list of clients to proxy */
+	struct lws_context *plws_ctx;
+	struct lws_vhost *pclvh;
+	struct list_head paths;
+};
+
+struct client_connection_info {
+	int index;
+	struct list_head list;
+	struct lws *wsi;
+	int reconnect_count;
+	struct uloop_timeout timer;
+	struct lws_client_connect_info connection_info;
+	enum client_type type;
+	enum connection_state state;
+};
+
 int wsubus_client_create(const char *addr, const int port, const char *path, enum client_type type);
 void wsubus_client_enable_proxy(void);
 int wsubus_client_start_proxying(struct lws_context *lws_ctx, struct ubus_context *ubus_ctx);
@@ -71,3 +92,4 @@ void wsubus_client_path_pattern_add(const char *pattern);
 bool wsubus_client_match_pattern(const char *name);
 
 #endif /* WSUBUS_CLIENT_H */
+#endif /* WSD_HAVE_UBUSPROXY */

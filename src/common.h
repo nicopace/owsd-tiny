@@ -56,25 +56,3 @@ struct str_list {
 	struct list_head list;
 	const char *str;
 };
-
-#if WSD_HAVE_UBUSPROXY
-// the vhost for clients has list of client infos so they can be reconnected
-struct clvh_context {
-	bool enabled; /* enable WS ubus client proxy functionality */
-	struct list_head clients; /* list of clients to proxy */
-	struct lws_context *plws_ctx;
-	struct lws_vhost *pclvh;
-	struct list_head paths;
-};
-
-struct client_connection_info {
-	int index;
-	struct list_head list;
-	struct lws *wsi;
-	int reconnect_count;
-	struct uloop_timeout timer;
-	struct lws_client_connect_info connection_info;
-	enum client_type type;
-	enum connection_state state;
-};
-#endif
