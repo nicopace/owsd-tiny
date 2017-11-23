@@ -68,5 +68,6 @@ void wsubus_client_set_state(struct lws *wsi, enum connection_state state);
 bool wsubus_client_should_destroy(struct lws *wsi);
 void wsubus_client_destroy(struct lws *wsi);
 void wsubus_client_path_pattern_add(const char *pattern);
+bool wsubus_client_match_pattern(const char *name);
 
 #endif /* WSUBUS_CLIENT_H */
