@@ -109,8 +109,10 @@ void wsubus_client_path_pattern_add(const char *pattern)
 	struct avl_node *new, *found;
 
 	new = calloc(1, sizeof(*new));
-	if (!new)
+	if (!new) {
+		lwsl_err("calloc failed\n");
 		goto out;
+	}
 
 	new->key = strdup(pattern);
 	if (!new->key) {
@@ -130,8 +132,10 @@ void wsubus_client_path_pattern_add(const char *pattern)
 	}
 
 	rv = avl_insert(&connect_infos.paths_tree, new);
-	if (rv)
+	if (rv) {
+		lwsl_err("avl_insert failed\n");
 		goto out_key;
+	}
 
 	return;
 
