@@ -62,10 +62,14 @@ static int client_path_comp(const void *k1, const void *k2, void *ptr)
 {
 	const char *pattern1 = (char *)k1;
 	const char *pattern2 = (char *)k2;
-	int len1 = strlen(pattern1);
-	int len2 = strlen(pattern2);
-	bool p1_wildcard = (pattern1[len1-1] == '*');
-	bool p2_wildcard = (pattern2[len2-1] == '*');
+	size_t len1 = strlen(pattern1);
+	size_t len2 = strlen(pattern2);
+	bool p1_wildcard, p2_wildcard;
+
+	if (len1 == 0 || len2 == 0)
+		return len1 - len2;
+	p1_wildcard = (pattern1[len1-1] == '*');
+	p2_wildcard = (pattern2[len2-1] == '*');
 
 	/* none has wildcard */
 	if (!p1_wildcard && !p2_wildcard) {
