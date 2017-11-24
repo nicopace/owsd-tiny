@@ -110,35 +110,37 @@ void wsubus_client_path_pattern_add(const char *pattern)
 
 	new = calloc(1, sizeof(*new));
 	if (!new)
-		return;
+		goto out;
 
 	new->key = strdup(pattern);
 	if (!new->key) {
 		lwsl_err("strdup failed\n");
-		free(new);
-		return;
+		goto out_new;
 	}
 
 	/* remove the existing patterns that are muted by the new pattern */
 	while ((found = avl_find(&connect_infos.paths_tree, new->key))) {
 
 		/* found a broader pattern, skip the new pattern */
-		if (broader_pattern((char *)found->key, (char *)new->key)) {
-			free((void *)new->key);
-			free(new);
-			return;
-		}
+		if (broader_pattern((char *)found->key, (char *)new->key))
+			goto out_key;
 
 		/* the new pattern is broader, delete the found one */
 		avl_delete(&connect_infos.paths_tree, found);
 	}
 
 	rv = avl_insert(&connect_infos.paths_tree, new);
-	if (rv) {
-		free((void *)new->key);
-		free(new);
-		return;
-	}
+	if (rv)
+		goto out_key;
+
+	return;
+
+out_key:
+	free((void *)new->key);
+out_new:
+	free(new);
+out:
+	return;
 }
 
 static struct client_connection_info *get_client_by_ip(const char *ip)
