@@ -67,24 +67,18 @@ static int client_path_comp(const void *k1, const void *k2, void *ptr)
 	bool p1_wildcard = (pattern1[len1-1] == '*');
 	bool p2_wildcard = (pattern2[len2-1] == '*');
 
-	lwsl_notice("(1) pattern1: \"%s\" pattern2: \"%s\"\n",
-		pattern1, pattern2);
-
 	/* none has wildcard */
 	if (!p1_wildcard && !p2_wildcard) {
-		lwsl_notice("(2) no wildcard\n");
 		return strcmp(pattern1, pattern2);
 	}
 
 	/* only one pattern has wildcard */
 	if (p1_wildcard != p2_wildcard) {
-		lwsl_notice("(3) one wildcard\n");
 		return strncmp(pattern1, pattern2,
 				(p1_wildcard ? len1 : len2) - 1);
 	}
 
 	/* both have wildcard */
-	lwsl_notice("(4) two wildcards\n");
 	return strncmp(pattern1, pattern2, (len1 < len2 ? len1 : len2) - 1);
 }
 
@@ -112,48 +106,38 @@ static bool broader_pattern(char *p1, char *p2)
 void wsubus_client_path_pattern_add(const char *pattern)
 {
 	int rv;
-	struct avl_path_node *new, *found;
+	struct avl_node *new, *found;
 
 	new = calloc(1, sizeof(*new));
 	if (!new)
 		return;
 
-	new->node.key = strdup(pattern);
-	if (!new->node.key) {
+	new->key = strdup(pattern);
+	if (!new->key) {
 		lwsl_err("strdup failed\n");
 		free(new);
 		return;
 	}
 
 	/* remove the existing patterns that are muted by the new pattern */
-	while ((found = avl_find_element(&connect_infos.paths_tree,
-				new->node.key, found, node))) {
+	while ((found = avl_find(&connect_infos.paths_tree, new->key))) {
 
 		/* found a broader pattern, skip the new pattern */
-		if (broader_pattern((char *)found->node.key, (char *)new->node.key)) {
-			lwsl_notice("avl_insert skip key:\"%s\"\n", (char *)new->node.key);
-			free((void *)new->node.key);
+		if (broader_pattern((char *)found->key, (char *)new->key)) {
+			free((void *)new->key);
 			free(new);
 			return;
 		}
 
 		/* the new pattern is broader, delete the found one */
-		lwsl_notice("avl_delete key:\"%s\"\n", (char *)found->node.key);
-		avl_delete(&connect_infos.paths_tree, &found->node);
+		avl_delete(&connect_infos.paths_tree, found);
 	}
 
-	rv = avl_insert(&connect_infos.paths_tree, &new->node);
+	rv = avl_insert(&connect_infos.paths_tree, new);
 	if (rv) {
-		lwsl_err("avl_insert fail: key:\"%s\"\n", (char *)new->node.key);
-		free((void *)new->node.key);
+		free((void *)new->key);
 		free(new);
 		return;
-	}
-
-	lwsl_notice("avl_insert: key:\"%s\"\n", (char *)new->node.key);
-
-	avl_for_each_element(&connect_infos.paths_tree, new, node) {
-		lwsl_notice("print avl_node: %s\n", (char *)new->node.key);
 	}
 }
 

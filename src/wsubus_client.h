@@ -50,14 +50,6 @@ enum connection_state {
 	CONNECTION_STATE_TEARINGDOWN
 };
 
-struct path_pattern {
-	const char *pattern;
-	struct list_head list;
-};
-struct avl_path_node {
-	struct avl_node node;
-};
-
 // the vhost for clients has list of client infos so they can be reconnected
 struct clvh_context {
 	bool enabled; /* enable WS ubus client proxy functionality */
