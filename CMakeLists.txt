@@ -6,14 +6,14 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules")
 
 option(WSD_REQUIRE_SSL "Fail if SSL is not available" OFF)
 
-option(WSD_HAVE_UBUS "ubus RPC support" ON)
+option(WSD_HAVE_UBUS "ubus RPC support" OFF)
 if (WSD_HAVE_UBUS)
 	set(WSD_HAVE_UBUSPROXY ON CACHE BOOL "support for proxying remote ubus objects on local ubus")
 else()
 	unset(WSD_HAVE_UBUSPROXY CACHE)
 endif()
 
-option(WSD_HAVE_DBUS "DBus RPC support" OFF)
+option(WSD_HAVE_DBUS "DBus RPC support" ON)
 if (WSD_HAVE_DBUS)
 	set(WSD_DBUS_OBJECTS_PATH "/se/inteno/iopsys" CACHE STRING
 		"Path under which to (non-recursively) look for DBus objects")
