@@ -355,7 +355,7 @@ ssl:
 		struct DBusError error;
 		dbus_error_init(&error);
 		dbus_ctx = dbus_bus_get_private(DBUS_BUS_SYSTEM, &error);
-		if (!ubus_ctx || dbus_error_is_set(&error)) {
+		if (!dbus_ctx || dbus_error_is_set(&error)) {
 			lwsl_err("dbus_connect error\n");
 			lwsl_err("DBUS erro %s : %s\n", error.name, error.message);
 			rc = 2;

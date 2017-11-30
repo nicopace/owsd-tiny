@@ -32,7 +32,6 @@ set(SOURCES
 	src/ws_http.c
 	src/ws_http_serve.c
 	src/wsubus.c
-	src/wsubus_client.c
 	src/rpc.c
 	src/rpc_call.c
 	src/rpc_list.c
@@ -57,6 +56,7 @@ if (WSD_HAVE_UBUS)
 		list(APPEND SOURCES
 			src/local_stub.c
 			src/ws_ubusproxy.c
+			src/wsubus_client.c
 			)
 	endif()
 endif()
