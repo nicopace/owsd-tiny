@@ -22,7 +22,7 @@ else()
 endif()
 
 if (NOT WSD_HAVE_UBUS AND NOT WSD_HAVE_DBUS)
-	message(CRITICAL "select at least one of DBus or ubus ...")
+	message(FATAL_ERROR "select at least one of DBus or ubus ...")
 endif()
 
 set(WSD_USER_BLACKLIST_OLD ON CACHE BOOL "Support old way of limiting user to specific listen interface")
