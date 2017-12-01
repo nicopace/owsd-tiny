@@ -13,7 +13,7 @@ else()
 	unset(WSD_HAVE_UBUSPROXY CACHE)
 endif()
 
-option(WSD_HAVE_DBUS "DBus RPC support" ON)
+option(WSD_HAVE_DBUS "DBus RPC support" OFF)
 if (WSD_HAVE_DBUS)
 	set(WSD_DBUS_OBJECTS_PATH "/se/inteno/iopsys" CACHE STRING
 		"Path under which to (non-recursively) look for DBus objects")
