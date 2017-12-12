@@ -67,3 +67,7 @@ In the test/ subdirectory, there is a very simple test runner made in nodejs. It
 `node client.js [session-id]`
 
 The `config.js` file specifies the text file containing test input and expected output. See existing text files for examples of RPC commands.
+
+## Other resources: libwebsockets documentation
+
+https://libwebsockets.org/lws-api-doc-master/html/md_README.coding.html

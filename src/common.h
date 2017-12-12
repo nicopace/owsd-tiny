@@ -20,6 +20,7 @@
 #pragma once
 
 #include "owsd-config.h"
+#include "wsubus_client.h"
 
 #include <libwebsockets.h>
 #include <libubox/uloop.h>
@@ -55,18 +56,3 @@ struct str_list {
 	struct list_head list;
 	const char *str;
 };
-
-#if WSD_HAVE_UBUSPROXY
-// the vhost for clients has list of client infos so they can be reconnected
-struct clvh_context {
-	struct list_head clients;
-};
-
-struct reconnect_info {
-	struct list_head list;
-	struct lws *wsi;
-	int reconnect_count;
-	struct uloop_timeout timer;
-	struct lws_client_connect_info cl_info;
-};
-#endif

@@ -6,14 +6,14 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules")
 
 option(WSD_REQUIRE_SSL "Fail if SSL is not available" OFF)
 
-option(WSD_HAVE_UBUS "ubus RPC support" ON)
+option(WSD_HAVE_UBUS "ubus RPC support" OFF)
 if (WSD_HAVE_UBUS)
 	set(WSD_HAVE_UBUSPROXY ON CACHE BOOL "support for proxying remote ubus objects on local ubus")
 else()
 	unset(WSD_HAVE_UBUSPROXY CACHE)
 endif()
 
-option(WSD_HAVE_DBUS "DBus RPC support" ON)
+option(WSD_HAVE_DBUS "DBus RPC support" OFF)
 if (WSD_HAVE_DBUS)
 	set(WSD_DBUS_OBJECTS_PATH "/se/inteno/iopsys" CACHE STRING
 		"Path under which to (non-recursively) look for DBus objects")
@@ -22,7 +22,7 @@ else()
 endif()
 
 if (NOT WSD_HAVE_UBUS AND NOT WSD_HAVE_DBUS)
-	message(CRITICAL "select at least one of DBus or ubus ...")
+	message(FATAL_ERROR "select at least one of DBus or ubus ...")
 endif()
 
 set(WSD_USER_BLACKLIST_OLD ON CACHE BOOL "Support old way of limiting user to specific listen interface")
@@ -56,6 +56,7 @@ if (WSD_HAVE_UBUS)
 		list(APPEND SOURCES
 			src/local_stub.c
 			src/ws_ubusproxy.c
+			src/wsubus_client.c
 			)
 	endif()
 endif()

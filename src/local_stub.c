@@ -127,8 +127,10 @@ static size_t proxied_name_size(const struct wsu_remote_bus *remote, const char 
 static void proxied_name_fill(char *proxied_name, size_t proxied_name_sz, const struct wsu_remote_bus *remote, const char *name)
 {
 	lws_get_peer_simple(remote->wsi, proxied_name, proxied_name_sz);
-	strcat(proxied_name, "/");
-	strcat(proxied_name, name);
+	if(strncmp(proxied_name, "::ffff:", 7) == 0)
+		memmove(proxied_name, proxied_name + 7, strlen(proxied_name) - 6);
+	strncat(proxied_name, "/", proxied_name_sz - strlen(proxied_name));
+	strncat(proxied_name, name, proxied_name_sz - strlen(proxied_name));
 }
 
 // }}}

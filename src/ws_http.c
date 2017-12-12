@@ -123,15 +123,6 @@ static void ufd_service_cb(struct uloop_fd *ufd, unsigned int revents)
 	}
 }
 
-#if WSD_HAVE_UBUSPROXY
-static void utimer_reconnect_cb(struct uloop_timeout *timer)
-{
-	struct reconnect_info *c = container_of(timer, struct reconnect_info, timer);
-	lwsl_warn("connecting as client too to %s %d\n", c->cl_info.address, c->cl_info.port);
-	lws_client_connect_via_info(&c->cl_info);
-}
-#endif
-
 static int ws_http_cb(struct lws *wsi,
 		enum lws_callback_reasons reason,
 		void *user __attribute__((unused)),
@@ -224,17 +215,29 @@ static int ws_http_cb(struct lws *wsi,
 	}
 
 #if WSD_HAVE_UBUSPROXY
-	case LWS_CALLBACK_PROTOCOL_INIT:
-	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR: {
-		// (re) connect as ubusproxy client - this belongs to, but can't be in ubusproxy.c
-		// since protocols[0] must handle CONNECTION_ERROR ...
-		struct clvh_context **client_infos = lws_protocol_vh_priv_get(lws_get_vhost(wsi), lws_get_protocol(wsi));
-		struct reconnect_info *c;
-		if (client_infos) list_for_each_entry(c, &(*client_infos)->clients, list) {
-			c->timer.cb = utimer_reconnect_cb;
-			uloop_timeout_set(&c->timer, (++c->reconnect_count)*2000);
+	case LWS_CALLBACK_PROTOCOL_INIT: {
+		lwsl_notice("%s init\n", lws_get_protocol(wsi)->name);
+		struct lws_vhost *vhost = lws_get_vhost(wsi);
+		if (!vhost) {
+			lwsl_err(" ERROR, no vhost found\n");
+			break;
 		}
-		return 0;
+		int port = lws_get_vhost_port(vhost);
+		if ( port == CONTEXT_PORT_NO_LISTEN) {
+			lwsl_notice("%s initializing clients\n", lws_get_protocol(wsi)->name);
+			wsubus_client_connect_all();
+		}
+		break;
+	}
+	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR: {
+		lwsl_err("CCE ERROR, reason %s\n", in ? (char *)in : "");
+		if (wsubus_client_should_destroy(wsi)) {
+			wsubus_client_destroy(wsi);
+		} else {
+			wsubus_client_set_state(wsi, CONNECTION_STATE_DISCONNECTED);
+			wsubus_client_connect_retry(wsi);
+		}
+		break;
 	}
 #endif
 

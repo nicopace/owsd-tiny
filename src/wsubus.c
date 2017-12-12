@@ -25,6 +25,7 @@
 
 #include "wsubus.h"
 #include "wsubus.impl.h"
+#include "wsubus_client.h"
 #include "rpc.h"
 #include "access_check.h"
 #include "util_jsonrpc.h"

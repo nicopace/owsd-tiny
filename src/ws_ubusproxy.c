@@ -25,6 +25,7 @@
 
 #include "wsubus.h"
 #include "wsubus.impl.h"
+#include "wsubus_client.h"
 #include "rpc.h"
 #include "access_check.h"
 #include "local_stub.h"
@@ -61,13 +62,29 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 
 	switch (reason) {
 	case LWS_CALLBACK_CLIENT_WRITEABLE:
+		if (wsubus_client_should_destroy(wsi))
+			return -1;
+			/* returning -1 from here initialises a tear down of the connection,
+			  and LWS_CALLBACK_CLOSED will be called */
+
 		lwsl_notice(WSUBUS_PROTO_NAME ": wsi %p writable now\n", wsi);
 		return wsubus_tx_text(wsi);
 
 		// client is leaving
 	case LWS_CALLBACK_CLOSED:
 		lwsl_notice(WSUBUS_PROTO_NAME ": closed\n");
+		int role = peer->role;
 		wsu_peer_deinit(wsi, peer);
+
+		if (role == WSUBUS_ROLE_CLIENT)
+			break;
+
+		if (wsubus_client_should_destroy(wsi)) {
+			wsubus_client_destroy(wsi);
+		} else {
+			wsubus_client_set_state(wsi, CONNECTION_STATE_DISCONNECTED);
+			wsubus_client_reconnect(wsi);
+		}
 		break;
 
 	case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE:
@@ -83,10 +100,14 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 		break;
 
 	case LWS_CALLBACK_CLIENT_ESTABLISHED: {
+		if (wsubus_client_should_destroy(wsi))
+			return -1;
 		lwsl_info("connected as proxy\n");
 		int rc = wsu_peer_init(peer, WSUBUS_ROLE_REMOTE);
 		if (rc)
 			return -1;
+
+		wsubus_client_set_state(wsi, CONNECTION_STATE_CONNECTED);
 
 		struct wsu_remote_bus *remote = &peer->u.remote;
 
@@ -208,6 +229,10 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 
 						if (cmp_result) {
 							// we don't have that object proxied, create new
+							// check filters in wsubus_client
+							// add the object only if it has a match
+							if (!wsubus_client_match_pattern(obj_name))
+								continue;
 							lwsl_notice("create stub object for %s\n", obj_name);
 							wsu_local_stub_create(remote, obj_name, obj_methods);
 						} else if (!wsu_local_stub_is_same_signature(cur, obj_methods)) {
@@ -216,6 +241,10 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 							wsu_local_stub_destroy(cur);
 							cur = next;
 							// TODO could avoid realloc here if wsu_local_stub_create is converted to caller-allocated
+							// check filters in wsubus_client
+							// add the object only if it has a match
+							if (!wsubus_client_match_pattern(obj_name))
+								continue;
 							lwsl_notice("create NEW stub object for %s\n", obj_name);
 							wsu_local_stub_create(remote, obj_name, obj_methods);
 						}
