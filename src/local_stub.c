@@ -71,6 +71,14 @@ static int wsu_local_stub_handle_call(struct ubus_context *ubus_ctx, struct ubus
 	// send out the RPC request
 	wsu_queue_write_str(stub->remote->wsi, d);
 
+	/* TODO: improvement in memory management
+	* Do not free here.
+	* Instead: use this already allocated memory in the wsu_writereq structure
+	* in the wsu_queue_write_str function.
+	* Also: free this memory together with the wsu_writereq
+	*/
+	free(d);
+
 	return 0;
 }
 

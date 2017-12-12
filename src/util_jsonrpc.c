@@ -110,18 +110,132 @@ char *jsonrpc__req_ubuslisten(int id, const char *sid, const char *pattern)
 	return buf;
 }
 
+/* add a string to a json array-object */
+static int custom_json_object_array_add_string(struct json_object *array,
+						const char *val)
+{
+	int rv;
+	struct json_object *jo;
+
+	if (!json_object_is_type(array, json_type_array))
+		goto fail;
+
+	jo = json_object_new_string(val);
+	if (!jo)
+		goto fail;
+
+	rv = json_object_array_add(array, jo);
+	if (rv) {
+		json_object_put(jo);
+		goto fail;
+	}
+
+	return 0;
+
+fail:
+	return -1;
+}
+
+/*
+ * Prepare a json like:
+ * {
+ *	"jsonrpc":"2.0",
+ *	"id":$id,
+ *	"method":"call",
+ *	"params":[
+ *		"$id",
+ *		"$sid",
+ *		"$obj",
+ *		"$method",
+ *		"$arg"
+ *	]
+ * }
+ */
+/* this functions allocates memory, remember to free it */
 char *jsonrpc__req_ubuscall(int id, const char *sid, const char *obj, const char *method, json_object *arg)
 {
-	static char buf[2048];
-	// TODO use json_object, blobmsg or handle (malicions) escapes in the printf
-	// XXX FIXME
-	snprintf(buf, sizeof buf, "{"
-			"\"jsonrpc\":\"2.0\",\"id\":%d,"
-			"\"method\":\"call\","
-			"\"params\":[\"%s\", \"%s\", \"%s\", %s]"
-			"}",
-			id,
-			sid ? sid : "00000000000000000000000000000000",
-			obj, method, arg ? json_object_to_json_string(arg) : "{}");
-	return buf;
+	int rv;
+	struct json_object *jo;
+	struct json_object *jo_version, *jo_id, *jo_method;
+	struct json_object *jo_params, *jo_arg = NULL;
+	const char *jstring;
+	char *string = NULL;
+
+	jo = json_object_new_object();
+	if (!jo)
+		goto out;
+
+	/* create json object for version */
+	jo_version = json_object_new_string("2.0");
+	if (!jo_version)
+		goto out_jo;
+	json_object_object_add(jo, "jsonrpc", jo_version);
+
+	/* create json object for id */
+	jo_id = json_object_new_int64(id);
+	if (!jo_id)
+		goto out_jo;
+	json_object_object_add(jo, "id", jo_id);
+
+	/* create json object for method */
+	jo_method = json_object_new_string("call");
+	if (!jo_method)
+		goto out_jo;
+	json_object_object_add(jo, "method", jo_method);
+
+	/* create json object for params array */
+	jo_params = json_object_new_array();
+	if (!jo_params)
+		goto out_jo;
+
+
+	/* fill in the params array */
+	rv = custom_json_object_array_add_string(jo_params,
+			sid ? sid : "00000000000000000000000000000000");
+	if (rv)
+		goto out_jo_params;
+
+	rv = custom_json_object_array_add_string(jo_params, obj);
+	if (rv)
+		goto out_jo_params;
+
+
+	rv = custom_json_object_array_add_string(jo_params, method);
+	if (rv)
+		goto out_jo_params;
+
+	/* add the argument object at the end of the params array */
+	/* jo_arg points to arg or to a new empty object */
+	if (arg) {
+		jo_arg = arg;
+	} else {
+		jo_arg = json_object_new_object();
+		if (!jo_arg)
+			goto out_jo_params;
+	}
+	rv = json_object_array_add(jo_params, jo_arg);
+	if (rv) {
+		if (jo_arg != arg)
+			json_object_put(jo_arg);
+		goto out_jo_params;
+	}
+
+	/* add the params array into main json object, jo */
+	json_object_object_add(jo, "params", jo_params);
+
+	/* prepare the string for return */
+	jstring = json_object_to_json_string_ext(jo, JSON_C_TO_STRING_PLAIN);
+	if (!jstring)
+		goto out_jo;
+
+	string = strdup(jstring);
+	/* TODO: maybe add a size limit for strdup */
+
+out_jo_params:
+	json_object_put(jo_params);
+out_jo:
+	json_object_put(jo);
+out:
+	return string;
+
 }
