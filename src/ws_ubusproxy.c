@@ -124,6 +124,7 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 		char *d = jsonrpc__req_ubuslisten(++remote->call_id, peer->sid, "*");
 		remote->waiting_for.listen = 1;
 		wsu_queue_write_str(wsi, d);
+		free(d);
 
 		return 0;
 	}
@@ -173,6 +174,7 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 				char *d = jsonrpc__req_ubuslisten(++remote->call_id, peer->sid, "*");
 				remote->waiting_for.listen = 1;
 				wsu_queue_write_str(wsi, d);
+				free(d);
 			} else if (remote->waiting_for.listen) {
 				// we are expecting a response to `ubus listen`
 				if (
@@ -190,6 +192,7 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 				char *d = jsonrpc__req_ubuslist(++remote->call_id, peer->sid, "*");
 				remote->waiting_for.list_id = remote->call_id;
 				wsu_queue_write_str(wsi, d);
+				free(d);
 			} else if (remote->waiting_for.list_id
 					&& json_object_is_type(id_jobj, json_type_int)
 					&& json_object_get_int(id_jobj) == remote->waiting_for.list_id) {
@@ -335,6 +338,7 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 					char *d = jsonrpc__req_ubuslist(++remote->call_id, peer->sid, "*");
 					remote->waiting_for.list_id = remote->call_id;
 					wsu_queue_write_str(wsi, d);
+					free(d);
 				} else if (
 						!strcmp("ubus.object.remove", json_object_get_string(type_jobj))
 						&& json_object_object_get_ex(tmp, "path", &tmp)

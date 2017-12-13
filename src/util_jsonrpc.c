@@ -80,36 +80,6 @@ char* jsonrpc__resp_ubus(struct blob_attr *id, int ubus_rc, struct blob_attr *re
 	return ret;
 }
 
-char *jsonrpc__req_ubuslist(int id, const char *sid, const char *pattern)
-{
-	static char buf[2048];
-	// TODO use json_object, blobmsg or handle (malicions) escapes in the printf
-	snprintf(buf, sizeof buf, "{"
-			"\"jsonrpc\":\"2.0\",\"id\":%d,"
-			"\"method\":\"list\","
-			"\"params\":[\"%s\", \"%s\"]"
-			"}",
-			id,
-			sid ? sid : "00000000000000000000000000000000",
-			pattern);
-	return buf;
-}
-
-char *jsonrpc__req_ubuslisten(int id, const char *sid, const char *pattern)
-{
-	static char buf[2048];
-	// TODO use json_object, blobmsg or handle (malicions) escapes in the printf
-	snprintf(buf, sizeof buf, "{"
-			"\"jsonrpc\":\"2.0\",\"id\":%d,"
-			"\"method\":\"subscribe\","
-			"\"params\":[\"%s\", \"%s\"]"
-			"}",
-			id,
-			sid ? sid : "00000000000000000000000000000000",
-			pattern);
-	return buf;
-}
-
 /* add a string to a json array-object */
 static int custom_json_object_array_add_string(struct json_object *array,
 						const char *val)
@@ -137,22 +107,29 @@ fail:
 }
 
 /*
- * Prepare a json like:
+ * Prepare a json like: (then make it a string)
  * {
  *	"jsonrpc":"2.0",
  *	"id":$id,
  *	"method":"call",
- *	"params":[
- *		"$id",
- *		"$sid",
- *		"$obj",
- *		"$method",
- *		"$arg"
- *	]
+ *	"params":[ "$sid", "$obj", "$method", "$arg" ]
  * }
+ * {
+ *	"jsonrpc":"2.0",
+ *	"id":$id,
+ *	"method":"subscribe/list",
+ *	"params":[ "$sid", "$pattern" ]
+ * }
+ *
+ * "method" option is set from $jsonrpc_method.
+ * $jsonrpc_method can be: "call", "subscribe", "list"
+ *
+ * Note: this functions allocates memory, remember to free it
  */
-/* this functions allocates memory, remember to free it */
-char *jsonrpc__req_ubuscall(int id, const char *sid, const char *obj, const char *method, json_object *arg)
+static char *jsonrpc__req_to_string(
+		int id, const char *sid, const char *jsonrpc_method,
+		const char *obj, const char *method, json_object *arg,
+		const char *pattern)
 {
 	int rv;
 	struct json_object *jo;
@@ -178,7 +155,7 @@ char *jsonrpc__req_ubuscall(int id, const char *sid, const char *obj, const char
 	json_object_object_add(jo, "id", jo_id);
 
 	/* create json object for method */
-	jo_method = json_object_new_string("call");
+	jo_method = json_object_new_string(jsonrpc_method);
 	if (!jo_method)
 		goto out_jo;
 	json_object_object_add(jo, "method", jo_method);
@@ -188,36 +165,45 @@ char *jsonrpc__req_ubuscall(int id, const char *sid, const char *obj, const char
 	if (!jo_params)
 		goto out_jo;
 
-
 	/* fill in the params array */
 	rv = custom_json_object_array_add_string(jo_params,
 			sid ? sid : "00000000000000000000000000000000");
 	if (rv)
 		goto out_jo_params;
 
-	rv = custom_json_object_array_add_string(jo_params, obj);
-	if (rv)
-		goto out_jo_params;
+	if (strcmp(jsonrpc_method, "call") == 0) {
+		/* prepare the params array for a ubus "call" */
 
-
-	rv = custom_json_object_array_add_string(jo_params, method);
-	if (rv)
-		goto out_jo_params;
-
-	/* add the argument object at the end of the params array */
-	/* jo_arg points to arg or to a new empty object */
-	if (arg) {
-		jo_arg = arg;
-	} else {
-		jo_arg = json_object_new_object();
-		if (!jo_arg)
+		rv = custom_json_object_array_add_string(jo_params, obj);
+		if (rv)
 			goto out_jo_params;
-	}
-	rv = json_object_array_add(jo_params, jo_arg);
-	if (rv) {
-		if (jo_arg != arg)
-			json_object_put(jo_arg);
-		goto out_jo_params;
+
+
+		rv = custom_json_object_array_add_string(jo_params, method);
+		if (rv)
+			goto out_jo_params;
+
+		/* add the argument object at the end of the params array */
+		/* jo_arg points to arg or to a new empty object */
+		if (arg) {
+			jo_arg = arg;
+		} else {
+			jo_arg = json_object_new_object();
+			if (!jo_arg)
+				goto out_jo_params;
+		}
+		rv = json_object_array_add(jo_params, jo_arg);
+		if (rv) {
+			if (jo_arg != arg)
+				json_object_put(jo_arg);
+			goto out_jo_params;
+		}
+	} else {
+		/* prepare the params array for a ubus "list" or "subscribe" */
+
+		rv = custom_json_object_array_add_string(jo_params, pattern);
+		if (rv)
+			goto out_jo_params;
 	}
 
 	/* add the params array into main json object, jo */
@@ -238,4 +224,23 @@ out_jo:
 out:
 	return string;
 
+}
+
+char *jsonrpc__req_ubuslist(int id, const char *sid, const char *pattern)
+{
+	return jsonrpc__req_to_string(id, sid, "list",
+			NULL, NULL, NULL, pattern);
+}
+
+char *jsonrpc__req_ubuslisten(int id, const char *sid, const char *pattern)
+{
+	return jsonrpc__req_to_string(id, sid, "subscribe",
+			NULL, NULL, NULL, pattern);
+}
+
+char *jsonrpc__req_ubuscall(int id, const char *sid,
+		const char *obj, const char *method, json_object *arg)
+{
+
+	return jsonrpc__req_to_string(id, sid, "call", obj, method, arg, NULL);
 }
