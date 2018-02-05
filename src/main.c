@@ -488,8 +488,7 @@ ssl:
 
 		if (!vh) {
 			lwsl_err("lws_create_vhost error\n");
-			rc = 1;
-			goto error_ubus_ufds_ctx;
+			continue;
 		}
 
 		// per-vhost storage is lws-allocated
@@ -533,7 +532,6 @@ ssl:
 		}
 	}
 
-error_ubus_ufds_ctx:
 	lws_context_destroy(lws_ctx);
 
 error_ubus_ufds:
