@@ -51,6 +51,13 @@
 #define WSD_DEF_WWW_MAXAGE 0
 #endif
 
+// list of per-vhost creation_info structs, with custom per-vhost storage
+struct vhinfo_list {
+	struct lws_context_creation_info vh_info;
+	struct vhinfo_list *next;
+	struct vh_context vh_ctx;
+};
+
 struct prog_context global;
 
 static void usage(char *name)
@@ -77,7 +84,8 @@ static void usage(char *name)
 			"  -p <port> ...    port number (repeat for multiple):\n"
 			" per-port options (apply to last port (-p))\n"
 			"  -L <label>       _owsd_listen label\n"
-			"  -i <interface>   interface to bind to \n"
+			"  -i <interface>   interface to bind to (will create new vhost\n"
+			"                   if interface already specified for this port) \n"
 			"  -o <origin> ...  origin url address to whitelist\n"
 			"  -u <user> ...    restrict login to this rpcd user\n"
 #ifdef LWS_WITH_IPV6
@@ -107,7 +115,7 @@ static void sigchld_handler(int signo)
 
 static bool install_handler(int signum, void (*handler)(int))
 {
-	struct sigaction sa = {0};
+	struct sigaction sa = {{0}};
 	sa.sa_handler = handler;
 	sa.sa_flags = 0;
 	if (sigaction(signum, &sa, NULL) == -1) {
@@ -115,6 +123,29 @@ static bool install_handler(int signum, void (*handler)(int))
 		return false;
 	}
 	return true;
+}
+
+static int new_vhinfo_list(struct vhinfo_list **currvh)
+{
+	int rc = 0;
+
+	struct vhinfo_list *newvh = malloc(sizeof *newvh);
+	if (!newvh) {
+		lwsl_err("OOM vhinfo init\n");
+		rc = -1;
+		goto error;
+	}
+	*newvh = (struct vhinfo_list){{0}};
+	INIT_LIST_HEAD(&newvh->vh_ctx.origins);
+	INIT_LIST_HEAD(&newvh->vh_ctx.users);
+	newvh->vh_ctx.name = "";
+	newvh->vh_info.options |= LWS_SERVER_OPTION_DISABLE_IPV6;
+
+	// add this listening vhost into our list
+	newvh->next = *currvh;
+	*currvh = newvh;
+error:
+	return rc;
 }
 
 int main(int argc, char *argv[])
@@ -132,12 +163,7 @@ int main(int argc, char *argv[])
 	char *cgi_to = NULL;
 	bool any_ssl = false;
 
-	// list of per-vhost creation_info structs, with custom per-vhost storage
-	struct vhinfo_list {
-		struct lws_context_creation_info vh_info;
-		struct vhinfo_list *next;
-		struct vh_context vh_ctx;
-	} *currvh = NULL;
+	struct vhinfo_list *currvh = NULL;
 
 	int c;
 	while ((c = getopt(argc, argv,
@@ -243,35 +269,38 @@ int main(int argc, char *argv[])
 
 			// vhost
 		case 'p': {
-			struct vhinfo_list *newvh = malloc(sizeof *newvh);
-			if (!newvh) {
-				lwsl_err("OOM vhinfo init\n");
+			rc = new_vhinfo_list(&currvh);
+			if (rc) {
+				lwsl_err("new_vhinfo_list failed memory alloc\n");
 				goto error;
 			}
-
-			*newvh = (struct vhinfo_list){};
-			INIT_LIST_HEAD(&newvh->vh_ctx.origins);
-			INIT_LIST_HEAD(&newvh->vh_ctx.users);
-			newvh->vh_ctx.name = "";
-			newvh->vh_info.options |= LWS_SERVER_OPTION_DISABLE_IPV6;
-
 			char *error;
 			int port = strtol(optarg, &error, 10);
 			if (*error) {
 				lwsl_err("Invalid port '%s' specified\n", optarg);
 				goto error;
 			}
-			newvh->vh_info.port = port;
-			newvh->vh_ctx.name = optarg;
+			currvh->vh_info.port = port;
+			currvh->vh_ctx.name = optarg;
 
-			// add this listening vhost into our list
-			newvh->next = currvh;
-			currvh = newvh;
 			break;
 		}
 			// following options affect last added vhost
 			// currvh (and assume there is one)
 		case 'i':
+			// vhost can only have one interface assigned
+			// create new vhost if iface for currvh is already assigned
+			if (currvh->vh_info.iface != NULL) {
+				lwsl_notice("-i on vhost that already has iface, using old port '%d' and name '%s' for new vhost\n", currvh->vh_info.port, currvh->vh_ctx.name);
+				struct vhinfo_list *oldvh = currvh;
+				rc = new_vhinfo_list(&currvh);
+				if (rc) {
+					lwsl_err("new_vhinfo_list failed memory alloc\n");
+					goto error;
+				}
+				currvh->vh_info.port = oldvh->vh_info.port;
+				currvh->vh_ctx.name = oldvh->vh_ctx.name;
+			}
 			currvh->vh_info.iface = optarg;
 			break;
 		case 'o': {
