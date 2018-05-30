@@ -22,7 +22,8 @@
  * ubusx_acl: access control list implementation
  * for exposing local ubus object on remote/extended ubuses(a.k.a. ubusx)
  */
-
+#include <stdio.h>
+#include <libubus.h>
 #include "ubusx_acl.h"
 
 void ubusx_acl__init()
