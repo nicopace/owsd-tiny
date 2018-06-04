@@ -24,7 +24,10 @@
  */
 #include <stdio.h>
 #include <libubus.h>
+#include <libubox/avl-cmp.h>
 #include "ubusx_acl.h"
+
+struct avl_tree uxacl_objects = AVL_TREE_INIT(uxacl_objects, avl_strcmp, false, NULL);
 
 void ubusx_acl__init()
 {
@@ -37,14 +40,45 @@ void ubusx_acl__destroy()
 
 void ubusx_acl__add(char *objname)
 {
+	int rv;
+	struct avl_node *node;
+
 	printf("ubusx_acl__add objname=\"%s\"\n", objname);
+
+	node = calloc(1, sizeof(*node));
+	if (!node) {
+		perror("calloc");
+		goto out;
+	}
+
+	node->key = strdup(objname);
+	if (!node->key) {
+		perror("strdup");
+		goto out_node;
+	}
+
+	rv = avl_insert(&uxacl_objects, node);
+	if (rv) {
+		printf("avl_insert failed\n");
+		goto out_key;
+	}
+
+out_key:
+	free((void *)node->key);
+out_node:
+	free(node);
+out:
+	return;
 }
 
 bool ubusx_acl__allow_object(char *objname)
 {
 	printf("ubusx_acl__allow_object objname=\"%s\"\n", objname);
-	return true;
+	if (avl_find(&uxacl_objects, objname))
+		return true;
+	return false;
 }
+
 bool ubusx_acl__allow_method(char *objname, char *methodname)
 {
 	printf("ubusx_acl__allow_method objname=\"%s\" methodname=\"%s\"\n", objname, methodname);
