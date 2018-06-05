@@ -92,6 +92,10 @@ out:
 bool ubusx_acl__allow_object(char *objname)
 {
 	printf("ubusx_acl__allow_object objname=\"%s\"\n", objname);
+
+	if (avl_is_empty(&uxacl_objects))
+		return true;
+
 	if (avl_find(&uxacl_objects, objname))
 		return true;
 	return false;
