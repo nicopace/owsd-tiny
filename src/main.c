@@ -354,7 +354,7 @@ ssl:
 			break;
 #endif // LWS_OPENSSL_SUPPORT
 
-		case 'X' :
+		case 'X':
 			lwsl_notice("ubusx ACL: \"%s\"\n", optarg);
 			ubusx_acl__add_objects(optarg);
 			break;

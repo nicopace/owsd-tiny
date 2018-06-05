@@ -29,15 +29,16 @@
 
 static int ubus_object_path_compare(const void *k1, const void *k2, void *ptr);
 
-struct avl_tree uxacl_objects = AVL_TREE_INIT(uxacl_objects, ubus_object_path_compare, false, NULL);
+struct avl_tree uxacl_objects = AVL_TREE_INIT(uxacl_objects,
+					ubus_object_path_compare, false, NULL);
 
-void ubusx_acl__init()
+void ubusx_acl__init(void)
 {
-	lwsl_notice("ubusx_acl__init\n");
+	lwsl_notice("%s\n", __func__);
 }
-void ubusx_acl__destroy()
+void ubusx_acl__destroy(void)
 {
-	lwsl_notice("ubusx_acl__destroy\n");
+	lwsl_notice("%s\n", __func__);
 }
 
 /* add space-separated list of objects:
@@ -64,7 +65,7 @@ void ubusx_acl__add_objects(char *objects)
 
 /* add object with methods list:
  * "object->method1,method2,method3"
-*/
+ */
 void ubusx_acl__add_object(char *object)
 {
 	int rv;
@@ -78,8 +79,8 @@ void ubusx_acl__add_object(char *object)
 	if (methods) {
 		methods[0] = '\0';
 		methods[1] = '\0';
-		methods +=2;
-		lwsl_notice ("methods = \"%s\"\n", methods);
+		methods += 2;
+		lwsl_notice("methods = \"%s\"\n", methods);
 		// add methods in methods_avl, TODO
 	}
 
@@ -113,7 +114,7 @@ out:
 
 bool ubusx_acl__allow_object(const char *objname)
 {
-	lwsl_notice("ubusx_acl__allow_object objname=\"%s\"\n", objname);
+	lwsl_notice("%s objname=\"%s\"\n", __func__, objname);
 
 	if (avl_is_empty(&uxacl_objects))
 		return true;
@@ -125,7 +126,8 @@ bool ubusx_acl__allow_object(const char *objname)
 
 bool ubusx_acl__allow_method(const char *objname, const char *methodname)
 {
-	lwsl_notice("ubusx_acl__allow_method objname=\"%s\" methodname=\"%s\"\n", objname, methodname);
+	lwsl_notice("%s objname=\"%s\" methodname=\"%s\"\n",
+			__func__, objname, methodname);
 	return true;
 }
 
@@ -143,9 +145,8 @@ static int ubus_object_path_compare(const void *k1, const void *k2, void *ptr)
 	p2_wildcard = (pattern2[len2-1] == '*');
 
 	/* none has wildcard */
-	if (!p1_wildcard && !p2_wildcard) {
+	if (!p1_wildcard && !p2_wildcard)
 		return strcmp(pattern1, pattern2);
-	}
 
 	/* only one pattern has wildcard */
 	if (p1_wildcard != p2_wildcard) {

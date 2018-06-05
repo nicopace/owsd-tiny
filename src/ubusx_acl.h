@@ -25,8 +25,8 @@
 #ifndef UBUSX_ACL_H
 #define UBUSX_ACL_H
 
-void ubusx_acl__init();
-void ubusx_acl__destroy();
+void ubusx_acl__init(void);
+void ubusx_acl__destroy(void);
 
 void ubusx_acl__add_object(char *object);
 void ubusx_acl__add_objects(char *objects);
