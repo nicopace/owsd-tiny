@@ -93,7 +93,7 @@ void ubusx_acl__add_object(char *object)
 		goto out_node;
 	}
 
-	printf("avl_insert: %s\n", node->key);
+	printf("avl_insert: %s\n", (char *)node->key);
 	rv = avl_insert(&uxacl_objects, node);
 	if (rv) {
 		printf("avl_insert failed\n");
@@ -109,7 +109,7 @@ out:
 	return;
 }
 
-bool ubusx_acl__allow_object(char *objname)
+bool ubusx_acl__allow_object(const char *objname)
 {
 	printf("ubusx_acl__allow_object objname=\"%s\"\n", objname);
 
@@ -121,7 +121,7 @@ bool ubusx_acl__allow_object(char *objname)
 	return false;
 }
 
-bool ubusx_acl__allow_method(char *objname, char *methodname)
+bool ubusx_acl__allow_method(const char *objname, const char *methodname)
 {
 	printf("ubusx_acl__allow_method objname=\"%s\" methodname=\"%s\"\n", objname, methodname);
 	return true;

@@ -30,7 +30,7 @@ void ubusx_acl__destroy();
 
 void ubusx_acl__add_object(char *object);
 void ubusx_acl__add_objects(char *objects);
-bool ubusx_acl__allow_object(char *objname);
-bool ubusx_acl__allow_method(char *objname, char *methodname);
+bool ubusx_acl__allow_object(const char *objname);
+bool ubusx_acl__allow_method(const char *objname, const char *methodname);
 
 #endif
