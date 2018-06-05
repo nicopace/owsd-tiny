@@ -23,6 +23,7 @@
 #include "wsubus.h"
 #include "wsubus_client.h"
 #include "rpc.h"
+#include "ubusx_acl.h"
 
 #if WSD_HAVE_DBUS
 #include "dbus-io.h"
