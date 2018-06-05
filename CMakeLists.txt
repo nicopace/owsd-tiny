@@ -38,6 +38,7 @@ set(SOURCES
 	src/rpc_sub.c
 	src/access_check.c
 	src/util_jsonrpc.c
+	src/ubusx_acl.c
 	)
 
 find_package(libwebsockets REQUIRED)

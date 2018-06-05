@@ -28,6 +28,7 @@
 #include "wsubus.impl.h"
 #include "rpc.h"
 #include "util_ubus_blob.h"
+#include "ubusx_acl.h"
 
 #include <libubox/blobmsg_json.h>
 #include <libubox/blobmsg.h>
@@ -42,6 +43,8 @@ static void ubus_lookup_cb(struct ubus_context *ctx, struct ubus_object_data *ob
 	(void)ctx;
 
 	lwsl_info("looked up %s\n", obj->path);
+	if (!ubusx_acl__allow_object(obj->path /* object name */))
+		return;
 	struct ws_request_base *req = user;
 
 	void *objs_tkt = blobmsg_open_table(&req->retbuf, obj->path);
@@ -54,6 +57,9 @@ static void ubus_lookup_cb(struct ubus_context *ctx, struct ubus_object_data *ob
 	struct blob_attr *cur_method;
 
 	blob_for_each_attr(cur_method, obj->signature, r_methods) {
+		if (!ubusx_acl__allow_method(obj->path /* object name */,
+				blobmsg_name(cur_method) /* method name */))
+			continue;
 		void *methods_tkt = blobmsg_open_table(&req->retbuf, blobmsg_name(cur_method));
 
 		struct blob_attr *cur_arg;
