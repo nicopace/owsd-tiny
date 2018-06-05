@@ -38,6 +38,9 @@ void ubusx_acl__destroy()
 	printf("ubusx_acl__destroy\n");
 }
 
+/* add space-separated list of objects:
+ * "object1 object2 object3->method31,method32,method33 object4"
+ */
 void ubusx_acl__add_objects(char *objects)
 {
 	char *obj;
@@ -53,15 +56,30 @@ void ubusx_acl__add_objects(char *objects)
 	obj = strtok_r(objects, " ", &saveptr1);
 	for (; obj; obj = strtok_r(NULL, " ", &saveptr1)) {
 		printf("obj = \"%s\"\n", obj);
+		ubusx_acl__add_object(obj);
 	}
 }
 
-void ubusx_acl__add(char *objname)
+/* add object with methods list:
+ * "object->method1,method2,method3"
+*/
+void ubusx_acl__add_object(char *object)
 {
 	int rv;
 	struct avl_node *node;
+	char *methods;
 
-	printf("ubusx_acl__add objname=\"%s\"\n", objname);
+	printf("ubusx_acl__add objname=\"%s\"\n", object);
+
+	/* extract methods list */
+	methods = strstr(object, "->");
+	if (methods) {
+		methods[0] = '\0';
+		methods[1] = '\0';
+		methods +=2;
+		printf ("methods = \"%s\"\n", methods);
+		// add methods in methods_avl, TODO
+	}
 
 	node = calloc(1, sizeof(*node));
 	if (!node) {
@@ -69,18 +87,20 @@ void ubusx_acl__add(char *objname)
 		goto out;
 	}
 
-	node->key = strdup(objname);
+	node->key = strdup(object);
 	if (!node->key) {
 		perror("strdup");
 		goto out_node;
 	}
 
+	printf("avl_insert: %s\n", node->key);
 	rv = avl_insert(&uxacl_objects, node);
 	if (rv) {
 		printf("avl_insert failed\n");
 		goto out_key;
 	}
 
+	return;
 out_key:
 	free((void *)node->key);
 out_node:
