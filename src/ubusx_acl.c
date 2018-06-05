@@ -24,11 +24,12 @@
  */
 #include <stdio.h>
 #include <libubus.h>
-#include <libubox/avl-cmp.h>
 #include <libwebsockets.h>
 #include "ubusx_acl.h"
 
-struct avl_tree uxacl_objects = AVL_TREE_INIT(uxacl_objects, avl_strcmp, false, NULL);
+static int ubus_object_path_compare(const void *k1, const void *k2, void *ptr);
+
+struct avl_tree uxacl_objects = AVL_TREE_INIT(uxacl_objects, ubus_object_path_compare, false, NULL);
 
 void ubusx_acl__init()
 {
@@ -126,4 +127,32 @@ bool ubusx_acl__allow_method(const char *objname, const char *methodname)
 {
 	lwsl_notice("ubusx_acl__allow_method objname=\"%s\" methodname=\"%s\"\n", objname, methodname);
 	return true;
+}
+
+static int ubus_object_path_compare(const void *k1, const void *k2, void *ptr)
+{
+	const char *pattern1 = (char *)k1;
+	const char *pattern2 = (char *)k2;
+	size_t len1 = strlen(pattern1);
+	size_t len2 = strlen(pattern2);
+	bool p1_wildcard, p2_wildcard;
+
+	if (len1 == 0 || len2 == 0)
+		return len1 - len2;
+	p1_wildcard = (pattern1[len1-1] == '*');
+	p2_wildcard = (pattern2[len2-1] == '*');
+
+	/* none has wildcard */
+	if (!p1_wildcard && !p2_wildcard) {
+		return strcmp(pattern1, pattern2);
+	}
+
+	/* only one pattern has wildcard */
+	if (p1_wildcard != p2_wildcard) {
+		return strncmp(pattern1, pattern2,
+				(p1_wildcard ? len1 : len2) - 1);
+	}
+
+	/* both have wildcard */
+	return strncmp(pattern1, pattern2, (len1 < len2 ? len1 : len2) - 1);
 }
