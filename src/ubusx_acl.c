@@ -25,17 +25,18 @@
 #include <stdio.h>
 #include <libubus.h>
 #include <libubox/avl-cmp.h>
+#include <libwebsockets.h>
 #include "ubusx_acl.h"
 
 struct avl_tree uxacl_objects = AVL_TREE_INIT(uxacl_objects, avl_strcmp, false, NULL);
 
 void ubusx_acl__init()
 {
-	printf("ubusx_acl__init\n");
+	lwsl_notice("ubusx_acl__init\n");
 }
 void ubusx_acl__destroy()
 {
-	printf("ubusx_acl__destroy\n");
+	lwsl_notice("ubusx_acl__destroy\n");
 }
 
 /* add space-separated list of objects:
@@ -51,11 +52,11 @@ void ubusx_acl__add_objects(char *objects)
 	if (strlen(objects) == 0)
 		return;
 
-	printf("ubusx_acl__add_list objnames=\"%s\"\n", objects);
+	lwsl_notice("ubusx_acl__add_list objnames=\"%s\"\n", objects);
 
 	obj = strtok_r(objects, " ", &saveptr1);
 	for (; obj; obj = strtok_r(NULL, " ", &saveptr1)) {
-		printf("obj = \"%s\"\n", obj);
+		lwsl_notice("obj = \"%s\"\n", obj);
 		ubusx_acl__add_object(obj);
 	}
 }
@@ -69,7 +70,7 @@ void ubusx_acl__add_object(char *object)
 	struct avl_node *node;
 	char *methods;
 
-	printf("ubusx_acl__add objname=\"%s\"\n", object);
+	lwsl_notice("ubusx_acl__add objname=\"%s\"\n", object);
 
 	/* extract methods list */
 	methods = strstr(object, "->");
@@ -77,7 +78,7 @@ void ubusx_acl__add_object(char *object)
 		methods[0] = '\0';
 		methods[1] = '\0';
 		methods +=2;
-		printf ("methods = \"%s\"\n", methods);
+		lwsl_notice ("methods = \"%s\"\n", methods);
 		// add methods in methods_avl, TODO
 	}
 
@@ -93,10 +94,10 @@ void ubusx_acl__add_object(char *object)
 		goto out_node;
 	}
 
-	printf("avl_insert: %s\n", (char *)node->key);
+	lwsl_notice("avl_insert: %s\n", (char *)node->key);
 	rv = avl_insert(&uxacl_objects, node);
 	if (rv) {
-		printf("avl_insert failed\n");
+		lwsl_notice("avl_insert failed\n");
 		goto out_key;
 	}
 
@@ -111,7 +112,7 @@ out:
 
 bool ubusx_acl__allow_object(const char *objname)
 {
-	printf("ubusx_acl__allow_object objname=\"%s\"\n", objname);
+	lwsl_notice("ubusx_acl__allow_object objname=\"%s\"\n", objname);
 
 	if (avl_is_empty(&uxacl_objects))
 		return true;
@@ -123,6 +124,6 @@ bool ubusx_acl__allow_object(const char *objname)
 
 bool ubusx_acl__allow_method(const char *objname, const char *methodname)
 {
-	printf("ubusx_acl__allow_method objname=\"%s\" methodname=\"%s\"\n", objname, methodname);
+	lwsl_notice("ubusx_acl__allow_method objname=\"%s\" methodname=\"%s\"\n", objname, methodname);
 	return true;
 }
