@@ -355,6 +355,7 @@ ssl:
 
 		case 'X' :
 			lwsl_notice("ubusx ACL: \"%s\"\n", optarg);
+			ubusx_acl__add_objects(optarg);
 			break;
 
 		case 'h':

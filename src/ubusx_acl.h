@@ -29,6 +29,7 @@ void ubusx_acl__init();
 void ubusx_acl__destroy();
 
 void ubusx_acl__add(char *objname);
+void ubusx_acl__add_objects(char *objects);
 bool ubusx_acl__allow_object(char *objname);
 bool ubusx_acl__allow_method(char *objname, char *methodname);
 

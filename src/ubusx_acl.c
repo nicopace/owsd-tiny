@@ -38,6 +38,24 @@ void ubusx_acl__destroy()
 	printf("ubusx_acl__destroy\n");
 }
 
+void ubusx_acl__add_objects(char *objects)
+{
+	char *obj;
+	char *saveptr1;
+
+	if (!objects)
+		return;
+	if (strlen(objects) == 0)
+		return;
+
+	printf("ubusx_acl__add_list objnames=\"%s\"\n", objects);
+
+	obj = strtok_r(objects, " ", &saveptr1);
+	for (; obj; obj = strtok_r(NULL, " ", &saveptr1)) {
+		printf("obj = \"%s\"\n", obj);
+	}
+}
+
 void ubusx_acl__add(char *objname)
 {
 	int rv;
