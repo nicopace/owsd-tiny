@@ -96,6 +96,10 @@ static void usage(char *name)
 			"  -k <key_path>    SSL key path if SSL wanted\n"
 			"  -a <ca_file>     path to SSL CA file that makes clients trusted\n"
 #endif // LWS_OPENSSL_SUPPORT
+			"  -X <ubusobject>[->method][,...]\n"
+			"                   ACL list controlling wich local ubus objects are\n"
+			"                   allowed to be exported to remote ubuses/ubux\n"
+			"                   Example: -X \"object1,object2->method,object3\"\n"
 			"Options with ... are repeatable (e.g. -u one -u two ...)\n"
 			"\n", name);
 }
@@ -189,6 +193,7 @@ int main(int argc, char *argv[])
 #ifdef LWS_OPENSSL_SUPPORT
 					"c:k:a:"
 #endif // LWS_OPENSSL_SUPPORT
+					"X:"
 					)) != -1) {
 		switch (c) {
 #if WSD_HAVE_UBUS
@@ -347,6 +352,10 @@ ssl:
 			currvh->vh_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 			break;
 #endif // LWS_OPENSSL_SUPPORT
+
+		case 'X' :
+			lwsl_notice("ubusx ACL: \"%s\"\n", optarg);
+			break;
 
 		case 'h':
 		default:
