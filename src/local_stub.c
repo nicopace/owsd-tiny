@@ -141,6 +141,81 @@ static void proxied_name_fill(char *proxied_name, size_t proxied_name_sz, const 
 	strncat(proxied_name, name, proxied_name_sz - strlen(proxied_name));
 }
 
+// this function allocates memory, remember to free it
+char *get_mac_by_ip(const char *ipaddr)
+{
+	int rv;
+	FILE *leases;
+	char line[256], ip[16], *mac;
+
+	if (!ipaddr)
+		goto out;
+
+	mac = (char *)calloc(19, sizeof(char));
+	if (!mac)
+		goto out;
+
+	leases = fopen("/var/dhcp.leases", "r");
+	if (!leases)
+		goto out_mac;
+
+	while (fgets(line, sizeof(line), leases)) {
+		memset(mac, 0, 19);
+		memset(ip, 0, 16);
+		rv = sscanf(line, "%*s %18s %15s", mac, ip);
+		if (rv != 2)
+			continue;
+
+		if (strcmp(ipaddr, ip) == 0)
+			break;
+	}
+
+	fclose(leases);
+	return mac;
+out_mac:
+	free(mac);
+out:
+	return NULL;
+}
+
+// replace ip with mac
+/**
+ * \brief replace ip with mac in the local stub object name
+ *
+ * \param name the local stub object name
+ * \param size size of name string
+ */
+void proxied_name_mac_prefix(char *name, size_t size)
+{
+	char *slash, *ip, *objname, *mac;
+
+	if (!name || strlen(name) < 3 || size <= 21)
+		goto out;
+	slash = strchr(name, '/');
+	if (!slash)
+		goto out;
+	ip = strndup(name, slash - name);
+	if (!ip)
+		goto out;
+	objname = strdup(slash + 1);
+	if (!objname)
+		goto out_ip;
+
+	mac = get_mac_by_ip(ip);
+	if (!mac)
+		goto out_objname;
+
+	snprintf(name, size, "%s/%s", mac, objname);
+
+	free(mac);
+out_objname:
+	free(objname);
+out_ip:
+	free(ip);
+out:
+	return;
+}
+
 // }}}
 
 struct wsu_local_stub* wsu_local_stub_create(struct wsu_remote_bus *remote, const char *object, json_object *signature)
@@ -190,6 +265,7 @@ struct wsu_local_stub* wsu_local_stub_create(struct wsu_remote_bus *remote, cons
 	size_t proxied_objname_sz = proxied_name_size(remote, object);
 	char *proxied_objname = malloc(proxied_objname_sz);
 	proxied_name_fill(proxied_objname, proxied_objname_sz, remote, object);
+	//proxied_name_mac_prefix(proxied_objname, proxied_objname_sz);
 
 	stub->obj_type.name = proxied_objname;
 
@@ -242,6 +318,9 @@ struct wsu_local_proxied_event *wsu_local_proxied_event_create(struct wsu_remote
 	size_t proxied_eventname_sz = proxied_name_size(remote, event_name);
 	struct wsu_local_proxied_event *event = calloc(1, sizeof *event + proxied_eventname_sz);
 	proxied_name_fill(event->name, proxied_eventname_sz, remote, event_name);
+	// if the ubusx events need to have the mac prefix instead of ip prefix,
+	// uncomment the following line:
+	//proxied_name_mac_prefix(event->name, proxied_eventname_sz);
 
 	// copy the event's data
 	blob_buf_init(&event->b, 0);
