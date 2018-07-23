@@ -71,7 +71,10 @@ static bool origin_allowed(struct list_head *origin_list, char *origin)
 	struct str_list *str;
 
 	list_for_each_entry(str, origin_list, list) {
-		if (!fnmatch(str->str, origin, 0))
+		// According to RFC4343, DNS names are "case insensitive".
+		// Further, browsers generally send domain names converted
+		// to lowercase letters. Thus match origin case-insensitively.
+		if (!fnmatch(str->str, origin, FNM_CASEFOLD))
 			return true;
 	}
 
