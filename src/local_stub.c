@@ -276,7 +276,7 @@ struct wsu_local_stub* wsu_local_stub_create(struct wsu_remote_bus *remote, cons
 	size_t proxied_objname_sz = proxied_name_size(remote, object);
 	char *proxied_objname = malloc(proxied_objname_sz);
 	proxied_name_fill(proxied_objname, proxied_objname_sz, remote, object);
-	//proxied_name_mac_prefix(proxied_objname, proxied_objname_sz);
+	proxied_name_mac_prefix(proxied_objname, proxied_objname_sz);
 
 	stub->obj_type.name = proxied_objname;
 
