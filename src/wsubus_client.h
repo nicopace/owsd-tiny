@@ -27,6 +27,7 @@
 #include <libwebsockets.h>
 #include <libubus.h>
 
+extern int ubusx_prefix;
 
 #define CREATE_UBUS_OBJECT(_name, _methods) \
 	{ \

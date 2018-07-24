@@ -73,6 +73,7 @@ static void usage(char *name)
 			"  -m <from>:<to>   CGI mount point\n"
 #if WSD_HAVE_UBUSPROXY
 			"  -U [<path>] ...  Enable WS ubus proxying [for ubus path]\n"
+			"  -F [<prefix>]    Ubusx remote objects prefix, ip or mac [default: ip]\n"
 			"  -P <url> ...     URL of remote WS ubus to proxy as client\n"
 			"                   (also activates -U )"
 #ifdef LWS_OPENSSL_SUPPORT
@@ -180,6 +181,7 @@ int main(int argc, char *argv[])
 
 #if WSD_HAVE_UBUSPROXY
 					"U::"
+					"F::"
 					/* per-client */
 					"P:"
 #ifdef LWS_OPENSSL_SUPPORT
@@ -242,6 +244,13 @@ int main(int argc, char *argv[])
 			wsubus_client_enable_proxy();
 			if (optarg)
 				wsubus_client_path_pattern_add(optarg);
+			break;
+		case 'F':
+			lwsl_notice("PARSING OPTION F\n");
+			//ubusx_prefix = UBUSX_PREFIX_IP;
+			if (optarg)
+				if (strncmp(optarg, "mac", 4) == 0)
+					ubusx_prefix = 1;//UBUSX_PREFIX_MAC;
 			break;
 		case 'P': {
 

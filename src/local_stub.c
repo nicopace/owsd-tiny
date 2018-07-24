@@ -31,6 +31,14 @@
 #include "util_jsonrpc.h"
 #include "util_ubus_blob.h"
 
+enum ubusx_prefix_type {
+	UBUSX_PREFIX_IP,
+	UBUSX_PREFIX_MAC,
+	__UBUSX_PREFIX_COUNT
+};
+
+int ubusx_prefix = UBUSX_PREFIX_IP;
+
 /**
  * \brief ubus callback function called when method is called on stub object; routes call to the remote owsd via RPC
  */
@@ -188,6 +196,9 @@ out:
 void proxied_name_mac_prefix(char *name, size_t size)
 {
 	char *slash, *ip, *objname, *mac;
+
+	if (ubusx_prefix != UBUSX_PREFIX_MAC)
+		goto out;
 
 	if (!name || strlen(name) < 3 || size <= 21)
 		goto out;
