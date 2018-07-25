@@ -331,7 +331,7 @@ struct wsu_local_proxied_event *wsu_local_proxied_event_create(struct wsu_remote
 	proxied_name_fill(event->name, proxied_eventname_sz, remote, event_name);
 	// if the ubusx events need to have the mac prefix instead of ip prefix,
 	// uncomment the following line:
-	proxied_name_mac_prefix(event->name, proxied_eventname_sz);
+	//proxied_name_mac_prefix(event->name, proxied_eventname_sz);
 
 	// copy the event's data
 	blob_buf_init(&event->b, 0);
