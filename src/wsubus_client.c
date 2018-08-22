@@ -41,6 +41,7 @@
 /* contains list of urls where to connect as ubus proxy */
 static struct lws_context_creation_info clvh_info = {};
 /* FIXME: to support different certs per client, this must be per client */
+static bool rpcd_integration = false;
 
 static int client_path_comp(const void *k1, const void *k2, void *ptr);
 
@@ -654,6 +655,14 @@ void wsubus_client_set_ca_filepath(const char *filepath)
 	clvh_info.ssl_ca_filepath = filepath;
 }
 
+void wsubus_client_set_rpcd_integration(bool connect_to_rpcd)
+{
+	rpcd_integration = connect_to_rpcd;
+}
+bool wsubus_client_get_rpcd_integration(void)
+{
+	return rpcd_integration;
+}
 /* free the info for connection as ubus proxy / delete all clients */
 void wsubus_client_clean(void)
 {

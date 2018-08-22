@@ -47,8 +47,8 @@ struct lws_protocols ws_ubusproxy_proto = {
 	WSUBUS_PROTO_NAME,
 	ws_ubusproxy_cb,
 	sizeof (struct wsu_peer),
-	32768,    //3000 // arbitrary length
-	0,    // - id
+	32768,	  //3000 // arbitrary length
+	0,	  // - id
 	NULL, // - user pointer
 };
 
@@ -115,16 +115,42 @@ static int ws_ubusproxy_cb(struct lws *wsi,
 		memset(&remote->waiting_for, 0, sizeof remote->waiting_for);
 		avl_init(&remote->stubs, avl_strcmp, false, NULL);
 
-		// we use a fake "session ID" which tells remote owsd server to check our cert
-		// instead of rpcd sessions
-		wsu_sid_update(peer, "X-tls-certificate");
+		// connect ubux proxy client to remote rpcd
+		if (wsubus_client_get_rpcd_integration()) {
+			if (!lws_is_ssl(wsi)) {
+				lwsl_err("can't login to remote ubus via TLS cert, SSL not enabled");
+				return 0;
+			}
+			union lws_tls_cert_info_results info = {0};
+			size_t len = 64;
 
-		// start listening for all events
-		// (do a `ubus listen *`)
-		char *d = jsonrpc__req_ubuslisten(++remote->call_id, peer->sid, "*");
-		remote->waiting_for.listen = 1;
-		wsu_queue_write_str(wsi, d);
-		free(d);
+			int rc = lws_tls_peer_cert_info(wsi, LWS_TLS_CERT_INFO_COMMON_NAME, &info, len);
+			if (rc) {
+				lwsl_err("wsi %p TLS cert does not exist\n", wsi);
+				return 0;
+			}
+			lwsl_debug("certifiate name: %s\n", info.ns.name);
+
+			json_object *args_jobj = json_object_new_object();
+			json_object_object_add(args_jobj, "certificate", json_object_new_string(info.ns.name));
+			char *d = jsonrpc__req_ubuscall(++remote->call_id, NULL, "session", "login", args_jobj);
+			json_object_put(args_jobj);
+
+			remote->waiting_for.login = 1;
+			wsu_queue_write_str(wsi, d);
+			free(d);
+		} else {
+			// we use a fake "session ID" which tells remote owsd server to check our cert
+			// instead of rpcd sessions
+			wsu_sid_update(peer, "X-tls-certificate");
+
+			// start listening for all events
+			// (do a `ubus listen *`)
+			char *d = jsonrpc__req_ubuslisten(++remote->call_id, peer->sid, "*");
+			remote->waiting_for.listen = 1;
+			wsu_queue_write_str(wsi, d);
+			free(d);
+		}
 
 		return 0;
 	}

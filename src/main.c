@@ -75,11 +75,12 @@ static void usage(char *name)
 			"  -U [<path>] ...  Enable WS ubus proxying [for ubus path]\n"
 			"  -F [<prefix>]    Ubusx remote objects prefix, ip or mac [default: ip]\n"
 			"  -P <url> ...     URL of remote WS ubus to proxy as client\n"
-			"                   (also activates -U )"
+			"                   (also activates -U )\n"
 #ifdef LWS_OPENSSL_SUPPORT
 			"  -C <cert_path>   SSL client cert path\n"
 			"  -K <cert_path>   SSL client key path\n"
 			"  -A <ca_file>     SSL CA file path trusted by client\n"
+			"  -R               Connect ubus proxy with remote rpcd, authenticating over certificate\n"
 #endif // LWS_OPENSSL_SUPPORT
 #endif
 			"\n"
@@ -186,6 +187,7 @@ int main(int argc, char *argv[])
 					"P:"
 #ifdef LWS_OPENSSL_SUPPORT
 					"C:K:A:"
+                    "R"
 #endif /* LWS_OPENSSL_SUPPORT */
 #endif /* WSD_HAVE_UBUSPROXY */
 					/* per-vhost */
@@ -278,6 +280,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'A':
 			wsubus_client_set_ca_filepath(optarg);
+			break;
+        case 'R':
+			wsubus_client_set_rpcd_integration(true);
 			break;
 #endif
 #endif // WSD_HAVE_UBUSPROXY

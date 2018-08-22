@@ -78,6 +78,8 @@ int wsubus_client_start_proxying(struct lws_context *lws_ctx, struct ubus_contex
 void wsubus_client_set_cert_filepath(const char *filepath);
 void wsubus_client_set_private_key_filepath(const char *filepath);
 void wsubus_client_set_ca_filepath(const char *filepath);
+void wsubus_client_set_rpcd_integration(bool connect_to_rpcd);
+bool wsubus_client_get_rpcd_integration(void);
 void wsubus_client_connect_all(void);
 void wsubus_client_connect_retry(struct lws *wsi);
 void wsubus_client_reconnect(struct lws *wsi);
