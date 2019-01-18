@@ -30,12 +30,7 @@
 
 #include <libubox/blobmsg.h>
 
-#if WSD_HAVE_UBUS
 #include "rpc_call_ubus.h"
-#endif
-#if WSD_HAVE_DBUS
-#include "rpc_call_dbus.h"
-#endif
 
 #include <assert.h>
 
@@ -142,9 +137,6 @@ int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, stru
 {
 	int ret = 1;
 
-#if WSD_HAVE_DBUS
-	ret = handle_call_dbus(wsi, ubusrpc_blob, id);
-#endif
 	// handle_call_dbus will return 1 if it can't find object on DBus. In that case we try ubus
 
 	if (!ret) {
@@ -152,9 +144,8 @@ int ubusrpc_handle_call(struct lws *wsi, struct ubusrpc_blob *ubusrpc_blob, stru
 		return ret;
 	}
 
-#if WSD_HAVE_UBUS
-	ret = handle_call_ubus(wsi, ubusrpc_blob, id);
-#endif
+    ret = handle_call_ubus(wsi, ubusrpc_blob, id);
+
 
 	return ret;
 }

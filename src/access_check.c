@@ -21,10 +21,8 @@
 #include "access_check.h"
 #include "common.h"
 #include "wsubus.impl.h"
-
-#if WSD_HAVE_UBUS
 #include <libubus.h>
-#endif
+
 
 #define SID_EXTENDED_PREFIX "X-"
 
@@ -81,44 +79,6 @@ static enum wsu_ext_result wsu_ext_restrict_interface(struct lws *wsi,
 }
 
 
-#ifdef LWS_OPENSSL_SUPPORT
-/**
- * \brief This access checker checks if the client is authenticated via TLS certificate. If so, access check is successful
- */
-static enum wsu_ext_result wsu_ext_check_tls(struct lws *wsi)
-{
-	// return DEFAULT since next auth check may allow this session
-	enum wsu_ext_result res = EXT_CHECK_DENY;
-
-	if (!lws_is_ssl(wsi)) {
-		res = EXT_CHECK_NEXT;
-		goto exit;
-	}
-	union lws_tls_cert_info_results info = {0};
-	size_t len = 64;
-
-	int rc = lws_tls_peer_cert_info(wsi, LWS_TLS_CERT_INFO_VERIFIED, &info, len);
-	if (rc) {
-		lwsl_notice("wsi %p TLS cert does not exist\n", wsi);
-		goto exit;
-	}
-	if (!info.verified) {
-		lwsl_notice("wsi %p TLS cert verification failure\n", wsi);
-		goto exit;
-	}
-	res = EXT_CHECK_ALLOW;
-
-#ifdef _DEBUG
-	lws_tls_peer_cert_info(wsi, LWS_TLS_CERT_INFO_COMMON_NAME, &info, len);
-	lwsl_notice("wsi %p was TLS authenticated with cert CN = %s\n",
-							wsi, info.ns.name);
-#endif
-
-exit:
-	return res;
-}
-#endif
-
 /*
  * the access check structure handle is implemented through a pending request,
  * either through ubus (because we asked rpcd session object for the access
@@ -133,15 +93,11 @@ struct wsubus_access_check_req {
 	void *ctx;
 
 	enum {
-#if WSD_HAVE_UBUS
 		REQ_TAG_UBUS,
-#endif
 		REQ_TAG_DEFER,
 	} tag;
 	union {
-#if WSD_HAVE_UBUS
 		struct ubus_request ubus_req;
-#endif
 		struct uloop_timeout defer_timer;
 	};
 };
@@ -156,7 +112,7 @@ void wsubus_access_check_free(struct wsubus_access_check_req *req)
 	free(req);
 }
 
-#if WSD_HAVE_UBUS
+
 static void wsubus_access_check__on_ret(struct ubus_request *ureq, int type, struct blob_attr *msg)
 {
 	(void)type;
@@ -255,7 +211,6 @@ fail_mem_blob:
 fail:
 	return -1;
 }
-#endif // WSD_HAVE_UBUS
 
 static void deferral_cb(struct uloop_timeout *t) {
 	struct wsubus_access_check_req *req = container_of(t, struct wsubus_access_check_req, defer_timer);
@@ -298,11 +253,6 @@ int wsubus_access_check_(
 		if (!strcmp("mgmt-interface", esid)) {
 			res = wsu_ext_check_interface(wsi);
 		}
-#ifdef LWS_OPENSSL_SUPPORT
-		else if (!strcmp("tls-certificate", esid)) {
-			res = wsu_ext_check_tls(wsi);
-		}
-#endif
 	}
 
 	// see if checker made a decision or if it says to consult next one
@@ -317,13 +267,8 @@ int wsubus_access_check_(
 		return defer_callback(req, ctx, res == EXT_CHECK_ALLOW);
 	}
 
-	// by default, if no checker has made decision until now, ask rpcd about it (or allow if no ubus support)
-#if WSD_HAVE_UBUS
 	struct prog_context *prog = lws_context_user(lws_get_context(wsi));
 	return wsubus_access_check_via_session(req, prog->ubus_ctx, sid, scope, object, method, args, ctx, cb);
-#else
-	return EXT_CHECK_ALLOW;
-#endif
 }
 
 void wsubus_access_check__cancel(struct ubus_context *ubus_ctx, struct wsubus_access_check_req *req)
@@ -332,10 +277,8 @@ void wsubus_access_check__cancel(struct ubus_context *ubus_ctx, struct wsubus_ac
 	case REQ_TAG_DEFER:
 		uloop_timeout_cancel(&req->defer_timer);
 		break;
-#if WSD_HAVE_UBUS
 	case REQ_TAG_UBUS:
 		ubus_abort_request(ubus_ctx, &req->ubus_req);
 		break;
-#endif
 	}
 }

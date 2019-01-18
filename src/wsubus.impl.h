@@ -27,10 +27,6 @@
 #include "owsd-config.h"
 #include "rpc.h"
 
-#if WSD_HAVE_UBUSPROXY
-#include "local_stub.h"
-#endif
-
 #include "access_check.h"
 
 #include <stddef.h>
@@ -42,10 +38,6 @@
 #include <libubox/list.h>
 #include <libubox/blobmsg.h>
 #include <libwebsockets.h>
-
-#if WSD_HAVE_UBUSPROXY
-#include <libubus.h>
-#endif
 
 #define WSUBUS_PROTO_NAME "ubus-json"
 #define WSUBUS_MAX_MESSAGE_LEN (1 << 27) // 128M
@@ -75,9 +67,6 @@ struct wsu_peer {
 	 */
 	enum wsu_role {
 		WSUBUS_ROLE_CLIENT = 1,
-#if WSD_HAVE_UBUSPROXY
-		WSUBUS_ROLE_REMOTE,
-#endif
 	} role;
 	union {
 		/**
@@ -89,31 +78,6 @@ struct wsu_peer {
 			struct list_head rpc_call_q;
 			struct list_head access_check_q;
 		} client;
-#if WSD_HAVE_UBUSPROXY
-		/**
-		 * \brief stores per-connection data needed when we connect as ubus proxy
-		 */
-		struct wsu_remote_bus {
-			int call_id;
-
-			/** \brief state information */
-			struct {
-				unsigned int login  : 1;
-				unsigned int listen : 1;
-				unsigned int call   : MAX_PROXIED_CALLS;
-				int list_id;
-			} waiting_for;
-
-			/** \brief collection of calls for which we are waiting for reply */
-			struct wsu_proxied_call {
-				int jsonrpc_id;
-				struct ubus_request_data ureq;
-			} calls[MAX_PROXIED_CALLS];
-
-			struct lws *wsi;
-			struct avl_tree stubs;
-		} remote;
-#endif
 	} u;
 };
 
@@ -131,56 +95,12 @@ static inline struct wsu_client_session *wsi_to_client(struct lws *wsi)
 	assert(p->role == WSUBUS_ROLE_CLIENT);
 	return &p->u.client;
 }
-#if WSD_HAVE_UBUSPROXY
-static inline struct wsu_remote_bus *wsi_to_remote(struct lws *wsi)
-{
-	struct wsu_peer *p = wsi_to_peer(wsi);
-	assert(p->role == WSUBUS_ROLE_REMOTE);
-	return &p->u.remote;
-}
-static inline struct wsu_peer *wsu_remote_to_peer(struct wsu_remote_bus *remote)
-{
-	return container_of(remote, struct wsu_peer, u.remote);
-}
-#endif
+
 static inline struct wsu_peer *wsu_client_to_peer(struct wsu_client_session *client)
 {
 	return container_of(client, struct wsu_peer, u.client);
 }
 //}}}
-
-#if WSD_HAVE_UBUSPROXY
-//{{{ accessors for remote.calls collection
-static inline struct wsu_proxied_call *wsu_proxied_call_new(struct wsu_remote_bus *remote)
-{
-	unsigned call_idx = ffs(~remote->waiting_for.call);
-	if (!call_idx || call_idx > MAX_PROXIED_CALLS) {
-		return NULL;
-	}
-	--call_idx;
-
-	remote->waiting_for.call |= (1U << call_idx);
-
-	return &remote->calls[call_idx];
-}
-static inline void wsu_proxied_call_free(struct wsu_remote_bus *remote, struct wsu_proxied_call *p)
-{
-	int idx = p - remote->calls;
-	if (idx >= 0 && idx < MAX_PROXIED_CALLS)
-		remote->waiting_for.call &= ~(1U << idx);
-}
-
-#define _wsu_lowbit(X) ((X) & (-X))
-
-#define wsu_proxied_call_foreach(REMOTE, P) \
-	for (int _mask_##REMOTE = (REMOTE->waiting_for.call), _callbit_##REMOTE = _wsu_lowbit(_mask_##REMOTE), _idx_##REMOTE; \
-			(_callbit_##REMOTE = _wsu_lowbit(_mask_##REMOTE)) \
-			&& (_idx_##REMOTE = __builtin_ctz(_callbit_##REMOTE), P = &REMOTE->calls[_idx_##REMOTE], \
-				_callbit_##REMOTE); \
-			_mask_##REMOTE &= ~_callbit_##REMOTE)
-
-//}}}
-#endif // WSD_HAVE_UBUSPROXY
 
 /**
  * \brief used to tie access_check_req context into list to be tracked/cancellable
@@ -268,9 +188,6 @@ static inline int wsu_peer_init(struct wsu_peer *peer, enum wsu_role role)
 		// these lists will keep track of async calls in progress
 		INIT_LIST_HEAD(&peer->u.client.rpc_call_q);
 		INIT_LIST_HEAD(&peer->u.client.access_check_q);
-#if WSD_HAVE_UBUSPROXY
-	} else if (role == WSUBUS_ROLE_REMOTE) {
-#endif
 	} else {
 		return -1;
 	}
@@ -321,12 +238,7 @@ static inline void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
 			list_for_each_entry_safe(p, n, &peer->u.client.access_check_q, acq) {
 				lwsl_info("free check in progress %p\n", p);
 				list_del(&p->acq);
-#if WSD_HAVE_UBUS
 				wsubus_access_check__cancel(prog->ubus_ctx, p->req);
-#else
-				(void)prog;
-				wsubus_access_check__cancel(NULL, p->req);
-#endif
 				wsubus_access_check_free(p->req);
 				if (p->destructor)
 					p->destructor(p);
@@ -346,14 +258,6 @@ static inline void wsu_peer_deinit(struct lws *wsi, struct wsu_peer *peer)
 			}
 		}
 	}
-#if WSD_HAVE_UBUSPROXY
-	else if (peer->role == WSUBUS_ROLE_REMOTE) {
-		struct wsu_local_stub *cur, *next;
-		avl_for_each_element_safe(&peer->u.remote.stubs, cur, avl, next) {
-			wsu_local_stub_destroy(cur);
-		}
-	}
-#endif
 }
 
 /**

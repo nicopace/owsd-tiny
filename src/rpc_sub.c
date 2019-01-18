@@ -31,15 +31,7 @@
 #include <libubox/blobmsg_json.h>
 #include <libubox/blobmsg.h>
 
-#if WSD_HAVE_UBUS
 #include <libubus.h>
-#endif
-
-#if WSD_HAVE_DBUS
-#include <fnmatch.h>
-#include <dbus/dbus.h>
-#include "dubus_conversions.h"
-#endif
 
 #include <libwebsockets.h>
 
@@ -72,10 +64,6 @@ struct ws_sub_info_ubus {
 static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *ev, const char *type, struct blob_attr *msg);
 #endif
 
-#if WSD_HAVE_DBUS
-DBusHandlerResult ws_sub_cb_dbus(DBusConnection *bus, DBusMessage *msg, void *data);
-#endif
-
 static void wsubus_unsub_elem(struct ws_request_base *elem_)
 {
 	struct ws_sub_info_ubus *elem = container_of(elem_, struct ws_sub_info_ubus, _base);
@@ -86,13 +74,6 @@ static void wsubus_unsub_elem(struct ws_request_base *elem_)
 #endif
 
 	list_del(&elem->list);
-
-#if WSD_HAVE_DBUS
-	if (list_empty(&listen_list)) {
-		dbus_bus_remove_match(prog->dbus_ctx, "type='signal'", NULL);
-		dbus_connection_remove_filter(prog->dbus_ctx, ws_sub_cb_dbus, NULL);
-	}
-#endif
 
 	if (elem->sub->destroy) {
 		elem->sub->destroy(&elem->sub->_base);
@@ -202,7 +183,6 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct bl
 		goto out;
 	}
 
-#if WSD_HAVE_UBUS
 	// register handler on ubus
 	subinfo->ubus_handler = (struct ubus_event_handler){};
 	ret = ubus_register_event_handler(prog->ubus_ctx, &subinfo->ubus_handler, ubusrpc->pattern);
@@ -214,20 +194,11 @@ int ubusrpc_handle_sub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct bl
 	}
 
 	subinfo->ubus_handler.cb = wsubus_sub_cb;
-#endif
 
 	subinfo->id = NULL;
 	subinfo->sub = ubusrpc;
 	// subinfo->ubus_handler inited above in ubus_register_...
 	subinfo->wsi = wsi;
-
-#if WSD_HAVE_DBUS
-	// turn on the global signal handler if this is first time we watch for events
-	if (list_empty(&listen_list)) {
-		dbus_bus_add_match(prog->dbus_ctx, "type='signal'", NULL);
-		dbus_connection_add_filter(prog->dbus_ctx, ws_sub_cb_dbus, NULL, NULL);
-	}
-#endif
 
 	// add entry to list
 	list_add_tail(&subinfo->list, &listen_list);
@@ -255,65 +226,6 @@ static void blobmsg_add_sub_info(struct blob_buf *buf, const char *name, const s
 
 	blobmsg_close_table(buf, tkt);
 }
-
-#if WSD_HAVE_DBUS
-/**
- * \brief called by libdbus when DBus signal (=event) happens
- */
-DBusHandlerResult ws_sub_cb_dbus(DBusConnection *bus, DBusMessage *msg, void *data)
-{
-	(void)data;
-
-	if (dbus_message_get_type(msg) != DBUS_MESSAGE_TYPE_SIGNAL) {
-		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
-	}
-
-	const char *type = dbus_message_get_member(msg);
-	lwsl_notice("dbus event %s happened\n", type);
-
-	// find matching entry in list
-	{
-		struct ws_sub_info_ubus *elem, *tmp;
-		list_for_each_entry_safe(elem, tmp, &listen_list, list) {
-			if (fnmatch(elem->sub->pattern, type, 0))
-				continue;
-
-			// prepare RPC event notification
-			struct blob_buf resp_buf = {};
-			blob_buf_init(&resp_buf, 0);
-			blobmsg_add_string(&resp_buf, "jsonrpc", "2.0");
-			blobmsg_add_string(&resp_buf, "method", "event");
-
-			lwsl_notice("notifying wsi %p \n", elem->wsi);
-
-			void *tkt = blobmsg_open_table(&resp_buf, "params");
-			blobmsg_add_string(&resp_buf, "type", type);
-
-			// convert event name/data
-			struct duconv_convert c;
-			duconv_convert_init(&c, "arg%d");
-			DBusMessageIter iter;
-			dbus_message_iter_init(msg, &iter);
-			do {
-				duconv_msgiter_dbus_to_ubus_add_arg(&c, &iter, NULL);
-			} while (dbus_message_iter_next(&iter));
-			blobmsg_add_field(&resp_buf, BLOBMSG_TYPE_TABLE, "data", blobmsg_data(c.b.head), blobmsg_len(c.b.head));
-			duconv_convert_free(&c);
-
-			blobmsg_add_sub_info(&resp_buf, "subscription", elem);
-			blobmsg_close_table(&resp_buf, tkt);
-
-			char *response = blobmsg_format_json(resp_buf.head, true);
-			blob_buf_free(&resp_buf);
-
-			wsu_queue_write_str(elem->wsi, response);
-			free(response);
-		}
-	}
-
-	return DBUS_HANDLER_RESULT_HANDLED;
-}
-#endif
 
 int ubusrpc_handle_sub_list(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct blob_attr *id)
 {
@@ -382,7 +294,6 @@ int ubusrpc_handle_unsub(struct lws *wsi, struct ubusrpc_blob *ubusrpc_, struct 
 	return 0;
 }
 
-#if WSD_HAVE_UBUS
 struct wsubus_ev_notif {
 	char *type;
 	struct blob_attr *msg;
@@ -466,4 +377,4 @@ static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *e
 		return;
 	}
 }
-#endif
+

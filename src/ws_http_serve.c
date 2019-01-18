@@ -126,7 +126,7 @@ static const char *determine_mimetype(const char *filepath, size_t n)
 	const char *last_dot = filepath_strnrchr(filepath, n, '.');
 	if (last_dot) {
 		size_t ext_len = (size_t)(filepath + n - last_dot) - 1;
-		const struct fileext_map *m = mapping_by_extension(last_dot+1, ext_len, mime_map, ARRAY_SIZE(mime_map));
+        const struct fileext_map *m = mapping_by_extension(last_dot+1, ext_len, mime_map, LWS_ARRAY_SIZE(mime_map));
 		if (m) {
 			return m->val;
 		}
@@ -181,7 +181,7 @@ static void determine_file_meta(struct lws *wsi, struct file_meta *meta, char *f
 	meta->enc = NULL;
 
 	// add extensions from list until we find one that exists on disk
-	for (size_t i = 0; i < ARRAY_SIZE(enc_map); ++i) {
+    for (size_t i = 0; i < LWS_ARRAY_SIZE(enc_map); ++i) {
 		strcat(meta->real_filepath, ".");
 		strcat(meta->real_filepath, enc_map[i].ext);
 		if (0 == access(meta->real_filepath, R_OK)) {

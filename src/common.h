@@ -20,8 +20,6 @@
 #pragma once
 
 #include "owsd-config.h"
-#include "wsubus_client.h"
-
 #include <libwebsockets.h>
 #include <libubox/uloop.h>
 #include <stddef.h>
@@ -34,12 +32,7 @@ struct prog_context {
 
 	struct lws_context *lws_ctx;
 
-#if WSD_HAVE_UBUS
-	struct ubus_context *ubus_ctx;
-#endif
-#if WSD_HAVE_DBUS
-	struct DBusConnection *dbus_ctx;
-#endif
+    struct ubus_context *ubus_ctx;
 
 	const char *www_path;
 	const char *redir_from;

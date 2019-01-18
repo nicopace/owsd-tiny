@@ -21,18 +21,9 @@
 
 #include "ws_http.h"
 #include "wsubus.h"
-#include "wsubus_client.h"
 #include "rpc.h"
-#include "ubusx_acl.h"
 
-#if WSD_HAVE_DBUS
-#include "dbus-io.h"
-#include <dbus/dbus.h>
-#endif
-#if WSD_HAVE_UBUS
 #include <libubus.h>
-#endif
-
 #include <libubox/uloop.h>
 #include <libwebsockets.h>
 
@@ -71,18 +62,6 @@ static void usage(char *name)
 			"  -t <www_maxage>  enable HTTP caching with specified max_age in seconds\n"
 			"  -r <from>:<to>   HTTP path redirect pair\n"
 			"  -m <from>:<to>   CGI mount point\n"
-#if WSD_HAVE_UBUSPROXY
-			"  -U [<path>] ...  Enable WS ubus proxying [for ubus path]\n"
-			"  -F [<prefix>]    Ubusx remote objects prefix, ip or mac [default: ip]\n"
-			"  -P <url> ...     URL of remote WS ubus to proxy as client\n"
-			"                   (also activates -U )\n"
-#ifdef LWS_OPENSSL_SUPPORT
-			"  -C <cert_path>   SSL client cert path\n"
-			"  -K <cert_path>   SSL client key path\n"
-			"  -A <ca_file>     SSL CA file path trusted by client\n"
-			"  -R               Connect ubus proxy with remote rpcd, authenticating over certificate\n"
-#endif // LWS_OPENSSL_SUPPORT
-#endif
 			"\n"
 			"  -p <port> ...    port number (repeat for multiple):\n"
 			" per-port options (apply to last port (-p))\n"
@@ -94,15 +73,6 @@ static void usage(char *name)
 #ifdef LWS_WITH_IPV6
 			"  -6               enable IPv6, repeat to disable IPv4 [off]\n"
 #endif // LWS_WITH_IPV6
-#ifdef LWS_OPENSSL_SUPPORT
-			"  -c <cert_path>   SSL cert path if SSL wanted\n"
-			"  -k <key_path>    SSL key path if SSL wanted\n"
-			"  -a <ca_file>     path to SSL CA file that makes clients trusted\n"
-#endif // LWS_OPENSSL_SUPPORT
-			"  -X <ubusobject>[->method][,...]\n"
-			"                   ACL list controlling wich local ubus objects are\n"
-			"                   allowed to be exported to remote ubuses/ubux\n"
-			"                   Example: -X \"object1,object2->method,object3\"\n"
 			"Options with ... are repeatable (e.g. -u one -u two ...)\n"
 			"\n", name);
 }
@@ -159,53 +129,30 @@ int main(int argc, char *argv[])
 {
 	int rc = 0;
 
-#if WSD_HAVE_UBUS
 	const char *ubus_sock_path = WSD_DEF_UBUS_PATH;
-#endif
 	const char *www_dirpath = WSD_DEF_WWW_PATH;
 	int www_maxage = WSD_DEF_WWW_MAXAGE;
 	char *redir_from = NULL;
 	char *redir_to = NULL;
 	char *cgi_from = NULL;
 	char *cgi_to = NULL;
-	bool any_ssl = false;
 
 	struct vhinfo_list *currvh = NULL;
 
 	int c;
 	while ((c = getopt(argc, argv,
 					/* global */
-#if WSD_HAVE_UBUS
 					"s:"
-#endif /* WSD_HAVE_UBUSPROXY */
 					"w:t:r:m:h"
-
-#if WSD_HAVE_UBUSPROXY
-					"U::"
-					"F::"
-					/* per-client */
-					"P:"
-#ifdef LWS_OPENSSL_SUPPORT
-					"C:K:A:"
-                    "R"
-#endif /* LWS_OPENSSL_SUPPORT */
-#endif /* WSD_HAVE_UBUSPROXY */
-					/* per-vhost */
-					"p:i:o:L:u:"
 #ifdef LWS_WITH_IPV6
 					"6"
 #endif // LWS_WITH_IPV6
-#ifdef LWS_OPENSSL_SUPPORT
-					"c:k:a:"
-#endif // LWS_OPENSSL_SUPPORT
 					"X:"
 					)) != -1) {
 		switch (c) {
-#if WSD_HAVE_UBUS
 		case 's':
 			ubus_sock_path = optarg;
 			break;
-#endif /* WSD_HAVE_UBUS */
 		case 'w':
 			www_dirpath = optarg;
 			break;
@@ -239,53 +186,6 @@ int main(int argc, char *argv[])
 			break;
 
 			// client
-#if WSD_HAVE_UBUSPROXY
-		case 'U':
-			lwsl_notice("PARSING OPTION U\n");
-			any_ssl = true;
-			wsubus_client_enable_proxy();
-			if (optarg)
-				wsubus_client_path_pattern_add(optarg);
-			break;
-		case 'F':
-			lwsl_notice("PARSING OPTION F\n");
-			//ubusx_prefix = UBUSX_PREFIX_IP;
-			if (optarg)
-				if (strncmp(optarg, "mac", 4) == 0)
-					ubusx_prefix = 1;//UBUSX_PREFIX_MAC;
-			break;
-		case 'P': {
-
-			const char *proto, *addr, *path;
-			int port;
-			if (lws_parse_uri(optarg, &proto, &addr, &port, &path)) {
-				lwsl_err("invalid connect URL for client\n");
-				goto error;
-			}
-			if (strncmp(proto, "wss", 4) != 0) {
-				lwsl_err("only wss protocol for WS proxy client\n");
-				goto error;
-			}
-			any_ssl = true;
-			wsubus_client_create(addr, port, path, CLIENT_FROM_PROGARG);
-			break;
-		}
-#ifdef LWS_OPENSSL_SUPPORT
-			// following options tweak options for connecting as proxy
-		case 'C':
-			wsubus_client_set_cert_filepath(optarg);
-			break;
-		case 'K':
-			wsubus_client_set_private_key_filepath(optarg);
-			break;
-		case 'A':
-			wsubus_client_set_ca_filepath(optarg);
-			break;
-        case 'R':
-			wsubus_client_set_rpcd_integration(true);
-			break;
-#endif
-#endif // WSD_HAVE_UBUSPROXY
 
 			// vhost
 		case 'p': {
@@ -351,28 +251,6 @@ int main(int argc, char *argv[])
 			}
 			break;
 #endif // LWS_WITH_IPV6
-#ifdef LWS_OPENSSL_SUPPORT
-		case 'c':
-			currvh->vh_info.ssl_cert_filepath = optarg;
-			goto ssl;
-		case 'k':
-			currvh->vh_info.ssl_private_key_filepath = optarg;
-			goto ssl;
-		case 'a':
-			currvh->vh_info.ssl_ca_filepath = optarg;
-			goto ssl;
-
-ssl:
-			any_ssl = true;
-			currvh->vh_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
-			break;
-#endif // LWS_OPENSSL_SUPPORT
-
-		case 'X':
-			lwsl_notice("ubusx ACL: \"%s\"\n", optarg);
-			ubusx_acl__add_objects(optarg);
-			break;
-
 		case 'h':
 		default:
 			usage(argv[0]);
@@ -392,7 +270,7 @@ ssl:
 
 	// connect to bus(es)
 
-#if WSD_HAVE_UBUS
+
 	struct ubus_context *ubus_ctx = ubus_connect(ubus_sock_path);
 	if (!ubus_ctx) {
 		lwsl_err("ubus_connect error\n");
@@ -401,26 +279,8 @@ ssl:
 	}
 	global.ubus_ctx = ubus_ctx;
 	ubus_add_uloop(ubus_ctx);
-#endif
 
-#if WSD_HAVE_DBUS
-	struct DBusConnection *dbus_ctx;
-	{
-		struct DBusError error;
-		dbus_error_init(&error);
-		dbus_ctx = dbus_bus_get_private(DBUS_BUS_SYSTEM, &error);
-		if (!dbus_ctx || dbus_error_is_set(&error)) {
-			lwsl_err("dbus_connect error\n");
-			lwsl_err("DBUS erro %s : %s\n", error.name, error.message);
-			rc = 2;
-			goto error;
-		}
-		global.dbus_ctx = dbus_ctx;
-		wsd_dbus_add_to_uloop(dbus_ctx);
-	}
-#endif
-
-	global.www_path = www_dirpath;
+    global.www_path = www_dirpath;
 	global.redir_from = redir_from;
 	global.redir_to = redir_to;
 
@@ -446,7 +306,7 @@ ssl:
 	lws_info.uid = -1;
 	lws_info.gid = -1;
 	lws_info.user = &global;
-	lws_info.options = LWS_SERVER_OPTION_EXPLICIT_VHOSTS | (any_ssl ? LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT : 0);
+    lws_info.options = LWS_SERVER_OPTION_EXPLICIT_VHOSTS;
 	lws_info.server_string = "owsd";
 	lws_info.ws_ping_pong_interval = 300;
 
@@ -530,13 +390,7 @@ ssl:
 
 		c->vh_info.mounts = &cgimount;
 
-		// tell SSL clients to include their certificate but don't fail if they don't
-		if (c->vh_info.ssl_ca_filepath) {
-			c->vh_info.options |= LWS_SERVER_OPTION_PEER_CERT_NOT_REQUIRED | LWS_SERVER_OPTION_REQUIRE_VALID_OPENSSL_CLIENT_CERT;
-		}
-
-		lwsl_debug("create vhost for port %d with %s , c %s k %s\n", c->vh_info.port, (c->vh_info.options & LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT) ? "ssl" : "no ssl",
-				c->vh_info.ssl_cert_filepath, c->vh_info.ssl_private_key_filepath);
+        lwsl_debug("create vhost for port %d\n", c->vh_info.port);
 
 		struct lws_vhost *vh = lws_create_vhost(lws_ctx, &c->vh_info);
 
@@ -552,20 +406,12 @@ ssl:
 		*pvh_context = &c->vh_ctx;
 	}
 
-#if WSD_HAVE_UBUSPROXY
-	wsubus_client_start_proxying(lws_ctx, ubus_ctx);
-#endif
-
 	global.utimer.cb = utimer_service;
 	uloop_timeout_add(&global.utimer);
 	uloop_timeout_set(&global.utimer, 1000);
 
 	lwsl_info("running uloop...\n");
 	uloop_run();
-
-#if WSD_HAVE_UBUSPROXY
-	wsubus_client_clean();
-#endif
 
 	// free the per-vhost contexts
 	for (struct vhinfo_list *c = currvh, *prev = NULL; c; prev = c, c = c->next, free(prev)) {
@@ -590,17 +436,8 @@ ssl:
 
 error_ubus_ufds:
 	free(global.ufds);
-
-#if WSD_HAVE_UBUS
 	ubus_free(ubus_ctx);
-#endif
-#if WSD_HAVE_DBUS
-	dbus_connection_close(dbus_ctx);
-	dbus_connection_unref(dbus_ctx);
-	dbus_shutdown();
-#endif
 
 error:
-
 	return rc;
 }

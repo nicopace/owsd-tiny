@@ -214,46 +214,10 @@ static int ws_http_cb(struct lws *wsi,
 		return 0;
 	}
 
-#if WSD_HAVE_UBUSPROXY
-	case LWS_CALLBACK_PROTOCOL_INIT: {
-		lwsl_notice("%s init\n", lws_get_protocol(wsi)->name);
-		struct lws_vhost *vhost = lws_get_vhost(wsi);
-		if (!vhost) {
-			lwsl_err(" ERROR, no vhost found\n");
-			break;
-		}
-		int port = lws_get_vhost_port(vhost);
-		if ( port == CONTEXT_PORT_NO_LISTEN) {
-			lwsl_notice("%s initializing clients\n", lws_get_protocol(wsi)->name);
-			wsubus_client_connect_all();
-		}
-		break;
-	}
-	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR: {
-		lwsl_err("CCE ERROR, reason %s\n", in ? (char *)in : "");
-		if (wsubus_client_should_destroy(wsi)) {
-			wsubus_client_destroy(wsi);
-		} else {
-			wsubus_client_set_state(wsi, CONNECTION_STATE_DISCONNECTED);
-			wsubus_client_connect_retry(wsi);
-		}
-		break;
-	}
-#endif
-
 		// deny websocket clients with default (no) subprotocol
 	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
 		lwsl_notice("client handshaking without subproto - denying\n");
 		return 1;
-
-
-	case LWS_CALLBACK_OPENSSL_PERFORM_CLIENT_CERT_VERIFICATION:
-		// we don't deny any clients here, we check later if authed and allow extra access
-		return 0;
-
-		// temporary - libwebsockets 1.7+ calls this always... TODO lwsbug
-	case LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS:
-		return 0;
 
 		// plain HTTP request received
 	case LWS_CALLBACK_HTTP:	 {
