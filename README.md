@@ -3,6 +3,8 @@
 This is a fork of http://public.inteno.se/owsd.git without SSL, ubus-proxy and dbus support. 
 OpenWrt build files that do a static link against libwebsockets are in `openwrt`. 
 
+The final .ipkg is only 53kb and has no dependencies 
+
 Usage: 
 
 `feeds.conf`: 
@@ -13,6 +15,8 @@ Usage:
 
     CONFIG_PACKAGE_owsd=y 
     
+
+Original README:
 
 ## Overview
 - uses web sockets to accept RPC calls in JSON-RPC
