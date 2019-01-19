@@ -74,6 +74,11 @@ static void usage(char *name)
 #ifdef LWS_WITH_IPV6
 			"  -6               enable IPv6, repeat to disable IPv4 [off]\n"
 #endif // LWS_WITH_IPV6
+			"  -X <ubusobject>[->method][,...]\n"
+			"                   ACL list controlling wich local ubus objects are\n"
+			"                   allowed to be exported to remote ubuses/ubux\n"
+			"                   Example: -X \"object1,object2->method,object3\"\n"
+
 			"Options with ... are repeatable (e.g. -u one -u two ...)\n"
 			"\n", name);
 }
