@@ -19,7 +19,6 @@
  */
 #pragma once
 
-#include "owsd-config.h"
 #include <libwebsockets.h>
 #include <libubox/uloop.h>
 #include <stddef.h>

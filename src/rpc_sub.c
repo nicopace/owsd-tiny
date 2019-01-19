@@ -55,23 +55,17 @@ struct ws_sub_info_ubus {
 
 	struct ubusrpc_blob_sub *sub;
 	struct list_head list;
-#if WSD_HAVE_UBUS
 	struct ubus_event_handler ubus_handler;
-#endif
 };
 
-#if WSD_HAVE_UBUS
 static void wsubus_sub_cb(struct ubus_context *ctx, struct ubus_event_handler *ev, const char *type, struct blob_attr *msg);
-#endif
 
 static void wsubus_unsub_elem(struct ws_request_base *elem_)
 {
 	struct ws_sub_info_ubus *elem = container_of(elem_, struct ws_sub_info_ubus, _base);
 	struct prog_context *prog = lws_context_user(lws_get_context(elem->wsi));
 
-#if WSD_HAVE_UBUS
 	ubus_unregister_event_handler(prog->ubus_ctx, &elem->ubus_handler);
-#endif
 
 	list_del(&elem->list);
 

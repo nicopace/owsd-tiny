@@ -14,7 +14,7 @@ PKG_RELEASE:=1
 PKG_MAINTAINER:=Sartura Support for Inteno <support-inteno@sartura.hr>
 PKG_INSTALL:=1
 PKG_BUILD_PARALLEL:=1
-PKG_BUILD_DEPENDS:=libwebsockets-tiny
+PKG_BUILD_DEPENDS:=libwebsockets-tiny ubus ubox
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
@@ -24,7 +24,7 @@ CMAKE_SOURCE_DIR=$(CURDIR)/../../
 define Package/owsd
   SECTION:=net
   CATEGORY:=Network
-  DEPENDS:=+ubus +ubox +libubox +libjson-c +libblobmsg-json +rpcd
+  DEPENDS:=+libubus +libubox +libjson-c +libblobmsg-json +rpcd
   TITLE:=owsd daemon
 endef
 

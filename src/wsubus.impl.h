@@ -24,7 +24,6 @@
 #pragma once
 
 #include "common.h"
-#include "owsd-config.h"
 #include "rpc.h"
 
 #include "access_check.h"

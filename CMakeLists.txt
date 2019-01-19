@@ -25,7 +25,7 @@ set(SOURCES
         src/ubusx_acl.c
 	)
 
-find_package(Libwebsockets REQUIRED NO_DEFAULT_PATH)
+find_package(libwebsockets REQUIRED)
 find_package(LIBUBOX REQUIRED)
 find_library(JSON_LIBRARIES NAMES json-c)
 
@@ -37,7 +37,6 @@ find_path(UBUS_INCLUDE_DIRS libubus.h)
 list(APPEND WSD_LINK ${UBUS_LIBRARIES})
 list(APPEND WSD_INCLUDE ${UBUS_INCLUDE_DIRS})
 
-configure_file(src/owsd-config.in.h owsd-config.h ESCAPE_QUOTES)
 list(APPEND WSD_INCLUDE ${CMAKE_BINARY_DIR})
 
 add_executable(owsd ${SOURCES})
