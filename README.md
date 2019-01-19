@@ -1,5 +1,19 @@
 # OWSD web socket daemon
 
+This is a fork of http://public.inteno.se/owsd.git without SSL, ubus-proxy and dbus support. 
+OpenWrt build files that do a static link against libwebsockets are in `openwrt`. 
+
+Usage: 
+
+`feeds.conf`: 
+
+    src-git owsd https://gitlab.bau-ha.us/mt/owsd-tiny
+    
+`.config`: 
+
+    CONFIG_PACKAGE_owsd=y 
+    
+
 ## Overview
 - uses web sockets to accept RPC calls in JSON-RPC
 - intended as web back-end for Inteno JUCI Web UI on OpenWrt based platform
