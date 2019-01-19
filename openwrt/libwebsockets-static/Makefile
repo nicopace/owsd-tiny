@@ -7,12 +7,12 @@
 
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=libwebsockets
+PKG_NAME:=libwebsockets-static
 PKG_VERSION:=3.1.0
 PKG_RELEASE:=1
 
-PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
-PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
+PKG_SOURCE:=libwebsockets-$(PKG_VERSION).tar.gz
+PKG_SOURCE_SUBDIR:=libwebsockets-$(PKG_VERSION)
 PKG_SOURCE_URL:=https://codeload.github.com/warmcat/libwebsockets/tar.gz/v$(PKG_VERSION)?
 PKG_HASH:=db948be74c78fc13f1f1a55e76707d7baae3a1c8f62b625f639e8f2736298324
 
@@ -36,20 +36,15 @@ CMAKE_OPTIONS += -DLWS_WITHOUT_CLIENT=ON
 CMAKE_OPTIONS += -DLWS_WITHOUT_DEBUG=ON
 CMAKE_OPTIONS += -DLWS_WITH_SSL=OFF
 CMAKE_OPTIONS += -DLWS_WITH_HTTP2=OFF
+CMAKE_OPTIONS += -DLWS_WITH_SHARED=OFF
+CMAKE_OPTIONS += -DLWS_WITH_STATIC=ON
 
-
-define Package/libwebsockets-tiny
+define Package/libwebsockets-static
 	SECTION:=libs
 	CATEGORY:=Libraries
-	TITLE:=libwebsockets-tiny
+	TITLE:=libwebsockets-static
 	URL:=https://libwebsockets.org
-	MAINTAINER:=Karl Palsson <karlp@etactica.com>
-	PROVIDES:= libwebsockets-tiny
+	PROVIDES:= libwebsockets-static
 endef
 
-define Package/libwebsockets-tiny/install
-	$(INSTALL_DIR) $(1)/usr/lib
-	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libwebsockets.so* $(1)/usr/lib/
-endef
-
-$(eval $(call BuildPackage,libwebsockets-tiny))
+$(eval $(call BuildPackage,libwebsockets-static))
