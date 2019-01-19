@@ -22,6 +22,7 @@
 #include "ws_http.h"
 #include "wsubus.h"
 #include "rpc.h"
+#include "ubusx_acl.h"
 
 #include <libubus.h>
 #include <libubox/uloop.h>
@@ -251,6 +252,10 @@ int main(int argc, char *argv[])
 			}
 			break;
 #endif // LWS_WITH_IPV6
+        case 'X':
+            lwsl_notice("ubusx ACL: \"%s\"\n", optarg);
+            ubusx_acl__add_objects(optarg);
+        break;
 		case 'h':
 		default:
 			usage(argv[0]);

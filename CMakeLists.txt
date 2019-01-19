@@ -1,8 +1,15 @@
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 3.9)
 project(owsd C)
-add_definitions(-Os -Wall -std=gnu11 -fms-extensions -fplan9-extensions -D_XOPEN_SOURCE=700 -D_GNU_SOURCE)
+
+include(CheckIPOSupported)
+check_ipo_supported()
+
+add_definitions(-Os -flto -Wall -std=gnu11 -fms-extensions -fplan9-extensions -D_XOPEN_SOURCE=700 -D_GNU_SOURCE)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules")
+
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+
 
 set(SOURCES
 	src/main.c
@@ -18,11 +25,11 @@ set(SOURCES
         src/ubusx_acl.c
 	)
 
-find_package(libwebsockets REQUIRED)
+find_package(Libwebsockets REQUIRED NO_DEFAULT_PATH)
 find_package(LIBUBOX REQUIRED)
 find_library(JSON_LIBRARIES NAMES json-c)
 
-set(WSD_LINK ${LIBWEBSOCKETS_LIBRARIES} ${LIBUBOX_LIBRARIES} ${JSON_LIBRARIES})
+set(WSD_LINK websockets ${LIBUBOX_LIBRARIES} ${JSON_LIBRARIES})
 set(WSD_INCLUDE ${LIBWEBSOCKETS_INCLUDE_DIRS})
 
 find_library(UBUS_LIBRARIES NAMES ubus)

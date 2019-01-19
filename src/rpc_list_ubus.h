@@ -28,6 +28,7 @@
 #include "wsubus.impl.h"
 #include "rpc.h"
 #include "util_ubus_blob.h"
+#include "ubusx_acl.h"
 
 #include <libubox/blobmsg_json.h>
 #include <libubox/blobmsg.h>
