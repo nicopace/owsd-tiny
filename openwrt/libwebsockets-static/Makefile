@@ -1,10 +1,4 @@
-#
-# Copyright (C) 2014-2015 OpenWrt.org
-#
-# This is free software, licensed under the GNU General Public License v2.
-# See /LICENSE for more information.
-#
-
+# this is only for PKG_BUILD_DEPENDS:= - it's only building a static library
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=libwebsockets-static
@@ -27,6 +21,9 @@ CMAKE_INSTALL:=1
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
+
+TARGET_CFLAGS += -flto
+TARGET_LDLAGS += -flto
 
 CMAKE_OPTIONS += -DLWS_IPV6=$(if $(CONFIG_IPV6),ON,OFF)
 CMAKE_OPTIONS += -DLWS_WITHOUT_TESTAPPS=ON

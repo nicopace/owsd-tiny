@@ -11,7 +11,7 @@ PKG_NAME:=owsd
 PKG_VERSION:=0.99
 PKG_RELEASE:=1
 
-PKG_MAINTAINER:=Sartura Support for Inteno <support-inteno@sartura.hr>
+PKG_MAINTAINER:=Martin Tippmann <martin.tippmann@gmail.com>
 PKG_INSTALL:=1
 PKG_BUILD_PARALLEL:=1
 PKG_BUILD_DEPENDS:=libwebsockets-static
@@ -20,6 +20,9 @@ include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
 
 CMAKE_SOURCE_DIR=$(CURDIR)/../../
+
+TARGET_CFLAGS += -flto
+TARGET_LDLAGS += -flto
 
 define Package/owsd
   SECTION:=net
