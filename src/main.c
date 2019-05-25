@@ -150,6 +150,8 @@ int main(int argc, char *argv[])
 					/* global */
 					"s:"
 					"w:t:r:m:h"
+                                         /* per-vhost */
+                                         "p:i:o:L:u:"
 #ifdef LWS_WITH_IPV6
 					"6"
 #endif // LWS_WITH_IPV6
