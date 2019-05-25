@@ -1,14 +1,11 @@
 cmake_minimum_required(VERSION 3.9)
 project(owsd C)
 
-include(CheckIPOSupported)
-check_ipo_supported()
-
-add_definitions(-Os -flto -Wall -std=gnu11 -fms-extensions -fplan9-extensions -D_XOPEN_SOURCE=700 -D_GNU_SOURCE)
+add_definitions(-Os -std=gnu18 -fms-extensions -fplan9-extensions -D_XOPEN_SOURCE=700)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules")
 
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
 
 
 set(SOURCES
